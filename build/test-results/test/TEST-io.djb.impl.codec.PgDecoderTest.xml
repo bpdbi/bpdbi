@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.djb.impl.codec.PgDecoderTest" tests="24" skipped="0" failures="0" errors="0" timestamp="2026-03-15T23:38:19" hostname="x1" time="0.024">
+  <properties/>
+  <testcase name="decodeRowDescription()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeReadyForQueryFailed()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeReadyForQuery()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeReadyForQueryInTransaction()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeAuthenticationMD5Password()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeParameterDescription()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeEmptyQueryResponse()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeBackendKeyData()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeNoticeResponse()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeMultipleMessages()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeBindComplete()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeParseComplete()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeAuthenticationOk()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeErrorResponse()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeCommandCompleteCreate()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeCommandCompleteDelete()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeCommandCompleteInsert()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeCommandCompleteSelect()" classname="io.djb.impl.codec.PgDecoderTest" time="0.001"/>
+  <testcase name="decodeCommandCompleteUpdate()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeAuthenticationCleartextPassword()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeDataRow()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeParameterStatus()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeNotificationResponse()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <testcase name="decodeNoData()" classname="io.djb.impl.codec.PgDecoderTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.djb.impl.buffer.PgBufferTest" tests="18" skipped="0" failures="0" errors="0" timestamp="2026-03-15T23:38:19" hostname="x1" time="0.021">
+  <properties/>
+  <testcase name="writeCStringUTF8()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="growsAutomatically()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="setInt()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="writeAndReadBytes()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="writeAndReadFloat()" classname="io.djb.impl.buffer.PgBufferTest" time="0.0"/>
+  <testcase name="writeAndReadShort()" classname="io.djb.impl.buffer.PgBufferTest" time="0.0"/>
+  <testcase name="getIntWithoutAdvancing()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="writeAndReadDouble()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="readUnsignedByte()" classname="io.djb.impl.buffer.PgBufferTest" time="0.0"/>
+  <testcase name="clear()" classname="io.djb.impl.buffer.PgBufferTest" time="0.0"/>
+  <testcase name="readableBytes()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="writeAndReadByte()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="writeAndReadLong()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="writeCStringAndReadCString()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="writeString()" classname="io.djb.impl.buffer.PgBufferTest" time="0.0"/>
+  <testcase name="wrapWithOffsetAndLength()" classname="io.djb.impl.buffer.PgBufferTest" time="0.0"/>
+  <testcase name="writeAndReadInt()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <testcase name="skipBytes()" classname="io.djb.impl.buffer.PgBufferTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
