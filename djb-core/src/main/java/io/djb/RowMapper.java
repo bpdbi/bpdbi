@@ -1,5 +1,6 @@
 package io.djb;
 
+
 /**
  * Maps a {@link Row} to a typed object.
  *
@@ -14,5 +15,7 @@ package io.djb;
  */
 @FunctionalInterface
 public interface RowMapper<T> {
-    T map(Row row);
+
+
+  T map(Row row);
 }

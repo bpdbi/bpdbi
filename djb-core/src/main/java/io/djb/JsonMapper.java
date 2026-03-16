@@ -1,8 +1,9 @@
 package io.djb;
 
+
 /**
- * Pluggable JSON serialization/deserialization interface.
- * Users provide their own implementation backed by Jackson, Gson, Moshi, etc.
+ * Pluggable JSON serialization/deserialization interface. Users provide their own implementation
+ * backed by Jackson, Gson, Moshi, etc.
  *
  * <pre>{@code
  * conn.setJsonMapper(new JsonMapper() {
@@ -13,6 +14,9 @@ package io.djb;
  * }</pre>
  */
 public interface JsonMapper {
-    <T> T fromJson(String json, Class<T> type);
-    String toJson(Object value);
+
+  <T> T fromJson(String json, Class<T> type);
+
+
+  String toJson(Object value);
 }

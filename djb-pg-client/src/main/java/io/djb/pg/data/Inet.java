@@ -1,35 +1,20 @@
 package io.djb.pg.data;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
+import org.jspecify.annotations.NonNull;
 
 /**
- * A PostgreSQL inet network address.
+ * A Postgres inet network address.
  */
 public record Inet(InetAddress address, Integer netmask) {
 
-    public static Inet parse(String s) {
-        s = s.trim();
-        try {
-            int slash = s.indexOf('/');
-            if (slash >= 0) {
-                InetAddress addr = InetAddress.getByName(s.substring(0, slash));
-                int mask = Integer.parseInt(s.substring(slash + 1));
-                return new Inet(addr, mask);
-            } else {
-                return new Inet(InetAddress.getByName(s), null);
-            }
-        } catch (UnknownHostException e) {
-            throw new IllegalArgumentException("Invalid inet address: " + s, e);
-        }
-    }
+  public static Inet parse(String s) {
+    Object[] parsed = ParserHelpers.parseInetAddress(s, "inet");
+    return new Inet((InetAddress) parsed[0], (Integer) parsed[1]);
+  }
 
-    @Override
-    public String toString() {
-        String s = address.getHostAddress();
-        if (netmask != null) {
-            s += "/" + netmask;
-        }
-        return s;
-    }
+  @Override
+  public @NonNull String toString() {
+    return ParserHelpers.formatInetAddress(address, netmask);
+  }
 }

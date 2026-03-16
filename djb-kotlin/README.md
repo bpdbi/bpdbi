@@ -12,9 +12,12 @@ Most JVM mapping libraries (Jackson, Gson, MapStruct, ModelMapper) rely on runti
 to inspect classes and populate fields. This has real costs:
 
 - **Startup overhead** — reflection-based mappers discover fields and constructors at runtime
-- **No compile-time safety** — mismatches between SQL columns and class fields surface as runtime errors
+- **No compile-time safety** — mismatches between SQL columns and class fields surface as runtime
+  errors
 - **GraalVM native-image pain** — reflection requires explicit configuration and breaks easily
-- **Kotlin data class friction** — default values, nullable types, and `val` properties don't always play well with reflection
+- **Kotlin data class friction** — default values, nullable types, and `val` properties don't always
+  play well with
+  reflection
 
 `kotlinx.serialization` avoids all of this. The Kotlin compiler plugin generates a serializer
 for each `@Serializable` class, so deserialization is just calling generated code — fast,
@@ -30,7 +33,9 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":djb-kotlin"))
+    implementation(platform("io.djb:djb-bom:0.1.0"))
+    implementation("io.djb:djb-kotlin")
+    implementation("io.djb:djb-pg-client")  // or djb-mysql-client
 }
 ```
 
@@ -151,6 +156,6 @@ conn.query("INSERT INTO items (id, name) VALUES ($1, $2)", uuid, "widget")
 Or register on the registries directly for more control:
 
 ```kotlin
-conn.typeRegistry().registerKotlinTypes()   // for parameter binding
+conn.binderRegistry().registerKotlinTypes()   // for parameter binding
 conn.mapperRegistry().registerKotlinTypes() // for Row.get(col, KotlinType::class.java)
 ```

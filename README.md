@@ -4,20 +4,27 @@ A blocking SQL client for the JVM that treats **pipelining** as a first-class co
 
 Ported from the battle-tested [Vert.x SQL Client](https://github.com/eclipse-vertx/vertx-sql-client)
 (the foundation of Quarkus), but stripped of all async/reactive machinery.
-Plain `java.net.Socket` I/O. No Netty dependencies. No event loop. No `Uni<T>` (or other implementations of futures).
+Plain `java.net.Socket` I/O. No Netty dependencies. No event loop. No `Uni<T>` (or other
+implementations of futures).
 
 ## Why?
 
-JDBC is showing its age and (hence) does not allow [pipelining](https://www.postgresql.org/docs/current/libpq-pipeline-mode.html)
-which is available in Postgres 13+ and MySQL 8.0.3+.
+JDBC is [showing its age](docs/is-jdbc-showing-its-age.md) and (hence) does not allow pipelining
+which is available
+in [Postgres 14+](https://www.postgresql.org/docs/current/libpq-pipeline-mode.html)
+and [MySQL 5.7.12+](https://dev.mysql.com/blog-archive/mysql-5-7-12-part-2-improving-the-mysql-protocol/).
 
-Vert.x (`vertx-sql-client`) does support pipelines (for these databases), but forces reactive/async programming.
+Vert.x (`vertx-sql-client`) does support pipelines (for these databases), but
+forces [reactive/async programming](docs/why-not-write-all-code-reactive.md).
 
-Djb gives you pipelining with straightforward blocking code — ideal for **Java 21+ virtual threads**,
-where blocking is inexpensive and readability of the code matters more than a few percent better throughput.
+Djb gives you pipelining with straightforward blocking code — ideal for **Java 21+ virtual threads
+**,
+where blocking is inexpensive and readability of the code matters more than a few percent better
+throughput.
 
-Pipelining sends multiple statements to the database in a single network write and reads all responses back at once.
-Reducing the number db roundtrips per HTTP request cycle significantly improves performance:
+Pipelining sends multiple statements to the database in a single network write and reads all
+responses back at once.
+Reducing the number of db roundtrips per HTTP request cycle significantly improves performance:
 
 ```java
 // 4 statements, 1 roundtrip
@@ -30,10 +37,12 @@ RowSet result = conn.query("SELECT * FROM my_table WHERE id = $1", 42);
 Without pipelining each of those would be a separate db roundtrip.
 Over a network with 1ms latency, that's 4ms saved on every request — and it adds up.
 
-Finally: dependency minimalism. Using Djb incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+)
-or JDBC alternatives (the postgres is ~1.1MB and MySQL Connector/J is ~2.5MB).
-Djb also provides functionality commonly found libraries like Jdbi (which clocks in at ~1MB), or Spring Data Code (~3MB).
-Djb does not use any JVM reflection API out of the box (some mapper implementations may use it though).
+**Dependency minimalism.** Djb incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
+the Postgres JDBC driver (~1.1MB), or MySQL Connector/J (~2.5MB). It also provides named parameters,
+row mapping, and type binding commonly found in libraries like Jdbi (~1MB) or Spring Data JDBC (~
+3MB) —
+without pulling in those dependencies. Djb does not use the JVM reflection API out of the box
+(some optional mapper modules use it).
 
 ## Design Principles
 
@@ -46,14 +55,40 @@ a pipeline sends N arbitrary statements (different SQL, different parameter coun
 in a single network write. Anything you'd do with batch, you can do with pipeline —
 plus mix in SETs, DDL, transactions, and different queries in the same roundtrip.
 
-**Lazy decoding** — `Row` stores raw bytes from the wire and decodes them
+**Binary protocol for parameterized queries** — Both the Postgres and MySQL drivers use the
+database's binary wire protocol for parameterized query results. Binary encoding is more compact
+on the wire, avoids text parsing overhead for numeric and temporal types, and simplifies decoding
+(no locale-dependent formatting). Parameterless queries use the simple query protocol (text format)
+because neither database supports all SQL commands via their prepared-statement protocol:
+MySQL's `COM_STMT_PREPARE` rejects `BEGIN`, `COMMIT`, `ROLLBACK`, `SET`, and other session
+commands; Postgres's extended query protocol forbids multi-statement strings (`SELECT 1; SELECT 2`).
+Text format also makes `getString()` work naturally for types that lack a dedicated binary codec
+(geometric, network, array, and interval types in Postgres).
+
+**Lazy decoding with column-oriented storage** — `Row` stores raw bytes from the wire and decodes
+them
 only when you call a typed getter (`getInteger`, `getString`, etc.).
 Columns you never read are never decoded, keeping CPU overhead minimal.
+Buffered result sets use column-oriented storage internally: all values for a given column
+are packed into a single contiguous `byte[]` buffer, and each `Row` is a lightweight view
+(a column-buffer reference + a row index) with no per-row allocation.
+For a 100K-row, 10-column result, this means 10 byte arrays instead of 1 million —
+dramatically reducing GC pressure for large results.
 
-**Pluggable type system** — `TypeRegistry` (Java → SQL) and `MapperRegistry` (SQL → Java)
-let you register custom converters for your domain types without forking the library or relying on reflection.
+**One connection per thread** — Connections are not thread-safe, same as JDBC and virtually every
+SQL client in any language. The underlying wire protocol is a stateful, ordered byte stream —
+concurrent writes from multiple threads would corrupt it. Transactions are also connection-scoped,
+so sharing a connection between threads would mix transaction boundaries.
+The standard pattern is: borrow a connection from a [pool](#connection-pooling), use it, return it.
+With Java 21+ virtual threads, blocking on a pooled connection is cheap, so thousands of
+concurrent requests each get their own connection naturally.
 
-**Null-safe API** — The entire public API is annotated with [JSpecify](https://jspecify.dev/) (`@NullMarked` / `@Nullable`).
+**Pluggable type system** — `BinderRegistry` (Java → SQL) and `ColumnMapperRegistry` (SQL → Java)
+let you register custom converters for your domain types without forking the library or relying on
+reflection.
+
+**Null-safe API** — The entire public API is annotated with [JSpecify](https://jspecify.dev/) (
+`@NullMarked` / `@Nullable`).
 IDEs and tools like NullAway can statically verify correct null handling at compile time.
 
 **No compile-time SQL validation** — Djb does not attempt to type-check the boundary between
@@ -68,7 +103,28 @@ typos, and type errors at test time rather than compile time — with far less m
 and JSpecify annotations (a single 3KB jar).
 No Netty, no reactive runtime, no reflection by default — ideal for GraalVM native images.
 
+**GraalVM native-image ready** — The core library and drivers (`djb-core`, `djb-pg-client`,
+`djb-mysql-client`, `djb-pool`) use zero reflection and work out of the box with
+`native-image`. The optional mapper modules (`djb-record-mapper`,
+`djb-javabean-mapper`) ship with GraalVM `reflect-config.json` metadata for their own
+classes; you only need to register your application's record/bean types. The Kotlin module
+uses compile-time code generation (kotlinx.serialization) and needs no reflection at all.
+
 ## Quick Start
+
+### Dependencies
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation(platform("io.djb:djb-bom:0.1.0"))
+    implementation("io.djb:djb-pg-client")               // Postgres driver
+    // implementation("io.djb:djb-mysql-client")          // MySQL driver
+    // implementation("io.djb:djb-pool")                  // Connection pool
+    // implementation("io.djb:djb-record-mapper")             // Java record mapping (reflection-based)
+    // implementation("io.djb:djb-kotlin")                // Kotlin extensions
+}
+```
 
 ### Connecting
 
@@ -115,6 +171,49 @@ MysqlConnection.connect("localhost", 3306, "mydb", "user", "pass").use { conn ->
 URI parsing supports `postgresql://`, `postgres://`, and `mysql://` schemes with
 optional query parameters: `?sslmode=require&application_name=myapp`.
 
+#### SSL/TLS
+
+Five SSL modes are supported: `disable`, `prefer`, `require`, `verify-ca`, `verify-full`.
+
+```java
+// Via URI
+var config = ConnectionConfig.fromUri(
+    "postgresql://user:pass@host/db?sslmode=verify-full");
+
+// Programmatic with PEM certificate
+var config = new ConnectionConfig("host", 5432, "db", "user", "pass")
+    .sslMode(SslMode.VERIFY_CA)
+    .pemCertPath("/path/to/server-ca.pem");
+
+// Programmatic with JKS trust store
+var config = new ConnectionConfig("host", 5432, "db", "user", "pass")
+    .sslMode(SslMode.VERIFY_CA)
+    .trustStorePath("/path/to/truststore.jks")
+    .trustStorePassword("changeit");
+
+// Bring your own SSLContext (full control)
+SSLContext ctx = SSLContext.getInstance("TLS");
+ctx.init(keyManagers, trustManagers, null);
+var config = new ConnectionConfig("host", 5432, "db", "user", "pass")
+    .sslMode(SslMode.REQUIRE)
+    .sslContext(ctx);
+
+try (var conn = PgConnection.connect(config)) {
+    conn.query("SELECT 1");
+}
+```
+
+| Mode          | Encryption   | CA verification | Hostname verification |
+|---------------|--------------|-----------------|-----------------------|
+| `disable`     | No           | No              | No                    |
+| `prefer`      | If available | No              | No                    |
+| `require`     | Yes          | No              | No                    |
+| `verify-ca`   | Yes          | Yes             | No                    |
+| `verify-full` | Yes          | Yes             | Yes                   |
+
+For `verify-ca` and `verify-full` without an explicit certificate/trust store,
+the system default trust store is used (Java's `cacerts`).
+
 ### Queries
 
 ```java
@@ -144,6 +243,32 @@ val row = rs.first()
 ```
 
 </details>
+
+### Named Parameters
+
+Use `:name` style named parameters with a `Map` instead of positional placeholders:
+
+```java
+RowSet rs = conn.query(
+    "SELECT * FROM users WHERE name = :name AND age > :age",
+    Map.of("name", "Alice", "age", 21));
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+val rs = conn.query(
+    "SELECT * FROM users WHERE name = :name AND age > :age",
+    mapOf("name" to "Alice", "age" to 21))
+```
+
+</details>
+
+Named parameters are rewritten to positional placeholders (`$1`, `$2` for Postgres, `?` for MySQL)
+before execution. They work with `query()`, `enqueue()`, and `prepare()`. The `::` cast operator
+(e.g. `$1::int`) is correctly handled and not treated as a named parameter.
+
+Collections and arrays are automatically expanded — see [IN-list Expansion](#in-list-expansion).
 
 ### Pipelining
 
@@ -251,6 +376,56 @@ conn.prepare("SELECT * FROM users WHERE id = \$1").use { stmt ->
 
 </details>
 
+Named parameters work with prepared statements too:
+
+```java
+try (var stmt = conn.prepare("SELECT * FROM users WHERE name = :name AND age = :age")) {
+    RowSet rs1 = stmt.query(Map.of("name", "Alice", "age", 30));
+    RowSet rs2 = stmt.query(Map.of("name", "Bob", "age", 25));
+}
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+conn.prepare("SELECT * FROM users WHERE name = :name AND age = :age").use { stmt ->
+    val rs1 = stmt.query(mapOf("name" to "Alice", "age" to 30))
+    val rs2 = stmt.query(mapOf("name" to "Bob", "age" to 25))
+}
+```
+
+</details>
+
+The named parameter SQL is parsed at prepare time and the `:name` → position mapping is stored
+with the statement. At execution time, the `Map` values are resolved to positional parameters.
+
+IN-list expansion (`WHERE id IN (:ids)` with a collection) is not supported in prepared statements
+because the SQL changes with collection size. However, **Postgres** supports an equivalent pattern
+using `= ANY()` with an array parameter:
+
+```java
+// Postgres: use = ANY() instead of IN() for prepared statements with collections
+try (var stmt = conn.prepare("SELECT * FROM users WHERE id = ANY(:ids::int[])")) {
+    RowSet rs1 = stmt.query(Map.of("ids", List.of(1, 2, 3)));
+    RowSet rs2 = stmt.query(Map.of("ids", Set.of(10, 20)));
+}
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+conn.prepare("SELECT * FROM users WHERE id = ANY(:ids::int[])").use { stmt ->
+    val rs1 = stmt.query(mapOf("ids" to listOf(1, 2, 3)))
+    val rs2 = stmt.query(mapOf("ids" to setOf(10, 20)))
+}
+```
+
+</details>
+
+Collection and array values are automatically formatted as Postgres array literals (`{1,2,3}`).
+This works regardless of collection size without re-preparing the statement.
+MySQL does not support array types — use `query(String, Map)` with IN-list expansion instead.
+
 ### Transactions
 
 Use `begin()` for a transaction with automatic rollback on failure:
@@ -301,6 +476,44 @@ conn.begin().use { tx ->
 
 </details>
 
+#### Rollback-only connections for testing
+
+Since `Transaction` implements `Connection`, you can use it as a rollback-only connection
+in tests. Pass the transaction to your code under test, and let it auto-rollback on close —
+no test data is ever committed:
+
+```java
+try (var tx = conn.begin()) {
+    // pass tx anywhere that expects a Connection
+    var repo = new UserRepository(tx);
+    repo.createUser("Alice", 30);
+
+    // verify
+    RowSet rs = tx.query("SELECT * FROM users WHERE name = $1", "Alice");
+    assertEquals(1, rs.size());
+
+    // no tx.commit() — auto-rollback on close, database is unchanged
+}
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+conn.begin().use { tx ->
+    val repo = UserRepository(tx)
+    repo.createUser("Alice", 30)
+
+    val rs = tx.query("SELECT * FROM users WHERE name = \$1", "Alice")
+    assertEquals(1, rs.size())
+
+    // no tx.commit() — auto-rollback on close, database is unchanged
+}
+```
+
+</details>
+
+This keeps tests isolated without requiring database cleanup or schema resets between runs.
+
 ### Cursors
 
 For large result sets, use a cursor to read rows in batches (requires a transaction):
@@ -335,6 +548,83 @@ conn.query("COMMIT")
 
 </details>
 
+### Streaming
+
+For large result sets where you don't need all rows in memory at once, use the streaming API.
+Rows are read from the wire one at a time — constant memory regardless of result size.
+
+**Callback style** — simplest, no resource management:
+
+```java
+conn.queryStream("SELECT * FROM big_table", row -> {
+    process(row.getString("name"), row.getInteger("id"));
+});
+
+// With parameters
+conn.queryStream("SELECT * FROM orders WHERE status = $1", row -> {
+    process(row);
+}, "pending");
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+conn.queryStream("SELECT * FROM big_table") { row ->
+    process(row.getString("name"), row.getInteger("id"))
+}
+
+conn.queryStream("SELECT * FROM orders WHERE status = \$1", { row ->
+    process(row)
+}, "pending")
+```
+
+</details>
+
+**Iterable/Stream style** — for composition with `for` loops, iterators, or `java.util.stream`:
+
+```java
+// Iterable — use with for-each
+try (var rows = conn.stream("SELECT * FROM big_table")) {
+    for (Row row : rows) {
+        process(row);
+    }
+}
+
+// java.util.stream.Stream — filter, map, collect
+try (var rows = conn.stream("SELECT * FROM big_table WHERE active")) {
+    List<String> names = rows.stream()
+        .filter(row -> row.getInteger("age") > 21)
+        .map(row -> row.getString("name"))
+        .toList();
+}
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+conn.stream("SELECT * FROM big_table").use { rows ->
+    for (row in rows) {
+        process(row)
+    }
+}
+
+conn.stream("SELECT * FROM big_table WHERE active").use { rows ->
+    val names = rows.stream()
+        .filter { it.getInteger("age")!! > 21 }
+        .map { it.getString("name") }
+        .toList()
+}
+```
+
+</details>
+
+`RowStream` implements `AutoCloseable` and `Iterable<Row>`. Always close it (via try-with-resources)
+to drain remaining server messages and keep the connection usable. Closing early is safe — unread
+rows are discarded.
+
+Unlike cursors, streaming does not require a transaction. Compared to cursors, streaming is simpler
+(no batch size management) but only supports a single forward pass.
+
 ### Data Types
 
 Row provides typed getters for common types:
@@ -349,6 +639,9 @@ row.getBoolean("active");        // boolean
 row.getLocalDate("created");     // date
 row.getLocalTime("start_time");  // time
 row.getLocalDateTime("updated"); // timestamp
+row.getOffsetDateTime("ts");     // timestamptz
+row.getInstant("ts");            // timestamptz → java.time.Instant
+row.getOffsetTime("t");          // timetz (Postgres only)
 row.getUUID("ref");              // uuid
 row.getBytes("data");            // bytea
 ```
@@ -413,7 +706,8 @@ conn.setJsonMapper(new JsonMapper() {
 });
 ```
 
-**Auto-detection for JSON/JSONB columns** — if the database column type is `json`, `jsonb` (Postgres),
+**Auto-detection for JSON/JSONB columns** — if the database column type is `json`, `jsonb` (
+Postgres),
 or `JSON` (MySQL), `row.get()` automatically deserializes:
 
 ```java
@@ -427,7 +721,7 @@ OrderMeta meta = conn.query("SELECT metadata FROM orders WHERE id = $1", 1)
 register the type explicitly:
 
 ```java
-conn.typeRegistry().registerAsJson(OrderMeta.class);
+conn.binderRegistry().registerAsJson(OrderMeta.class);
 
 // Now works even though config_text is a text column
 OrderMeta meta = conn.query("SELECT config_text FROM orders WHERE id = $1", 1)
@@ -435,10 +729,11 @@ OrderMeta meta = conn.query("SELECT config_text FROM orders WHERE id = $1", 1)
     .get("config_text", OrderMeta.class);
 ```
 
-**Parameter binding** — registered JSON types are automatically serialized when used as query parameters:
+**Parameter binding** — registered JSON types are automatically serialized when used as query
+parameters:
 
 ```java
-conn.typeRegistry().registerAsJson(OrderMeta.class);
+conn.binderRegistry().registerAsJson(OrderMeta.class);
 conn.query("INSERT INTO orders (id, metadata) VALUES ($1, $2::jsonb)",
     1, new OrderMeta("rush", 3));
 // OrderMeta is serialized to JSON via jsonMapper.toJson()
@@ -471,6 +766,134 @@ val order: Order? = conn.queryOneAs(
 ```
 
 </details>
+
+### Batch Execution
+
+Execute the same statement with multiple parameter sets efficiently:
+
+```java
+List<RowSet> results = conn.executeMany(
+    "INSERT INTO users (name, age) VALUES ($1, $2)",
+    List.of(
+        new Object[]{"Alice", 30},
+        new Object[]{"Bob", 25},
+        new Object[]{"Carol", 35}
+    ));
+
+// Each result corresponds to one parameter set
+for (RowSet rs : results) {
+    System.out.println("Rows affected: " + rs.rowsAffected());
+}
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+val results = conn.executeMany(
+    "INSERT INTO users (name, age) VALUES (\$1, \$2)",
+    listOf(
+        arrayOf("Alice", 30),
+        arrayOf("Bob", 25),
+        arrayOf("Carol", 35)
+    ))
+
+for (rs in results) {
+    println("Rows affected: ${rs.rowsAffected()}")
+}
+```
+
+</details>
+
+`executeMany` composes with pipelining — all executions are sent in one network roundtrip.
+
+Works with transactions too:
+
+```java
+try (var tx = conn.begin()) {
+    tx.executeMany(
+        "INSERT INTO ledger (account, amount) VALUES ($1, $2)",
+        List.of(new Object[]{"A", 100}, new Object[]{"B", -100}));
+    tx.commit();
+}
+```
+
+### IN-list Expansion
+
+Named parameters support automatic expansion for collections and arrays:
+
+```java
+// List of IDs — :ids expands to $1, $2, $3
+RowSet rs = conn.query(
+    "SELECT * FROM users WHERE id IN (:ids)",
+    Map.of("ids", List.of(1, 2, 3)));
+
+// Mixed scalar and collection parameters
+RowSet rs2 = conn.query(
+    "SELECT * FROM users WHERE status = :status AND id IN (:ids)",
+    Map.of("status", "active", "ids", List.of(1, 2, 3)));
+// Becomes: SELECT * FROM users WHERE status = $1 AND id IN ($2, $3, $4)
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+val rs = conn.query(
+    "SELECT * FROM users WHERE id IN (:ids)",
+    mapOf("ids" to listOf(1, 2, 3)))
+
+val rs2 = conn.query(
+    "SELECT * FROM users WHERE status = :status AND id IN (:ids)",
+    mapOf("status" to "active", "ids" to listOf(1, 2, 3)))
+```
+
+</details>
+
+Supports `Collection` (List, Set) and arrays (including primitive arrays like `int[]`).
+Empty collections produce `NULL` to avoid SQL syntax errors.
+
+### LISTEN/NOTIFY (Postgres)
+
+Subscribe to Postgres asynchronous notifications:
+
+```java
+try (var conn = PgConnection.connect("localhost", 5432, "mydb", "user", "pass")) {
+    conn.listen("order_events");
+
+    // ... do other work, or poll in a loop ...
+
+    // Notifications are buffered as they arrive during query processing.
+    // Trigger a roundtrip to collect any pending notifications:
+    conn.query("SELECT 1");
+
+    for (PgNotification n : conn.getNotifications()) {
+        System.out.println("Channel: " + n.channel() + ", Payload: " + n.payload());
+    }
+
+    conn.unlisten("order_events");
+}
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+PgConnection.connect("localhost", 5432, "mydb", "user", "pass").use { conn ->
+    conn.listen("order_events")
+
+    conn.query("SELECT 1")
+
+    for (n in conn.getNotifications()) {
+        println("Channel: ${n.channel()}, Payload: ${n.payload()}")
+    }
+
+    conn.unlisten("order_events")
+}
+```
+
+</details>
+
+Send notifications with `notify(channel, payload)`. Use `unlistenAll()` to unsubscribe from
+everything.
+Notifications arrive as `PgNotification` records with `processId()`, `channel()`, and `payload()`.
 
 ### Cancel Request (Postgres)
 
@@ -518,84 +941,103 @@ job.join()
 
 ## Connection Pooling
 
-Djb doesn't bundle a connection pool — use any generic object pool library.
-Djb is not a JDBC DataSource provider, so the popular [HikariCP](https://github.com/brettwooldridge/HikariCP) is not a good fit.
-
-Here an example with the solid [Apache Commons Pool 2](https://commons.apache.org/proper/commons-pool/) library:
+Djb ships its own lightweight connection pool in `djb-pool`:
 
 ```java
-var factory = new BasePooledObjectFactory<Connection>() {
-    @Override
-    public Connection create() {
-        return PgConnection.connect("localhost", 5432, "mydb", "user", "pass");
-    }
-    @Override
-    public PooledObject<Connection> wrap(Connection conn) {
-        return new DefaultPooledObject<>(conn);
-    }
-    @Override
-    public void destroyObject(PooledObject<Connection> p) {
-        p.getObject().close();
-    }
-};
+var pool = new ConnectionPool(
+    () -> PgConnection.connect("localhost", 5432, "mydb", "user", "pass"),
+    new PoolConfig()
+        .maxSize(10)
+        .maxIdleTimeMillis(300_000)     // 5 minutes
+        .maxLifetimeMillis(1_800_000)   // 30 minutes
+        .connectionTimeoutMillis(5000)  // 5 seconds
+        .validateOnBorrow(true)         // ping idle connections before use
+        .leakDetectionThresholdMillis(60_000)); // warn after 60s unreturned
 
-var pool = new GenericObjectPool<>(factory);
-pool.setMaxTotal(10);
-pool.setMaxIdle(5);
-pool.setMaxWaitMillis(30_000);
-
-var conn = pool.borrowObject();
-try {
+// Borrow, use, return automatically
+pool.withConnection(conn -> {
     conn.query("SELECT 1");
-} finally {
-    pool.returnObject(conn);
+});
+
+// Or use try-with-resources — close() returns the connection to the pool
+try (Connection conn = pool.acquire()) {
+    conn.query("SELECT 1");
 }
 ```
 
 <details><summary>Kotlin equivalent</summary>
 
 ```kotlin
-val factory = object : BasePooledObjectFactory<Connection>() {
-    override fun create(): Connection =
-        PgConnection.connect("localhost", 5432, "mydb", "user", "pass")
-    override fun wrap(conn: Connection): PooledObject<Connection> =
-        DefaultPooledObject(conn)
-    override fun destroyObject(p: PooledObject<Connection>) =
-        p.`object`.close()
-}
+val pool = ConnectionPool(
+    { PgConnection.connect("localhost", 5432, "mydb", "user", "pass") },
+    PoolConfig()
+        .maxSize(10)
+        .maxIdleTimeMillis(300_000)
+        .maxLifetimeMillis(1_800_000)
+        .connectionTimeoutMillis(5000)
+        .validateOnBorrow(true)
+        .leakDetectionThresholdMillis(60_000))
 
-val pool = GenericObjectPool(factory).apply {
-    maxTotal = 10
-    maxIdle = 5
-    maxWaitMillis = 30_000
-}
-
-val conn = pool.borrowObject()
-try {
+pool.withConnection { conn ->
     conn.query("SELECT 1")
-} finally {
-    pool.returnObject(conn)
+}
+
+// Or use Kotlin's .use { } — close() returns the connection to the pool
+pool.acquire().use { conn ->
+    conn.query("SELECT 1")
 }
 ```
 
 </details>
 
-This works with any driver — just swap `PgConnection.connect(...)` for `MysqlConnection.connect(...)`.
+**Pool configuration options:**
+
+| Option                         | Default          | Description                                              |
+|--------------------------------|------------------|----------------------------------------------------------|
+| `maxSize`                      | 10               | Maximum number of connections                            |
+| `maxIdleTimeMillis`            | 600,000 (10 min) | Evict idle connections after this time. 0 = disabled     |
+| `maxLifetimeMillis`            | 0 (disabled)     | Evict connections after this total lifetime              |
+| `connectionTimeoutMillis`      | 30,000 (30s)     | Max wait time when pool is exhausted                     |
+| `maxWaitQueueSize`             | -1 (unbounded)   | Max threads waiting for a connection. -1 = unbounded     |
+| `poolCleanerPeriodMillis`      | 1,000 (1s)       | Background eviction check interval                       |
+| `validateOnBorrow`             | false            | Ping connections before handing them out                 |
+| `leakDetectionThresholdMillis` | 0 (disabled)     | Log a warning when a connection is held longer than this |
+
+Connections returned via `close()` go back to the pool (not closed). The pool tracks
+active connections and runs a background cleaner for eviction and leak detection.
+
+For heavier requirements, any generic object pool library
+(like [Apache Commons Pool 2](https://commons.apache.org/proper/commons-pool/)) would also work
+well.
+Note that HikariCP is JDBC-specific and thus not compatible.
+
+This works with any driver — just swap `PgConnection.connect(...)` for
+`MysqlConnection.connect(...)`.
 
 ## Recommended HTTP frameworks
 
-Djb uses blocking I/O and is designed for virtual threads — it pairs well with HTTP frameworks that are not mandatorily reactive/async:
+Djb uses blocking I/O and is designed for virtual threads — it pairs well with HTTP frameworks that
+are not mandatorily reactive/async:
 
-- **[http4k](https://www.http4k.org/)** — Functional, zero-reflection, tiny. The philosophical twin of djb on the HTTP side.
-- **[Javalin](https://javalin.io/)** — Minimal Jetty wrapper with built-in virtual thread support. Very popular in both Java and Kotlin.
-- **[Helidon SE](https://helidon.io/) 4+** — Oracle's lightweight framework. Versions 1–3 were reactive (Reactive Streams); 4.x was rewritten around virtual threads and blocking I/O.
-- **[Undertow](https://undertow.io/)** — Embedded, low-level. Blocking handlers run on a worker thread pool (or virtual threads).
-- **[Micronaut](https://micronaut.io/)** — Compile-time DI, GraalVM-first. Supports both reactive and imperative — controller methods can simply return values.
-- **[Spark](https://sparkjava.com/)** — Dead-simple Java micro-framework with the same "just enough" philosophy.
-- **[Jooby](https://jooby.io/)** — Modular micro-framework, explicit about dependencies, virtual thread support.
-- **`com.sun.net.httpserver`** — The JDK's built-in HTTP server. Zero dependencies, pairs naturally with djb's minimalism.
+- **[http4k](https://www.http4k.org/)** — Functional, zero-reflection, tiny. The philosophical twin
+  of djb on the HTTP side.
+- **[Javalin](https://javalin.io/)** — Minimal Jetty wrapper with built-in virtual thread support.
+  Very popular in both Java and Kotlin.
+- **[Helidon SE](https://helidon.io/) 4+** — Oracle's lightweight framework. Versions 1–3 were
+  reactive (Reactive Streams); 4.x was rewritten around virtual threads and blocking I/O.
+- **[Undertow](https://undertow.io/)** — Embedded, low-level. Blocking handlers run on a worker
+  thread pool (or virtual threads).
+- **[Micronaut](https://micronaut.io/)** — Compile-time DI, GraalVM-first. Supports both reactive
+  and imperative — controller methods can simply return values.
+- **[Spark](https://sparkjava.com/)** — Dead-simple Java micro-framework with the same "just enough"
+  philosophy.
+- **[Jooby](https://jooby.io/)** — Modular micro-framework, explicit about dependencies, virtual
+  thread support.
+- **`com.sun.net.httpserver`** — The JDK's built-in HTTP server. Zero dependencies, pairs naturally
+  with djb's minimalism.
 
-Frameworks like Spring Boot is opinionated about its own data stacks (Spring Data, Hibernate) and assumes a JDBC
+Frameworks like Spring Boot are opinionated about their own data stacks (Spring Data, Hibernate) and
+assume a JDBC
 `DataSource` integration for transactions, health checks, and connection management.
 
 Quarkus and the underlying Vert.x are reactive/async frameworks, so not a good fit for Djb:
@@ -603,40 +1045,60 @@ the Djb implementation is based on the `vertx-sql-client` package!
 
 ## Modules
 
-```
-djb-core                      Database-agnostic API (Connection, Row, RowSet, pipelining logic)
-djb-pg-client                 Postgres driver (wire protocol, auth, PG types)
-djb-mysql-client              MySQL driver (wire protocol, auth)
-djb-kotlin                    Kotlin extensions (kotlinx.serialization-based row decoding)
-djb-reflective-record-mapper  Reflection-based Java record mapping
-djb-javabean-mapper           Reflection-based JavaBean (POJO) mapping
-```
+* `djb-bom`                       BOM (Bill of Materials) for version alignment
+* `djb-core`                      Database-agnostic API (Connection, Row, RowSet, pipelining logic)
+* `djb-pg-client`                 Postgres driver (wire protocol, auth, PG types)
+* `djb-mysql-client`              MySQL driver (wire protocol, auth)
+* `djb-pool`                      Simple connection pool with idle/lifetime eviction
+* `djb-kotlin`                    Kotlin extensions (kotlinx.serialization-based row decoding)
+* `djb-record-mapper`             Reflection-based Java record mapping (GraalVM metadata included)
+* `djb-javabean-mapper`           Reflection-based JavaBean (POJO) mapping (GraalVM metadata
+  included)
 
 Each driver implements its own wire protocol by extending `BaseConnection`.
 The pipelining machinery, result types, and public API are shared.
+
+Use the BOM to align versions across modules:
+
+```kotlin
+dependencies {
+    implementation(platform("io.djb:djb-bom:0.1.0"))
+    implementation("io.djb:djb-pg-client")    // no version needed
+    implementation("io.djb:djb-pool")          // no version needed
+}
+```
 
 See [`examples/`](examples/) for runnable examples.
 
 ## Requirements and dependencies
 
 - JDK 21+
-- JSpecify
-- Only for `djb-pg-client`: `scram-client` (a tiny encryption library for SCRAM authentication)
+- JSpecify (3kB)
+- Only for `djb-pg-client`: `scram-client` a small (70kB) encryption library for SCRAM
+  authentication
+- Only for `djb-pool`: Apache `commons-pool2` a battle tested pool that's not JDBC/DataSource
+  specific
+- Only for `djb-kotlin`: `kotlin-stdlib` (for `kotlin.time` and `kotlin.uuid`) and
+  `kotlinx-serialization`
 
 ## Status
 
-Early development.
-Not yet published to Maven Central.
+Early development. Not yet published to Maven Central — the dependency coordinates above are
+*placeholders* for now.
 
 ## Todo
 
-* Kotlin support
-* Document Value-binding like in Jdbi (does this need to be pluggable?)
-* Document Result-mapping like in Jdbi (but fully pluggable: kotlin implements with kotlinx.serialization)
-* Add MapStruct implementation
-* Add ModelMapper implementation
-* Install original copyright notices for files that are very similar to their Vertx counterparts
+* Look into the testcases of our lib/jdbi RowMapper -- see if we have parity in Djb
+* Test for nested records
+* Double check we have all kotlin's time types implemented
+* Make explicit when it's positional mapping and when ist' "by name"
+* Consider abstracting over pg/mysql parameter injection syntax ($1 vs ?): may be a bad idea (what
+  doe Jdbi do?)
+* allow nested transactions
+* Publish to Maven Central
 
 ## License
 
 Apache 2.0, same as **Vert.x**.
+Massive respects to Vert.x, Claude Code and some of my internal library code for help and
+inspiration.

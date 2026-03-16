@@ -1,8 +1,9 @@
 package io.djb;
 
+
 /**
- * A cursor for progressively reading rows from a large result set.
- * Must be used within a transaction.
+ * A cursor for progressively reading rows from a large result set. Must be used within a
+ * transaction.
  *
  * <pre>{@code
  * conn.query("BEGIN");
@@ -17,13 +18,20 @@ package io.djb;
  */
 public interface Cursor extends AutoCloseable {
 
-    /** Fetch the next batch of rows. */
-    RowSet read(int count);
+  /**
+   * Fetch the next batch of rows.
+   */
 
-    /** Whether there are more rows to read. */
-    boolean hasMore();
+  RowSet read(int count);
 
-    /** Close the cursor and release server resources. */
-    @Override
-    void close();
+  /**
+   * Whether there are more rows to read.
+   */
+  boolean hasMore();
+
+  /**
+   * Close the cursor and release server resources.
+   */
+  @Override
+  void close();
 }

@@ -1,24 +1,27 @@
 package io.djb.pg.data;
 
-import java.util.Objects;
+
+import org.jspecify.annotations.NonNull;
 
 /**
- * A PostgreSQL point: (x, y).
+ * A Postgres point: (x, y).
  */
 public record Point(double x, double y) {
 
-    /** Parse from PG text format: "(x,y)" */
-    public static Point parse(String s) {
-        s = s.trim();
-        if (s.startsWith("(") && s.endsWith(")")) {
-            s = s.substring(1, s.length() - 1);
-        }
-        String[] parts = s.split(",");
-        return new Point(Double.parseDouble(parts[0].trim()), Double.parseDouble(parts[1].trim()));
+  /**
+   * Parse from PG text format: "(x,y)"
+   */
+  public static Point parse(String s) {
+    s = s.trim();
+    if (s.startsWith("(") && s.endsWith(")")) {
+      s = s.substring(1, s.length() - 1);
     }
+    String[] parts = s.split(",");
+    return new Point(Double.parseDouble(parts[0].trim()), Double.parseDouble(parts[1].trim()));
+  }
 
-    @Override
-    public String toString() {
-        return "(" + x + "," + y + ")";
-    }
+  @Override
+  public @NonNull String toString() {
+    return "(" + x + "," + y + ")";
+  }
 }

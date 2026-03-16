@@ -1,6 +1,9 @@
 package io.djb.kotlin
 
 import io.djb.Row
+import kotlinx.datetime.toKotlinLocalDate
+import kotlinx.datetime.toKotlinLocalDateTime
+import kotlinx.datetime.toKotlinLocalTime
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
@@ -14,7 +17,7 @@ import kotlinx.serialization.modules.SerializersModule
 private val defaultJson = Json { ignoreUnknownKeys = true }
 
 /**
- * A kotlinx.serialization [Decoder] that reads from djb's [Row].
+ * A `kotlinx.serialization` [Decoder] that reads from Djb's [Row].
  *
  * Since djb stores values as raw bytes (text or binary format) and [Row] already
  * provides typed getters, this is simpler than the JDBC-based version: no type
@@ -27,7 +30,7 @@ private val defaultJson = Json { ignoreUnknownKeys = true }
 class RowDecoder(
     private val row: Row,
     override val serializersModule: SerializersModule = SerializersModule {},
-    private val startColumn: Int = 0,
+    startColumn: Int = 0,
     private val json: Json = defaultJson,
     private val endCallback: (Int) -> Unit = {}
 ) : Decoder, CompositeDecoder {
@@ -58,7 +61,11 @@ class RowDecoder(
         return null
     }
 
-    private fun <T> handleNullableValue(descriptor: SerialDescriptor, index: Int, orElse: () -> T): T? {
+    private fun <T> handleNullableValue(
+        descriptor: SerialDescriptor,
+        index: Int,
+        orElse: () -> T
+    ): T? {
         if (!row.isNull(columnIndex)) return orElse()
         if (descriptor.isElementOptional(index) || descriptor.getElementDescriptor(index).isNullable) {
             columnIndex++
@@ -66,7 +73,7 @@ class RowDecoder(
         }
         throw SerializationException(
             "NULL value encountered for non-nullable field '${descriptor.getElementName(index)}' " +
-                "at column $columnIndex"
+                    "at column $columnIndex"
         )
     }
 
@@ -82,6 +89,7 @@ class RowDecoder(
     override fun decodeDouble(): Double = row.getDouble(columnIndex++) ?: throw nullError()
     override fun decodeChar(): Char = decodeString().singleOrNull()
         ?: throw SerializationException("Expected single character")
+
     override fun decodeString(): String = row.getString(columnIndex++) ?: throw nullError()
     override fun decodeInline(descriptor: SerialDescriptor): Decoder = this
 
@@ -102,15 +110,21 @@ class RowDecoder(
     // ---------------------------------------------------------
     // CompositeDecoder element dispatch
     // ---------------------------------------------------------
-    override fun decodeBooleanElement(descriptor: SerialDescriptor, index: Int): Boolean = decodeBoolean()
+    override fun decodeBooleanElement(descriptor: SerialDescriptor, index: Int): Boolean =
+        decodeBoolean()
+
     override fun decodeByteElement(descriptor: SerialDescriptor, index: Int): Byte = decodeByte()
     override fun decodeShortElement(descriptor: SerialDescriptor, index: Int): Short = decodeShort()
     override fun decodeIntElement(descriptor: SerialDescriptor, index: Int): Int = decodeInt()
     override fun decodeLongElement(descriptor: SerialDescriptor, index: Int): Long = decodeLong()
     override fun decodeFloatElement(descriptor: SerialDescriptor, index: Int): Float = decodeFloat()
-    override fun decodeDoubleElement(descriptor: SerialDescriptor, index: Int): Double = decodeDouble()
+    override fun decodeDoubleElement(descriptor: SerialDescriptor, index: Int): Double =
+        decodeDouble()
+
     override fun decodeCharElement(descriptor: SerialDescriptor, index: Int): Char = decodeChar()
-    override fun decodeStringElement(descriptor: SerialDescriptor, index: Int): String = decodeString()
+    override fun decodeStringElement(descriptor: SerialDescriptor, index: Int): String =
+        decodeString()
+
     override fun decodeInlineElement(descriptor: SerialDescriptor, index: Int): Decoder = this
 
     override fun <T> decodeSerializableElement(
@@ -142,12 +156,12 @@ class RowDecoder(
             }
         }
 
-        // kotlin.time.Instant
-        if (childDescriptor.serialName == "kotlin.time.Instant") {
+        // Kotlin time types: parse from string column
+        parseTimeType(childDescriptor.serialName)?.let { parse ->
             val value = row.getString(columnIndex++)
-                ?: throw SerializationException("Instant column cannot be null at index $index")
+                ?: throw SerializationException("${childDescriptor.serialName} column cannot be null at index $index")
             @Suppress("UNCHECKED_CAST")
-            return parseInstant(value) as T
+            return parse(value) as T
         }
 
         // Nested data classes: flatten columns into nested structure
@@ -189,12 +203,13 @@ class RowDecoder(
             }
         }
 
-        // kotlin.time.Instant
-        if (childDesc.serialName == "kotlin.time.Instant" || deserializer.descriptor.serialName == "kotlin.time.Instant") {
+        // Kotlin time types: parse from string column (nullable)
+        (parseTimeType(childDesc.serialName)
+            ?: parseTimeType(deserializer.descriptor.serialName))?.let { parse ->
             return handleNullableValue(descriptor, index) {
                 val value = row.getString(columnIndex++) ?: return@handleNullableValue null
                 @Suppress("UNCHECKED_CAST")
-                parseInstant(value) as T
+                parse(value) as T
             }
         }
 
@@ -227,12 +242,30 @@ class RowDecoder(
                 else -> 1
             }
         }
+
         else -> 1
     }
 }
 
+/** Returns a parser for Kotlin time types matched by serialName, or null if not a time type. */
+private fun parseTimeType(serialName: String): ((String) -> Any)? = when (serialName) {
+    "kotlin.time.Instant" -> ::parseInstant
+    "kotlinx.datetime.LocalDate" -> { v -> java.time.LocalDate.parse(v).toKotlinLocalDate() }
+    "kotlinx.datetime.LocalDateTime" -> { v ->
+        java.time.LocalDateTime.parse(
+            v.replaceFirst(
+                ' ',
+                'T'
+            )
+        ).toKotlinLocalDateTime()
+    }
+
+    "kotlinx.datetime.LocalTime" -> { v -> java.time.LocalTime.parse(v).toKotlinLocalTime() }
+    else -> null
+}
+
 /**
- * Parse a PostgreSQL text-format timestamp string into a kotlin.time.Instant.
+ * Parse a Postgres text-format timestamp string into a kotlin.time.Instant.
  * Handles PG format like "2026-02-04 04:31:16.935337+01" by normalizing to ISO-8601.
  */
 internal fun parseInstant(value: String): kotlin.time.Instant {
@@ -246,10 +279,10 @@ internal fun parseInstant(value: String): kotlin.time.Instant {
 }
 
 /**
- * Parse a PostgreSQL text-format array like `{val1,val2,val3}` into a List<String>.
+ * Parse a Postgres text-format array like `{val1,val2,val3}` into a List<String>.
  */
 internal fun parsePgArray(value: String): List<String> {
-    if (value == "{}" || value == "{}") return emptyList()
+    if (value == "{}") return emptyList()
     val inner = value.removePrefix("{").removeSuffix("}")
     if (inner.isEmpty()) return emptyList()
     // Simple split — doesn't handle quoted/escaped values with commas

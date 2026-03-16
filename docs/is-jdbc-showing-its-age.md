@@ -1,12 +1,16 @@
 ## JDBC Is Definitely Showing Its Age
 
-Yes — the fact that Vert.x had to **bypass JDBC entirely** to build a proper async DB client is a pretty clear indictment.
+Yes — the fact that Vert.x had to **bypass JDBC entirely** to build a proper async DB client is a
+pretty clear
+indictment.
 
 ---
 
 ### What Vert.x SQL Client Does Instead
 
-Rather than wrapping JDBC, `vertx-sql-client` implements the **database wire protocol directly** for Postgres, MySQL and DB2:
+Rather than wrapping JDBC, `vertx-sql-client` implements the **database wire protocol directly** for
+Postgres, MySQL and
+DB2:
 
 ```
 JDBC approach:
@@ -16,7 +20,8 @@ Vert.x approach:
   Your Code → Vert.x SQL Client → Postgre/MySQL/DB2
 ```
 
-It speaks Postgres [wire protocol](https://www.postgresql.org/docs/current/protocol.html) (or MySQL's)
+It speaks Postgres [wire protocol](https://www.postgresql.org/docs/current/protocol.html) (or
+MySQL's)
 directly over non-blocking sockets. No JDBC involved at any layer.
 
 ```kotlin
@@ -33,7 +38,9 @@ pool.preparedQuery("SELECT * FROM orders WHERE id = $1")
 **1. No async from the ground up**
 
 JDBC was designed before non-blocking I/O.
-R2DBC was created in 2018 specifically to fill this gap, but it's a completely separate spec rather than an evolution of JDBC.
+R2DBC was created in 2018 specifically to fill this gap, but it's a completely separate spec rather
+than an evolution of
+JDBC.
 
 ---
 
@@ -50,7 +57,9 @@ try {
 }
 ```
 
-Modern Java (and every ORM) wraps these into unchecked exceptions immediately. The checked exception model is widely considered a mistake in hindsight.
+Modern Java (and every ORM) wraps these into unchecked exceptions immediately. The checked exception
+model is widely
+considered a mistake in hindsight.
 
 ---
 
@@ -73,7 +82,8 @@ try {
 }
 ```
 
-`try-with-resources` (Java 7) helped, but the underlying design still requires manual lifecycle management.
+`try-with-resources` (Java 7) helped, but the underlying design still requires manual lifecycle
+management.
 
 ---
 
@@ -86,7 +96,8 @@ rs.getString("name") // read current row
 rs.next();           // move again
 ```
 
-This is a very 1990s API design — stateful, imperative, not composable with streams or functional patterns.
+This is a very 1990s API design — stateful, imperative, not composable with streams or functional
+patterns.
 There's no way to get a `List<Row>` back directly.
 
 ---
@@ -112,7 +123,8 @@ In 2025 you still need HikariCP as a separate dependency to do something fundame
 
 **7. No support for "pipelining"**
 
-Cannot send multiple queries in one go, which can greatly reduce the number of db round trips needed within
+Cannot send multiple queries in one go, which can greatly reduce the number of db round trips needed
+within
 an HTTP request cycle (assuming a web application).
 
 ---
@@ -128,7 +140,10 @@ an HTTP request cycle (assuming a web application).
 
 ### TL;DR
 
-> JDBC is showing its age badly — no async, checked exceptions, stateful cursors, stringly-typed access,
-> and no pooling. Vert.x bypassing it entirely isn't a workaround, it's the **correct architectural decision** 
-> for a reactive stack. That said, JDBC's ecosystem weight means it'll be around for decades more — especially as
+> JDBC is showing its age badly — no async, checked exceptions, stateful cursors, stringly-typed
+> access,
+> and no pooling. Vert.x bypassing it entirely isn't a workaround, it's the **correct architectural
+decision**
+> for a reactive stack. That said, JDBC's ecosystem weight means it'll be around for decades more —
+> especially as
 > virtual threads make its blocking nature less painful.

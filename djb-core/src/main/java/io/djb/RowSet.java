@@ -4,93 +4,124 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
-
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Result of executing a SQL statement. Contains rows (if any) and metadata.
+ * The result of executing a single SQL statement. Contains rows (for SELECT queries), metadata
+ * (column descriptors, rows affected count), and optionally an error (for failed statements in a
+ * pipelined batch).
+ *
+ * <p>Implements {@link Iterable}{@code <Row>} so results can be used in enhanced for-loops:
+ * <pre>{@code
+ * for (Row row : conn.query("SELECT * FROM users")) {
+ *     System.out.println(row.getString("name"));
+ * }
+ * }</pre>
+ *
+ * <p>In pipelined execution ({@link Connection#flush()}), each RowSet may independently
+ * succeed or fail. Check {@link #getError()} is not null before accessing rows, or let
+ * the getters throw automatically via the internal {@code checkError()} guard.
+ *
+ * @see Row
+ * @see Connection#query(String)
+ * @see Connection#flush()
  */
 public final class RowSet implements Iterable<Row> {
 
-    private final List<Row> rows;
-    private final List<ColumnDescriptor> columns;
-    private final int rowsAffected;
-    private final @Nullable DbException error;
+  @NonNull
+  private final List<Row> rows;
 
-    public RowSet(List<Row> rows, List<ColumnDescriptor> columns, int rowsAffected) {
-        this.rows = rows;
-        this.columns = columns;
-        this.rowsAffected = rowsAffected;
-        this.error = null;
-    }
+  @NonNull
+  private final List<ColumnDescriptor> columns;
 
-    /** Create a RowSet representing a failed statement in a pipeline. */
-    public RowSet(DbException error) {
-        this.rows = Collections.emptyList();
-        this.columns = Collections.emptyList();
-        this.rowsAffected = 0;
-        this.error = error;
-    }
+  private final int rowsAffected;
 
-    private void checkError() {
-        if (error != null) throw error;
-    }
+  @Nullable
+  private final DbException error;
 
-    public int size() {
-        checkError();
-        return rows.size();
-    }
+  public RowSet(
+      @NonNull List<Row> rows,
+      @NonNull List<ColumnDescriptor> columns,
+      int rowsAffected
+  ) {
+    this.rows = rows;
+    this.columns = columns;
+    this.rowsAffected = rowsAffected;
+    this.error = null;
+  }
 
-    public int rowsAffected() {
-        checkError();
-        return rowsAffected;
-    }
+  /**
+   * Create a RowSet representing a failed statement in a pipeline.
+   */
+  public RowSet(@NonNull DbException error) {
+    this.rows = Collections.emptyList();
+    this.columns = Collections.emptyList();
+    this.rowsAffected = 0;
+    this.error = error;
+  }
 
-    public List<ColumnDescriptor> columnDescriptors() {
-        checkError();
-        return columns;
+  private void checkError() {
+    if (error != null) {
+      String msg = error.getMessage();
+      throw new DbException(error.severity(), error.sqlState(), msg != null ? msg : "", error);
     }
+  }
 
-    public Row first() {
-        checkError();
-        if (rows.isEmpty()) {
-            throw new IllegalStateException("No rows in result");
-        }
-        return rows.getFirst();
-    }
+  public int size() {
+    checkError();
+    return rows.size();
+  }
 
-    public Stream<Row> stream() {
-        checkError();
-        return rows.stream();
-    }
+  public int rowsAffected() {
+    checkError();
+    return rowsAffected;
+  }
 
-    @Override
-    public Iterator<Row> iterator() {
-        checkError();
-        return rows.iterator();
-    }
+  public List<ColumnDescriptor> columnDescriptors() {
+    checkError();
+    return columns;
+  }
 
-    /**
-     * Map all rows to typed objects using the given mapper.
-     */
-    public <T> List<T> mapTo(RowMapper<T> mapper) {
-        checkError();
-        return rows.stream().map(mapper::map).toList();
+  public Row first() {
+    checkError();
+    if (rows.isEmpty()) {
+      throw new IllegalStateException("No rows in result");
     }
+    return rows.getFirst();
+  }
 
-    /**
-     * Map the first row to a typed object using the given mapper.
-     * @throws IllegalStateException if no rows
-     */
-    public <T> T mapFirst(RowMapper<T> mapper) {
-        return mapper.map(first());
-    }
+  public Stream<Row> stream() {
+    checkError();
+    return rows.stream();
+  }
 
-    public boolean hasError() {
-        return error != null;
-    }
+  @Override
+  @NonNull
+  public Iterator<Row> iterator() {
+    checkError();
+    return rows.iterator();
+  }
 
-    public @Nullable DbException getError() {
-        return error;
-    }
+  /**
+   * Map all rows to typed objects using the given mapper.
+   */
+  public <T> List<T> mapTo(RowMapper<T> mapper) {
+    checkError();
+    return rows.stream().map(mapper::map).toList();
+  }
+
+  /**
+   * Map the first row to a typed object using the given mapper.
+   *
+   * @throws IllegalStateException if no rows
+   */
+  public <T> T mapFirst(RowMapper<T> mapper) {
+    return mapper.map(first());
+  }
+
+  @Nullable
+  public DbException getError() {
+    return error;
+  }
 }

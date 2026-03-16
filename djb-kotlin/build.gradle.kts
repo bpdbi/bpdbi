@@ -7,6 +7,7 @@ plugins {
 dependencies {
     api(project(":djb-core"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.2")
 
     testImplementation(project(":djb-pg-client"))
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
@@ -17,6 +18,7 @@ dependencies {
 
 kotlin {
     compilerOptions {
+        allWarningsAsErrors = true
         optIn.addAll(
             "kotlin.uuid.ExperimentalUuidApi",
             "kotlin.time.ExperimentalTime",

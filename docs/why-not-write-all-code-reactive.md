@@ -11,30 +11,32 @@ Reactive code is genuinely harder to read and write:
 ```java
 // Blocking — obvious what's happening
 public Invoice generateInvoice(long orderId) {
-    Order order = orderRepo.findById(orderId);
-    Customer customer = customerRepo.findById(order.getCustomerId());
-    List<Item> items = itemRepo.findByOrderId(orderId);
-    return invoiceService.build(order, customer, items);
+  Order order = orderRepo.findById(orderId);
+  Customer customer = customerRepo.findById(order.getCustomerId());
+  List<Item> items = itemRepo.findByOrderId(orderId);
+  return invoiceService.build(order, customer, items);
 }
 
 // Reactive — same logic, now good luck
 public Uni<Invoice> generateInvoice(long orderId) {
-    return orderRepo.findById(orderId)
-        .flatMap(order ->
-            Uni.combine().all()
-               .unis(
-                   customerRepo.findById(order.getCustomerId()),
-                   itemRepo.findByOrderId(orderId)
-               )
-               .asTuple()
-               .map(tuple -> invoiceService.build(
-                   order, tuple.getItem1(), tuple.getItem2()
-               ))
-        );
+  return orderRepo.findById(orderId)
+      .flatMap(order ->
+                   Uni.combine().all()
+                       .unis(
+                           customerRepo.findById(order.getCustomerId()),
+                           itemRepo.findByOrderId(orderId)
+                       )
+                       .asTuple()
+                       .map(tuple -> invoiceService.build(
+                           order, tuple.getItem1(), tuple.getItem2()
+                       ))
+      );
 }
 ```
 
-This is a **simple** example. Real business logic with conditionals, loops, and error handling becomes significantly worse.
+This is a **simple** example. Real business logic with conditionals, loops, and error handling
+becomes significantly
+worse.
 
 ---
 
@@ -56,13 +58,16 @@ at ... 30 more framework frames ...
 at com.myapp.InvoiceService.build(InvoiceService.java:42)  // ← buried
 ```
 
-The actual error source is buried under framework internals. Mutiny and Reactor both have tooling to help, but it's never as clean as blocking code.
+The actual error source is buried under framework internals. Mutiny and Reactor both have tooling to
+help, but it's
+never as clean as blocking code.
 
 ---
 
 ### 3. The "Reactive Plague" — It Spreads Everywhere
 
-Reactive is **infectious**. Once one layer goes reactive, pressure builds to make everything reactive:
+Reactive is **infectious**. Once one layer goes reactive, pressure builds to make everything
+reactive:
 
 ```java
 // You made your DB layer reactive...
@@ -77,12 +82,13 @@ Uni<Response> getInvoice(long id);
 // Now your tests must handle async...
 @Test
 void testGetInvoice() {
-    Invoice result = generateInvoice(1L)
-        .await().indefinitely(); // awkward in tests
+  Invoice result = generateInvoice(1L)
+      .await().indefinitely(); // awkward in tests
 }
 ```
 
-There's no clean boundary — you can't easily mix blocking and reactive layers without risking blocking the event loop.
+There's no clean boundary — you can't easily mix blocking and reactive layers without risking
+blocking the event loop.
 
 ---
 
@@ -94,14 +100,16 @@ The most dangerous reactive mistake: accidentally blocking on an event loop thre
 // NEVER do this in a reactive handler
 @GET
 public Uni<String> getResult() {
-    return Uni.createFrom().item(() -> {
-        Thread.sleep(5000);           // ❌ BLOCKS the event loop
-        return legacyService.call();  // ❌ blocking legacy library
-    });
+  return Uni.createFrom().item(() -> {
+    Thread.sleep(5000);           // ❌ BLOCKS the event loop
+    return legacyService.call();  // ❌ blocking legacy library
+  });
 }
 ```
 
-This doesn't throw an error — it **silently kills throughput** for every other request. Vert.x has a blocked thread checker, but it's easy to miss. With blocking code, this problem literally cannot happen.
+This doesn't throw an error — it **silently kills throughput** for every other request. Vert.x has a
+blocked thread
+checker, but it's easy to miss. With blocking code, this problem literally cannot happen.
 
 ---
 
@@ -120,8 +128,14 @@ Every blocking dependency becomes a problem you have to work around with thread 
 ```java
 // Wrapping a blocking library call
 return Uni.createFrom()
-    .item(() -> legacyBlockingClient.call())  // has to run on worker pool
-    .runSubscriptionOn(Infrastructure.getDefaultWorkerPool()); // boilerplate
+    .
+
+item(() ->legacyBlockingClient.
+
+call())  // has to run on worker pool
+    .
+
+runSubscriptionOn(Infrastructure.getDefaultWorkerPool()); // boilerplate
 ```
 
 ---
@@ -136,7 +150,8 @@ Reactive requires understanding concepts that aren't obvious:
 - Schedulers and which thread you're on
 - Subscription lifecycle and memory leaks from un-cancelled subscriptions
 
-Junior developers and teams new to reactive **slow down significantly**. Bugs are subtler and harder to reason about.
+Junior developers and teams new to reactive **slow down significantly**. Bugs are subtler and harder
+to reason about.
 
 ---
 
@@ -146,17 +161,17 @@ Junior developers and teams new to reactive **slow down significantly**. Bugs ar
 // Blocking test — simple
 @Test
 void testOrderService() {
-    Order order = orderService.findById(1L); // just works
-    assertEquals("CONFIRMED", order.getStatus());
+  Order order = orderService.findById(1L); // just works
+  assertEquals("CONFIRMED", order.getStatus());
 }
 
 // Reactive test — more ceremony
 @Test
 void testOrderService() {
-    orderService.findById(1L)
-        .subscribe().withSubscriber(UniAssertSubscriber.create())
-        .awaitItem()
-        .assertItem(order -> assertEquals("CONFIRMED", order.getStatus()));
+  orderService.findById(1L)
+      .subscribe().withSubscriber(UniAssertSubscriber.create())
+      .awaitItem()
+      .assertItem(order -> assertEquals("CONFIRMED", order.getStatus()));
 }
 ```
 
@@ -164,16 +179,23 @@ void testOrderService() {
 
 ### When to Actually Use It
 
-| Use Reactive | Use Blocking (or Virtual Threads) |
-|---|---|
-| Very high concurrency (10k+ simultaneous connections) | Typical enterprise CRUD apps |
-| WebSockets / SSE / streaming | Complex business logic |
-| API gateway / proxy patterns | Teams without reactive experience |
-| Known thread exhaustion problems | Heavy use of JDBC/legacy libraries |
-| Fine-grained backpressure needs | Rapid prototyping |
+| Use Reactive                                          | Use Blocking (or Virtual Threads)  |
+|-------------------------------------------------------|------------------------------------|
+| Very high concurrency (10k+ simultaneous connections) | Typical enterprise CRUD apps       |
+| WebSockets / SSE / streaming                          | Complex business logic             |
+| API gateway / proxy patterns                          | Teams without reactive experience  |
+| Known thread exhaustion problems                      | Heavy use of JDBC/legacy libraries |
+| Fine-grained backpressure needs                       | Rapid prototyping                  |
 
 ---
 
 ### TL;DR
 
-> Reactive is a **trade** — you give up code clarity, debuggability, ecosystem compatibility, and team velocity in exchange for better throughput under extreme concurrency. For most business applications, **Java 21 virtual threads give you 90% of the benefit for free**, with none of the complexity. Reactive makes sense at the edges: streaming, massive WebSocket scale, or API gateways — not in every service in your org.
+> Reactive is a **trade** — you give up code clarity, debuggability, ecosystem compatibility, and
+> team velocity in
+> exchange for better throughput under extreme concurrency. For most business applications, **Java
+21 virtual threads
+give
+you 90% of the benefit for free**, with none of the complexity. Reactive makes sense at the edges:
+> streaming, massive
+> WebSocket scale, or API gateways — not in every service in your org.

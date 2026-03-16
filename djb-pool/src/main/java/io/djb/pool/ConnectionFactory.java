@@ -8,6 +8,8 @@ import io.djb.Connection;
 @FunctionalInterface
 public interface ConnectionFactory {
 
-    /** Create a new database connection. */
-    Connection create();
+  /**
+   * Create a new database connection.
+   */
+  Connection create();
 }

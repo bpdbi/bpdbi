@@ -5,6 +5,10 @@ build/
 
 # IntelliJ IDEA
 .idea/
+!.idea/codeStyles/
+!.idea/dictionaries/
+.idea/dictionaries/*
+!.idea/dictionaries/project.xml
 *.iml
 *.ipr
 *.iws

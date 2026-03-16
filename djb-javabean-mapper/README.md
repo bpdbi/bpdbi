@@ -1,6 +1,17 @@
 # djb-javabean-mapper
 
-A reflection-based `RowMapper` for [djb](../) that automatically maps query result rows to JavaBeans (POJOs with a no-arg constructor and setter methods).
+A reflection-based `RowMapper` for [djb](../) that automatically maps query result rows to JavaBeans
+(POJOs with a no-arg constructor and setter methods) using `java.beans.Introspector` (reflection).
+
+## Setup
+
+```kotlin
+dependencies {
+    implementation(platform("io.djb:djb-bom:0.1.0"))
+    implementation("io.djb:djb-javabean-mapper")
+    implementation("io.djb:djb-pg-client")  // or djb-mysql-client
+}
+```
 
 ## Usage
 
@@ -22,7 +33,7 @@ public class User {
     public void setEmail(String email) { this.email = email; }
 }
 
-RowMapper<User> mapper = JavaBeanMapper.of(User.class);
+RowMapper<User> mapper = JavaBeanRowMapper.of(User.class);
 List<User> users = conn.query("SELECT id, name, email FROM users").mapTo(mapper);
 ```
 
@@ -43,7 +54,7 @@ val users: List<User> = conn.queryAs("SELECT id, name, email FROM users")
 
 ```java
 User user = conn.query("SELECT id, name, email FROM users WHERE id = 1")
-    .mapFirst(JavaBeanMapper.of(User.class));
+    .mapFirst(JavaBeanRowMapper.of(User.class));
 ```
 
 <details><summary>Kotlin equivalent (using djb-kotlin)</summary>
@@ -56,35 +67,39 @@ val user: User? = conn.queryOneAs("SELECT id, name, email FROM users WHERE id = 
 
 ### How it works
 
-The mapper uses `java.beans.Introspector` to discover writable properties (those with a setter method). Property names are matched to column names. Properties without a setter are silently skipped.
+The mapper uses `java.beans.Introspector` to discover writable properties (those with a setter
+method). Property names
+are matched to column names. Properties without a setter are silently skipped.
 
 ### Supported types
 
-| Java type          | Row getter used        |
-|--------------------|------------------------|
-| `String`           | `getString()`          |
-| `int` / `Integer`  | `getInteger()`         |
-| `long` / `Long`    | `getLong()`            |
-| `short` / `Short`  | `getShort()`           |
-| `float` / `Float`  | `getFloat()`           |
-| `double` / `Double`| `getDouble()`          |
-| `boolean` / `Boolean` | `getBoolean()`      |
-| `BigDecimal`       | `getBigDecimal()`      |
-| `UUID`             | `getUUID()`            |
-| `byte[]`           | `getBytes()`           |
-| `LocalDate`        | `getLocalDate()`       |
-| `LocalTime`        | `getLocalTime()`       |
-| `LocalDateTime`    | `getLocalDateTime()`   |
-| `OffsetDateTime`   | `getOffsetDateTime()`  |
+| Java type             | Row getter used       |
+|-----------------------|-----------------------|
+| `String`              | `getString()`         |
+| `int` / `Integer`     | `getInteger()`        |
+| `long` / `Long`       | `getLong()`           |
+| `short` / `Short`     | `getShort()`          |
+| `float` / `Float`     | `getFloat()`          |
+| `double` / `Double`   | `getDouble()`         |
+| `boolean` / `Boolean` | `getBoolean()`        |
+| `BigDecimal`          | `getBigDecimal()`     |
+| `UUID`                | `getUUID()`           |
+| `byte[]`              | `getBytes()`          |
+| `LocalDate`           | `getLocalDate()`      |
+| `LocalTime`           | `getLocalTime()`      |
+| `LocalDateTime`       | `getLocalDateTime()`  |
+| `OffsetDateTime`      | `getOffsetDateTime()` |
 
 ### Null handling
 
 - **Boxed types** (`Integer`, `String`, etc.) are set to `null` when the column is SQL NULL.
-- **Primitive types** (`int`, `long`, etc.) default to their zero value (`0`, `0L`, `false`, etc.) when the column is SQL NULL.
+- **Primitive types** (`int`, `long`, etc.) default to their zero value (`0`, `0L`, `false`, etc.)
+  when the column is
+  SQL NULL.
 
 ### When to use this vs. other mappers
 
-- **Java records** → use `djb-reflective-record-mapper` (simpler, immutable)
+- **Java records** → use `djb-record-mapper` (simpler, immutable, reflection-based)
 - **Kotlin data classes** → use `djb-kotlin` (compile-time, no reflection)
 - **Existing JavaBean POJOs** → use this module
 - **One-off mapping** → use a `RowMapper` lambda directly:

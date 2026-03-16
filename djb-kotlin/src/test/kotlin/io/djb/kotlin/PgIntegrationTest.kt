@@ -2,11 +2,13 @@ package io.djb.kotlin
 
 import io.djb.pg.PgConnection
 import kotlinx.serialization.Serializable
-import org.junit.jupiter.api.*
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
 import org.testcontainers.containers.PostgreSQLContainer
 
-/** Integration tests for djb-kotlin with a real PostgreSQL database. */
+/** Integration tests for djb-kotlin with a real Postgres database. */
 class PgIntegrationTest {
 
     companion object {
@@ -43,9 +45,6 @@ class PgIntegrationTest {
     data class UserNullable(val id: Int, val name: String, val email: String?)
 
     @Serializable
-    data class UserAddress(val id: Int, val name: String, val street: String, val city: String)
-
-    @Serializable
     data class Address(val street: String, val city: String)
 
     @Serializable
@@ -55,10 +54,10 @@ class PgIntegrationTest {
     data class OrderMeta(val source: String, val priority: Int)
 
     @Serializable
-    data class OrderRow(val id: Int, val user_id: Int, @SqlJsonValue val meta: OrderMeta)
+    data class OrderRow(val id: Int, val userId: Int, @SqlJsonValue val meta: OrderMeta)
 
     @Serializable
-    data class OrderRowNullable(val id: Int, val user_id: Int, @SqlJsonValue val meta: OrderMeta?)
+    data class OrderRowNullable(val id: Int, val userId: Int, @SqlJsonValue val meta: OrderMeta?)
 
     @Serializable
     enum class Status { ACTIVE, INACTIVE }
@@ -147,7 +146,10 @@ class PgIntegrationTest {
             ).deserializeToList<UserWithAddress>()
 
             assertEquals(1, results.size)
-            assertEquals(UserWithAddress(1, "Alice", Address("123 Main St", "Springfield")), results[0])
+            assertEquals(
+                UserWithAddress(1, "Alice", Address("123 Main St", "Springfield")),
+                results[0]
+            )
         }
     }
 
@@ -213,7 +215,8 @@ class PgIntegrationTest {
         connect().use { conn ->
             conn.query("CREATE TEMP TABLE users (id int, name text, email text)")
 
-            val user: User? = conn.queryOneAs("SELECT id, name, email FROM users WHERE id = $1", 999)
+            val user: User? =
+                conn.queryOneAs("SELECT id, name, email FROM users WHERE id = $1", 999)
             assertNull(user)
         }
     }
