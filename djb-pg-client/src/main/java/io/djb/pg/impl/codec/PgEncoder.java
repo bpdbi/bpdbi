@@ -104,8 +104,7 @@ public final class PgEncoder {
     }
 
     /**
-     * Write Bind message. Parameters are encoded as text format for simplicity in MVP.
-     * Binary encoding can be added later for performance.
+     * Write Bind message with text parameters and binary results.
      */
     public void writeBind(String[] paramValues) {
         writeBind("", "", paramValues);
@@ -117,7 +116,7 @@ public final class PgEncoder {
         buf.writeInt(0); // length placeholder
         buf.writeCString(portal);
         buf.writeCString(statementName);
-        // Parameter format codes: all text (0)
+        // Parameter format codes: all text (0) — text params for now
         buf.writeShort(0); // 0 = use default (text) for all
         // Parameter values
         int paramCount = paramValues == null ? 0 : paramValues.length;
@@ -131,8 +130,9 @@ public final class PgEncoder {
                 buf.writeBytes(bytes);
             }
         }
-        // Result format codes: all text (0)
-        buf.writeShort(0); // 0 = use default (text) for all results
+        // Result format codes: request all binary (1)
+        buf.writeShort(1); // 1 format code applies to all columns
+        buf.writeShort(1); // binary format
         buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
     }
 

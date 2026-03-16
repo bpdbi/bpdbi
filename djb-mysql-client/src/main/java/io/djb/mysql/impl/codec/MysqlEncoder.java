@@ -142,6 +142,20 @@ public final class MysqlEncoder {
     }
 
     /**
+     * Write an SSL request packet (short handshake response with CLIENT_SSL flag set).
+     * Sent before upgrading the connection to SSL/TLS.
+     */
+    public void writeSslRequest(int clientFlags, int collationId) {
+        int start = buf.writerIndex();
+        beginPacket();
+        writeIntLE(clientFlags);
+        writeIntLE(PACKET_PAYLOAD_LIMIT);
+        buf.writeByte(collationId);
+        writeZero(23); // filler
+        finishPacket(start);
+    }
+
+    /**
      * Write a COM_QUERY packet (simple text query).
      */
     public void writeComQuery(String sql, Charset charset) {
@@ -166,13 +180,62 @@ public final class MysqlEncoder {
     }
 
     /**
-     * Write a COM_STMT_EXECUTE packet with text-encoded parameters.
-     * For simplicity, we use COM_QUERY with parameter interpolation in the MVP.
-     * This method sends a COM_QUERY with the SQL as-is (parameters already interpolated).
+     * Write a COM_STMT_EXECUTE packet with binary-encoded parameters.
+     * Uses the MySQL binary protocol (COM_STMT_EXECUTE, 0x17).
+     */
+    public void writeComStmtExecute(int statementId, byte[] paramTypes, byte[][] paramValues) {
+        int start = buf.writerIndex();
+        beginPacket();
+        buf.writeByte(COM_STMT_EXECUTE);
+        // Statement ID (4 bytes LE)
+        writeIntLE(statementId);
+        // Cursor type: no cursor
+        buf.writeByte(0x00);
+        // Iteration count: always 1
+        writeIntLE(1);
+
+        int numParams = paramTypes == null ? 0 : paramTypes.length / 2;
+        if (numParams > 0) {
+            // Null bitmap
+            int bitmapLen = (numParams + 7) >> 3;
+            byte[] nullBitmap = new byte[bitmapLen];
+            for (int i = 0; i < numParams; i++) {
+                if (paramValues[i] == null) {
+                    nullBitmap[i >> 3] |= (byte) (1 << (i & 7));
+                }
+            }
+            buf.writeBytes(nullBitmap);
+
+            // Send parameter types (new-params-bound flag = 1)
+            buf.writeByte(1);
+            buf.writeBytes(paramTypes);
+
+            // Parameter values
+            for (int i = 0; i < numParams; i++) {
+                if (paramValues[i] != null) {
+                    buf.writeBytes(paramValues[i]);
+                }
+            }
+        }
+
+        finishPacket(start);
+    }
+
+    /**
+     * Write a COM_STMT_CLOSE packet. Fire-and-forget (no response).
+     */
+    public void writeComStmtClose(int statementId) {
+        int start = buf.writerIndex();
+        beginPacket();
+        buf.writeByte(COM_STMT_CLOSE);
+        writeIntLE(statementId);
+        finishPacket(start);
+    }
+
+    /**
+     * Write a COM_STMT_EXECUTE using text interpolation (fallback for pipelining).
      */
     public void writeComStmtExecuteAsQuery(String sql, String[] params, Charset charset) {
-        // For MVP: use COM_QUERY with MySQL ? placeholder replaced by escaped values
-        // This avoids the complexity of the binary protocol for now
         String interpolated = interpolateParams(sql, params);
         writeComQuery(interpolated, charset);
     }

@@ -6,19 +6,19 @@ import java.util.List;
 /**
  * A PostgreSQL path. Can be open [(x1,y1),...] or closed ((x1,y1),...).
  */
-public record Path(List<Point> points, boolean closed) {
+public record Path(boolean isOpen, List<Point> points) {
 
     public static Path parse(String s) {
         s = s.trim();
-        boolean closed;
+        boolean isOpen;
         if (s.startsWith("(")) {
-            closed = true;
+            isOpen = false;
             s = s.substring(1, s.length() - 1);
         } else if (s.startsWith("[")) {
-            closed = false;
+            isOpen = true;
             s = s.substring(1, s.length() - 1);
         } else {
-            closed = false;
+            isOpen = true;
         }
         List<Point> points = new ArrayList<>();
         int i = 0;
@@ -30,6 +30,6 @@ public record Path(List<Point> points, boolean closed) {
             points.add(Point.parse(s.substring(start, end + 1)));
             i = end + 1;
         }
-        return new Path(points, closed);
+        return new Path(isOpen, points);
     }
 }

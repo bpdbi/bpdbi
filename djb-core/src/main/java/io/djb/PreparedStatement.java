@@ -1,5 +1,7 @@
 package io.djb;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A prepared statement that can be executed multiple times with different parameters.
  * More efficient than repeated query() calls for the same SQL — the database
@@ -15,7 +17,7 @@ package io.djb;
 public interface PreparedStatement extends AutoCloseable {
 
     /** Execute the prepared statement with the given parameters. */
-    RowSet query(Object... params);
+    RowSet query(@Nullable Object... params);
 
     /** Close the prepared statement and release server resources. */
     @Override

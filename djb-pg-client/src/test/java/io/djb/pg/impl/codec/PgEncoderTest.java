@@ -135,7 +135,8 @@ class PgEncoderTest {
         buf.readBytes(p2);
         assertEquals("hello", new String(p2));
 
-        assertEquals(0, buf.readShort()); // result format codes: default (text)
+        assertEquals(1, buf.readShort()); // 1 format code for all result columns
+        assertEquals(1, buf.readShort()); // binary format (1)
     }
 
     @Test
@@ -151,7 +152,8 @@ class PgEncoderTest {
         assertEquals(0, buf.readByte()); // unnamed statement
         assertEquals(0, buf.readShort()); // format codes
         assertEquals(0, buf.readShort()); // 0 parameters
-        assertEquals(0, buf.readShort()); // result format codes
+        assertEquals(1, buf.readShort()); // 1 format code for all result columns
+        assertEquals(1, buf.readShort()); // binary format (1)
     }
 
     @Test

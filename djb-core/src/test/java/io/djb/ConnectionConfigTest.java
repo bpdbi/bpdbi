@@ -43,9 +43,11 @@ class ConnectionConfigTest {
     void parseUriWithQueryParams() {
         var c = ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=require&application_name=myapp");
         assertEquals("db", c.database());
+        assertEquals(SslMode.REQUIRE, c.sslMode());
         assertNotNull(c.properties());
-        assertEquals("require", c.properties().get("sslmode"));
         assertEquals("myapp", c.properties().get("application_name"));
+        // sslmode is consumed and removed from properties
+        assertNull(c.properties().get("sslmode"));
     }
 
     @Test

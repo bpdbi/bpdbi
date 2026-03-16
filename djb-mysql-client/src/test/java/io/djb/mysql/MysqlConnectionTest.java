@@ -938,4 +938,311 @@ class MysqlConnectionTest {
             assertEquals("EUR", rs.first().getString(0));
         }
     }
+
+    // ===== Additional data type tests (parity with PG) =====
+
+    @Test
+    void dataTypeTimestamp() {
+        try (var conn = connect()) {
+            var rs = conn.query("SELECT CAST('2023-06-15 14:30:00' AS DATETIME) AS dt");
+            var dt = rs.first().getLocalDateTime(0);
+            assertEquals(java.time.LocalDate.of(2023, 6, 15), dt.toLocalDate());
+            assertEquals(java.time.LocalTime.of(14, 30, 0), dt.toLocalTime());
+        }
+    }
+
+    @Test
+    void dataTypeBlob() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE blob_test (id INT, data BLOB)");
+            conn.query("INSERT INTO blob_test VALUES (1, X'DEADBEEF')");
+            var rs = conn.query("SELECT data FROM blob_test WHERE id = 1");
+            byte[] bytes = rs.first().getBytes(0);
+            assertNotNull(bytes);
+            assertEquals(4, bytes.length);
+        }
+    }
+
+    @Test
+    void parameterizedNullInt() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE null_int (id INT, val INT)");
+            conn.query("INSERT INTO null_int VALUES (?, ?)", 1, null);
+            var rs = conn.query("SELECT val FROM null_int WHERE id = 1");
+            assertTrue(rs.first().isNull(0));
+            assertNull(rs.first().getInteger(0));
+        }
+    }
+
+    @Test
+    void parameterizedNullText() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE null_txt (id INT, val VARCHAR(255))");
+            conn.query("INSERT INTO null_txt VALUES (?, ?)", 1, null);
+            var rs = conn.query("SELECT val FROM null_txt WHERE id = 1");
+            assertTrue(rs.first().isNull("val"));
+            assertNull(rs.first().getString("val"));
+        }
+    }
+
+    @Test
+    void preparedStatementWithNull() {
+        try (var conn = connect()) {
+            try (var stmt = conn.prepare("SELECT ? AS val")) {
+                var rs = stmt.query((Object) null);
+                assertTrue(rs.first().isNull(0));
+            }
+        }
+    }
+
+    @Test
+    void preparedStatementError() {
+        try (var conn = connect()) {
+            assertThrows(MysqlException.class, () -> conn.prepare("INVALID SQL GIBBERISH"));
+            // Connection should still be usable
+            var rs = conn.query("SELECT 1");
+            assertEquals(1, rs.first().getInteger(0));
+        }
+    }
+
+    @Test
+    void transactionInterfaceWithPipelining() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE tx_pipe (id INT)");
+            try (var tx = conn.begin()) {
+                tx.enqueue("INSERT INTO tx_pipe VALUES (1)");
+                tx.enqueue("INSERT INTO tx_pipe VALUES (2)");
+                tx.enqueue("INSERT INTO tx_pipe VALUES (3)");
+                tx.flush();
+                tx.commit();
+            }
+            assertEquals(3L, conn.query("SELECT count(*) AS cnt FROM tx_pipe").first().getLong("cnt"));
+        }
+    }
+
+    @Test
+    void queryImplicitlyFlushesPending() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE flush_test (n INT)");
+            conn.enqueue("INSERT INTO flush_test VALUES (1)");
+            conn.enqueue("INSERT INTO flush_test VALUES (2)");
+            // query() should flush the pending inserts first
+            var rs = conn.query("SELECT count(*) AS cnt FROM flush_test");
+            assertEquals(2L, rs.first().getLong("cnt"));
+        }
+    }
+
+    @Test
+    void continuousParameterizedQueries() {
+        try (var conn = connect()) {
+            for (int i = 0; i < 200; i++) {
+                var rs = conn.query("SELECT ? + 0 AS n", i);
+                assertEquals(i, rs.first().getInteger("n"));
+            }
+        }
+    }
+
+    @Test
+    void pipelineParameterized() {
+        try (var conn = connect()) {
+            conn.enqueue("SELECT ? + 0", 10);
+            conn.enqueue("SELECT ? + 0", 20);
+            conn.enqueue("SELECT ? + 0", 30);
+            List<RowSet> results = conn.flush();
+            assertEquals(3, results.size());
+            assertEquals(10, results.get(0).first().getInteger(0));
+            assertEquals(20, results.get(1).first().getInteger(0));
+            assertEquals(30, results.get(2).first().getInteger(0));
+        }
+    }
+
+    @Test
+    void rowMapperEmptyResult() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE rm_empty (id INT)");
+            var result = conn.query("SELECT id FROM rm_empty").mapTo(row -> row.getInteger("id"));
+            assertTrue(result.isEmpty());
+        }
+    }
+
+    @Test
+    void columnMapperNull() {
+        try (var conn = connect()) {
+            var rs = conn.query("SELECT NULL AS n");
+            assertNull(rs.first().get("n", String.class));
+        }
+    }
+
+    @Test
+    void namedParamMissingThrows() {
+        try (var conn = connect()) {
+            assertThrows(IllegalArgumentException.class,
+                () -> conn.query("SELECT :missing AS val", java.util.Map.of()));
+        }
+    }
+
+    // ===== Cursor tests (additional coverage) =====
+
+    @Test
+    void cursorWithParams() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE cursor_param (n INT, label VARCHAR(50))");
+            conn.enqueue("BEGIN");
+            for (int i = 1; i <= 30; i++) conn.enqueue("INSERT INTO cursor_param VALUES (" + i + ", 'item-" + i + "')");
+            conn.enqueue("COMMIT");
+            conn.flush();
+
+            try (var cursor = conn.cursor("SELECT n, label FROM cursor_param WHERE n > ? ORDER BY n", 10)) {
+                var batch1 = cursor.read(10);
+                assertEquals(10, batch1.size());
+                assertEquals(11, batch1.first().getInteger("n"));
+                assertTrue(cursor.hasMore());
+
+                var batch2 = cursor.read(20);
+                assertEquals(10, batch2.size());
+                assertFalse(cursor.hasMore());
+            }
+        }
+    }
+
+    @Test
+    void cursorCloseEarly() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE cursor_close (n INT)");
+            conn.enqueue("BEGIN");
+            for (int i = 1; i <= 100; i++) conn.enqueue("INSERT INTO cursor_close VALUES (" + i + ")");
+            conn.enqueue("COMMIT");
+            conn.flush();
+
+            try (var cursor = conn.cursor("SELECT n FROM cursor_close ORDER BY n")) {
+                var batch = cursor.read(10);
+                assertEquals(10, batch.size());
+                // Close cursor early without reading all rows
+            }
+            // Connection should still be usable
+            var rs = conn.query("SELECT 1");
+            assertEquals(1, rs.first().getInteger(0));
+        }
+    }
+
+    @Test
+    void cursorEmptyResult() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE cursor_empty (n INT)");
+            try (var cursor = conn.cursor("SELECT n FROM cursor_empty")) {
+                var batch = cursor.read(10);
+                assertEquals(0, batch.size());
+                assertFalse(cursor.hasMore());
+            }
+        }
+    }
+
+    // ===== Pipeline error handling (additional coverage) =====
+
+    @Test
+    void pipelineErrorAtStart() {
+        try (var conn = connect()) {
+            conn.enqueue("BAD SQL");
+            conn.enqueue("SELECT 1");
+            conn.enqueue("SELECT 2");
+            List<RowSet> results = conn.flush();
+            assertEquals(3, results.size());
+            assertTrue(results.get(0).hasError());
+            assertEquals(1, results.get(1).first().getInteger(0));
+            assertEquals(2, results.get(2).first().getInteger(0));
+        }
+    }
+
+    @Test
+    void pipelineErrorAtEnd() {
+        try (var conn = connect()) {
+            conn.enqueue("SELECT 1");
+            conn.enqueue("SELECT 2");
+            conn.enqueue("BAD SQL");
+            List<RowSet> results = conn.flush();
+            assertEquals(3, results.size());
+            assertEquals(1, results.get(0).first().getInteger(0));
+            assertEquals(2, results.get(1).first().getInteger(0));
+            assertTrue(results.get(2).hasError());
+        }
+    }
+
+    @Test
+    void pipelineAllErrors() {
+        try (var conn = connect()) {
+            conn.enqueue("BAD1");
+            conn.enqueue("BAD2");
+            conn.enqueue("BAD3");
+            List<RowSet> results = conn.flush();
+            assertEquals(3, results.size());
+            assertTrue(results.get(0).hasError());
+            assertTrue(results.get(1).hasError());
+            assertTrue(results.get(2).hasError());
+        }
+    }
+
+    @Test
+    void pipelineErrorRecoveryThenQuery() {
+        try (var conn = connect()) {
+            conn.enqueue("SELECT 1");
+            conn.enqueue("BAD SQL");
+            conn.enqueue("SELECT 3");
+            conn.flush();
+
+            // Connection should work normally after pipeline with errors
+            var rs = conn.query("SELECT 42");
+            assertEquals(42, rs.first().getInteger(0));
+        }
+    }
+
+    @Test
+    void pipelineTransactionErrorRollback() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMPORARY TABLE pipe_tx_err (id INT PRIMARY KEY)");
+            conn.query("INSERT INTO pipe_tx_err VALUES (1)");
+
+            conn.enqueue("BEGIN");
+            conn.enqueue("INSERT INTO pipe_tx_err VALUES (2)");
+            conn.enqueue("INSERT INTO pipe_tx_err VALUES (1)"); // duplicate PK error
+            List<RowSet> results = conn.flush();
+
+            assertEquals(3, results.size());
+            assertFalse(results.get(0).hasError()); // BEGIN ok
+            assertFalse(results.get(1).hasError()); // first insert ok
+            assertTrue(results.get(2).hasError());  // duplicate error
+
+            conn.query("ROLLBACK");
+
+            // Only original row should remain
+            var rs = conn.query("SELECT count(*) AS cnt FROM pipe_tx_err");
+            assertEquals(1L, rs.first().getLong("cnt"));
+        }
+    }
+
+    @Test
+    void preparedStatementCacheHit() {
+        try (var conn = MysqlConnection.connect(
+                ConnectionConfig.fromUri("mysql://" + mysql.getUsername() + ":" + mysql.getPassword()
+                    + "@" + mysql.getHost() + ":" + mysql.getMappedPort(3306) + "/" + mysql.getDatabaseName())
+                .cachePreparedStatements(true))) {
+            // First call: cache miss
+            var rs1 = conn.query("SELECT ? + 0 AS n", 1);
+            assertEquals(1, rs1.first().getInteger("n"));
+
+            // Second call: cache hit (same SQL)
+            var rs2 = conn.query("SELECT ? + 0 AS n", 2);
+            assertEquals(2, rs2.first().getInteger("n"));
+
+            // Third call: still from cache
+            var rs3 = conn.query("SELECT ? + 0 AS n", 3);
+            assertEquals(3, rs3.first().getInteger("n"));
+        }
+    }
+
+    @Test
+    void connectWithWrongDatabase() {
+        assertThrows(Exception.class, () ->
+            MysqlConnection.connect(mysql.getHost(), mysql.getMappedPort(3306),
+                "nonexistent_database_xyz", mysql.getUsername(), mysql.getPassword()));
+    }
 }

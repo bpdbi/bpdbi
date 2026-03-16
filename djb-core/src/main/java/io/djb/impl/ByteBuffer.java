@@ -220,8 +220,15 @@ public final class ByteBuffer {
         return data;
     }
 
+    private static final int DEFAULT_CAPACITY = 1024;
+    private static final int SHRINK_THRESHOLD = 64 * 1024; // 64KB
+
     public void clear() {
         readerIndex = 0;
         writerIndex = 0;
+        // Shrink oversized buffers to avoid holding large allocations indefinitely
+        if (data.length > SHRINK_THRESHOLD) {
+            data = new byte[DEFAULT_CAPACITY];
+        }
     }
 }

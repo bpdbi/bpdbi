@@ -1222,10 +1222,10 @@ class PgConnectionTest {
         try (var conn = connect()) {
             var rs = conn.query("SELECT '(3,4),(1,2)'::box AS b");
             var b = Box.parse(rs.first().getString("b"));
-            assertEquals(3.0, b.upperRight().x(), 0.001);
-            assertEquals(4.0, b.upperRight().y(), 0.001);
-            assertEquals(1.0, b.lowerLeft().x(), 0.001);
-            assertEquals(2.0, b.lowerLeft().y(), 0.001);
+            assertEquals(3.0, b.upperRightCorner().x(), 0.001);
+            assertEquals(4.0, b.upperRightCorner().y(), 0.001);
+            assertEquals(1.0, b.lowerLeftCorner().x(), 0.001);
+            assertEquals(2.0, b.lowerLeftCorner().y(), 0.001);
         }
     }
 
@@ -1234,8 +1234,8 @@ class PgConnectionTest {
         try (var conn = connect()) {
             var rs = conn.query("SELECT '<(1,2),3>'::circle AS c");
             var c = Circle.parse(rs.first().getString("c"));
-            assertEquals(1.0, c.center().x(), 0.001);
-            assertEquals(2.0, c.center().y(), 0.001);
+            assertEquals(1.0, c.centerPoint().x(), 0.001);
+            assertEquals(2.0, c.centerPoint().y(), 0.001);
             assertEquals(3.0, c.radius(), 0.001);
         }
     }
@@ -1257,7 +1257,7 @@ class PgConnectionTest {
             // Closed path
             var rs = conn.query("SELECT '((0,0),(1,1),(2,0))'::path AS p");
             var p = Path.parse(rs.first().getString("p"));
-            assertTrue(p.closed());
+            assertFalse(p.isOpen());
             assertEquals(3, p.points().size());
         }
     }
@@ -1520,6 +1520,148 @@ class PgConnectionTest {
             conn.query("INSERT INTO tb_test VALUES ($1, $2)", 1, new Currency("USD"));
             var rs = conn.query("SELECT currency FROM tb_test WHERE id = 1");
             assertEquals("USD", rs.first().getString(0));
+        }
+    }
+
+    // ===== Additional cursor tests =====
+
+    @Test
+    void cursorCloseEarly() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMP TABLE cursor_close (n int)");
+            conn.query("BEGIN");
+            for (int i = 1; i <= 100; i++) conn.query("INSERT INTO cursor_close VALUES (" + i + ")");
+            conn.query("COMMIT");
+
+            conn.query("BEGIN");
+            try (var cursor = conn.cursor("SELECT n FROM cursor_close ORDER BY n")) {
+                var batch = cursor.read(10);
+                assertEquals(10, batch.size());
+                assertEquals(1, batch.first().getInteger(0));
+                assertTrue(cursor.hasMore());
+                // Close cursor early without reading all rows
+            }
+            conn.query("COMMIT");
+
+            // Connection should still be usable
+            var rs = conn.query("SELECT 1");
+            assertEquals(1, rs.first().getInteger(0));
+        }
+    }
+
+    @Test
+    void cursorEmptyResult() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMP TABLE cursor_empty (n int)");
+            conn.query("BEGIN");
+            try (var cursor = conn.cursor("SELECT n FROM cursor_empty")) {
+                var batch = cursor.read(10);
+                assertEquals(0, batch.size());
+                assertFalse(cursor.hasMore());
+            }
+            conn.query("COMMIT");
+        }
+    }
+
+    // ===== Additional pipeline error handling tests =====
+
+    @Test
+    void pipelineErrorAtStart() {
+        try (var conn = connect()) {
+            conn.enqueue("BAD SQL");
+            conn.enqueue("SELECT 1");
+            conn.enqueue("SELECT 2");
+            List<RowSet> results = conn.flush();
+            assertEquals(3, results.size());
+            assertTrue(results.get(0).hasError());
+            assertEquals(1, results.get(1).first().getInteger(0));
+            assertEquals(2, results.get(2).first().getInteger(0));
+        }
+    }
+
+    @Test
+    void pipelineErrorAtEnd() {
+        try (var conn = connect()) {
+            conn.enqueue("SELECT 1");
+            conn.enqueue("SELECT 2");
+            conn.enqueue("BAD SQL");
+            List<RowSet> results = conn.flush();
+            assertEquals(3, results.size());
+            assertEquals(1, results.get(0).first().getInteger(0));
+            assertEquals(2, results.get(1).first().getInteger(0));
+            assertTrue(results.get(2).hasError());
+        }
+    }
+
+    @Test
+    void pipelineAllErrors() {
+        try (var conn = connect()) {
+            conn.enqueue("BAD1");
+            conn.enqueue("BAD2");
+            conn.enqueue("BAD3");
+            List<RowSet> results = conn.flush();
+            assertEquals(3, results.size());
+            assertTrue(results.get(0).hasError());
+            assertTrue(results.get(1).hasError());
+            assertTrue(results.get(2).hasError());
+        }
+    }
+
+    @Test
+    void pipelineErrorRecoveryThenQuery() {
+        try (var conn = connect()) {
+            conn.enqueue("SELECT 1");
+            conn.enqueue("BAD SQL");
+            conn.enqueue("SELECT 3");
+            conn.flush();
+
+            // Connection should work normally after pipeline with errors
+            var rs = conn.query("SELECT 42");
+            assertEquals(42, rs.first().getInteger(0));
+        }
+    }
+
+    @Test
+    void pipelineTransactionErrorRollback() {
+        try (var conn = connect()) {
+            conn.query("CREATE TEMP TABLE pipe_tx_err (id int PRIMARY KEY)");
+            conn.query("INSERT INTO pipe_tx_err VALUES (1)");
+
+            conn.enqueue("BEGIN");
+            conn.enqueue("INSERT INTO pipe_tx_err VALUES (2)");
+            conn.enqueue("INSERT INTO pipe_tx_err VALUES (1)"); // duplicate PK
+            List<RowSet> results = conn.flush();
+
+            assertEquals(3, results.size());
+            assertFalse(results.get(0).hasError()); // BEGIN ok
+            assertFalse(results.get(1).hasError()); // insert ok
+            assertTrue(results.get(2).hasError());  // duplicate error
+
+            conn.query("ROLLBACK");
+
+            // Only original row should remain
+            var rs = conn.query("SELECT count(*) FROM pipe_tx_err");
+            assertEquals(1L, rs.first().getLong(0));
+        }
+    }
+
+    @Test
+    void preparedStatementCacheHit() {
+        try (var conn = PgConnection.connect(
+                ConnectionConfig.fromUri("postgresql://" + pg.getUsername() + ":" + pg.getPassword()
+                    + "@" + pg.getHost() + ":" + pg.getMappedPort(5432) + "/" + pg.getDatabaseName())
+                .cachePreparedStatements(true))) {
+            // First call: cache miss
+            var rs1 = conn.query("SELECT $1::int AS n", 1);
+            assertEquals(1, rs1.first().getInteger("n"));
+
+            // Second call: cache hit
+            var rs2 = conn.query("SELECT $1::int AS n", 2);
+            assertEquals(2, rs2.first().getInteger("n"));
+
+            // Third call: still from cache
+            var rs3 = conn.query("SELECT $1::int AS n", 3);
+            assertEquals(3, rs3.first().getInteger("n"));
         }
     }
 }

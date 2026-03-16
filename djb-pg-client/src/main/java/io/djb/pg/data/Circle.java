@@ -3,7 +3,7 @@ package io.djb.pg.data;
 /**
  * A PostgreSQL circle: &lt;(x,y),r&gt;.
  */
-public record Circle(Point center, double radius) {
+public record Circle(Point centerPoint, double radius) {
 
     public static Circle parse(String s) {
         s = s.trim();
@@ -19,6 +19,6 @@ public record Circle(Point center, double radius) {
 
     @Override
     public String toString() {
-        return "<" + center + "," + radius + ">";
+        return "<" + centerPoint + "," + radius + ">";
     }
 }

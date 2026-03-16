@@ -193,9 +193,95 @@ public final class MysqlDecoder {
             authPluginData, serverCapabilities, charset, statusFlags, authPluginName);
     }
 
+    /**
+     * Read COM_STMT_PREPARE response. Returns statement metadata.
+     */
+    public PrepareResult readPrepareResult(byte[] payload) {
+        var buf = ByteBuffer.wrap(payload);
+        buf.readByte(); // status (0x00)
+        int statementId = readIntLE(buf);
+        int numColumns = readShortLE(buf);
+        int numParams = readShortLE(buf);
+        buf.readByte(); // filler
+        int numWarnings = readShortLE(buf);
+        return new PrepareResult(statementId, numColumns, numParams, numWarnings);
+    }
+
+    /**
+     * Read a binary result row (from COM_STMT_EXECUTE response).
+     * Binary rows: header(1=0x00) + null_bitmap + column_values
+     */
+    public byte[][] readBinaryRow(byte[] payload, int columnCount, int[] columnTypes) {
+        var buf = ByteBuffer.wrap(payload);
+        buf.readByte(); // header byte (0x00)
+
+        // Null bitmap: (column_count + 7 + 2) / 8 bytes, offset by 2
+        int bitmapLen = (columnCount + 7 + 2) >> 3;
+        byte[] nullBitmap = new byte[bitmapLen];
+        buf.readBytes(nullBitmap);
+
+        byte[][] values = new byte[columnCount][];
+        for (int i = 0; i < columnCount; i++) {
+            // Check null bitmap (offset by 2)
+            int bitPos = i + 2;
+            if ((nullBitmap[bitPos >> 3] & (1 << (bitPos & 7))) != 0) {
+                values[i] = null; // NULL
+            } else {
+                values[i] = readBinaryColumnValue(buf, columnTypes[i]);
+            }
+        }
+        return values;
+    }
+
+    private byte[] readBinaryColumnValue(ByteBuffer buf, int columnType) {
+        // MySQL column types from protocol
+        return switch (columnType) {
+            case 0x01 -> { // TINY (INT8)
+                yield new byte[]{buf.readByte()};
+            }
+            case 0x02, 0x0D -> { // SHORT (INT16), YEAR
+                byte[] b = new byte[2];
+                buf.readBytes(b);
+                yield b;
+            }
+            case 0x03, 0x09 -> { // LONG (INT32), INT24
+                byte[] b = new byte[4];
+                buf.readBytes(b);
+                yield b;
+            }
+            case 0x08 -> { // LONGLONG (INT64)
+                byte[] b = new byte[8];
+                buf.readBytes(b);
+                yield b;
+            }
+            case 0x04 -> { // FLOAT
+                byte[] b = new byte[4];
+                buf.readBytes(b);
+                yield b;
+            }
+            case 0x05 -> { // DOUBLE
+                byte[] b = new byte[8];
+                buf.readBytes(b);
+                yield b;
+            }
+            default -> {
+                // Length-encoded for everything else (string, date, time, blob, etc.)
+                long len = readLengthEncodedInt(buf);
+                if (len < 0) yield null;
+                byte[] b = new byte[(int) len];
+                buf.readBytes(b);
+                yield b;
+            }
+        };
+    }
+
     public boolean isDeprecateEof() {
         return deprecateEof;
     }
+
+    // --- Record types ---
+
+    public record PrepareResult(int statementId, int numColumns, int numParams, int numWarnings) {}
 
     // --- Low-level helpers ---
 

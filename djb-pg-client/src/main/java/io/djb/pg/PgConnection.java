@@ -2,18 +2,28 @@ package io.djb.pg;
 
 import io.djb.*;
 import io.djb.impl.BaseConnection;
+import io.djb.impl.PreparedStatementCache;
 import io.djb.pg.impl.auth.MD5Authentication;
 import io.djb.pg.impl.codec.BackendMessage;
 import io.djb.pg.impl.codec.PgDecoder;
+import io.djb.pg.impl.codec.PgBinaryCodec;
 import io.djb.pg.impl.codec.PgEncoder;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * PostgreSQL implementation of {@link io.djb.Connection}.
@@ -47,10 +57,23 @@ public final class PgConnection extends BaseConnection {
      * Connect to a PostgreSQL server with optional properties.
      */
     public static PgConnection connect(String host, int port, String database, String user, String password,
-                                       Map<String, String> properties) {
+                                       @Nullable Map<String, String> properties) {
+        return connect(host, port, database, user, password, properties, SslMode.DISABLE);
+    }
+
+    /**
+     * Connect to a PostgreSQL server with SSL mode.
+     */
+    public static PgConnection connect(String host, int port, String database, String user, String password,
+                                       @Nullable Map<String, String> properties, SslMode sslMode) {
         try {
             Socket socket = new Socket(host, port);
             socket.setTcpNoDelay(true);
+
+            if (sslMode != SslMode.DISABLE) {
+                socket = upgradeToSsl(socket, host, port, sslMode);
+            }
+
             var out = new BufferedOutputStream(socket.getOutputStream(), 8192);
             var in = new BufferedInputStream(socket.getInputStream(), 8192);
             var encoder = new PgEncoder();
@@ -65,11 +88,68 @@ public final class PgConnection extends BaseConnection {
     }
 
     /**
-     * Connect using a ConnectionConfig (supports URI parsing).
+     * Connect using a ConnectionConfig (supports URI parsing and SSL).
      */
     public static PgConnection connect(ConnectionConfig config) {
-        return connect(config.host(), config.port() > 0 ? config.port() : 5432,
-            config.database(), config.username(), config.password(), config.properties());
+        var conn = connect(config.host(), config.port() > 0 ? config.port() : 5432,
+            config.database(), config.username(), config.password(), config.properties(),
+            config.sslMode());
+        conn.initCache(config);
+        return conn;
+    }
+
+    /**
+     * Upgrade a plain socket to SSL/TLS using the PostgreSQL SSLRequest protocol.
+     * Sends the 8-byte SSLRequest message, reads the server's single-byte response,
+     * and wraps the socket in an SSLSocket if the server accepts.
+     */
+    private static Socket upgradeToSsl(Socket socket, String host, int port, SslMode sslMode) throws IOException {
+        // Send SSLRequest (not a normal startup message — no type byte)
+        var encoder = new PgEncoder();
+        encoder.writeSSLRequest();
+        encoder.flush(socket.getOutputStream());
+
+        // Read single byte response: 'S' = upgrade, 'N' = no SSL
+        int response = socket.getInputStream().read();
+        if (response == 'S') {
+            try {
+                SSLSocketFactory factory = createSslSocketFactory();
+                SSLSocket sslSocket = (SSLSocket) factory.createSocket(
+                    socket, host, port, true);
+                sslSocket.setUseClientMode(true);
+                sslSocket.startHandshake();
+                return sslSocket;
+            } catch (Exception e) {
+                throw new IOException("SSL handshake failed", e);
+            }
+        } else if (response == 'N') {
+            if (sslMode == SslMode.REQUIRE) {
+                socket.close();
+                throw new IOException("Server does not support SSL but sslMode=REQUIRE");
+            }
+            // PREFER: fall back to non-SSL
+            return socket;
+        } else {
+            socket.close();
+            throw new IOException("Unexpected SSL response: " + (char) response);
+        }
+    }
+
+    private static SSLSocketFactory createSslSocketFactory() {
+        try {
+            // Trust-all for REQUIRE mode (no certificate verification).
+            // For production use with certificate verification, users should
+            // provide their own SSLContext.
+            SSLContext ctx = SSLContext.getInstance("TLS");
+            ctx.init(null, new TrustManager[]{new X509TrustManager() {
+                public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+            }}, null);
+            return ctx.getSocketFactory();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create SSL context", e);
+        }
     }
 
     @Override
@@ -89,6 +169,14 @@ public final class PgConnection extends BaseConnection {
 
     @Override
     public PreparedStatement prepare(String sql) {
+        // Check cache
+        if (isCacheable(sql)) {
+            var cached = psCache.get(sql);
+            if (cached != null) {
+                return new CachedPgPreparedStatement(cached);
+            }
+        }
+
         String stmtName = "_djb_s" + (stmtCounter++);
         try {
             encoder.writeParse(stmtName, sql, null);
@@ -111,6 +199,12 @@ public final class PgConnection extends BaseConnection {
                     }
                     case BackendMessage.ReadyForQuery rq -> {
                         final ColumnDescriptor[] cols = columns;
+                        if (isCacheable(sql)) {
+                            var cached = new PreparedStatementCache.CachedStatement(
+                                sql, stmtName, -1, cols, null);
+                            handleEvicted(psCache.cache(sql, cached));
+                            return new CachedPgPreparedStatement(cached);
+                        }
                         return new PgPreparedStatement(stmtName, cols);
                     }
                     default -> {}
@@ -229,6 +323,51 @@ public final class PgConnection extends BaseConnection {
         }
     }
 
+    /**
+     * Wrapper around a cached prepared statement. close() evicts from cache and
+     * closes server-side (matching vertx behavior).
+     */
+    private final class CachedPgPreparedStatement implements PreparedStatement {
+        private final PreparedStatementCache.CachedStatement cached;
+        private boolean closed = false;
+
+        CachedPgPreparedStatement(PreparedStatementCache.CachedStatement cached) {
+            this.cached = cached;
+        }
+
+        @Override
+        public RowSet query(Object... params) {
+            if (closed) throw new IllegalStateException("PreparedStatement is closed");
+            String[] textParams = null;
+            if (params != null && params.length > 0) {
+                textParams = new String[params.length];
+                for (int i = 0; i < params.length; i++) {
+                    textParams[i] = params[i] == null ? null : params[i].toString();
+                }
+            }
+            try {
+                encoder.writeBind("", cached.pgStatementName(), textParams);
+                encoder.writeDescribePortal();
+                encoder.writeExecute();
+                encoder.writeSync();
+                encoder.flush(out);
+                return readExtendedQueryResponse();
+            } catch (IOException e) {
+                throw new RuntimeException("I/O error executing prepared statement", e);
+            }
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                // Evict from cache and close server-side
+                psCache.remove(cached.sql());
+                closeCachedStatement(cached);
+            }
+        }
+    }
+
     private final class PgCursor implements io.djb.Cursor {
         private final String portalName;
         private final ColumnDescriptor[] columns;
@@ -254,7 +393,7 @@ public final class PgConnection extends BaseConnection {
                 while (true) {
                     BackendMessage msg = decoder.readMessage();
                     switch (msg) {
-                        case BackendMessage.DataRow dr -> rows.add(new Row(columns, dr.values()));
+                        case BackendMessage.DataRow dr -> rows.add(createRow(columns, dr.values()));
                         case BackendMessage.CommandComplete cc -> {
                             rowsAffected = cc.rowsAffected();
                             hasMore = false;
@@ -313,12 +452,57 @@ public final class PgConnection extends BaseConnection {
     }
 
     @Override
-    protected void encodeExtendedQuery(String sql, String[] params) {
+    protected RowSet executeExtendedQuery(String sql, String @Nullable [] params) {
+        if (isCacheable(sql)) {
+            var cached = psCache.get(sql);
+            if (cached != null) {
+                // Cache hit: skip Parse, bind to cached named statement
+                encoder.writeBind("", cached.pgStatementName(), params);
+                encoder.writeDescribePortal();
+                encoder.writeExecute();
+                encoder.writeSync();
+                try {
+                    encoder.flush(out);
+                } catch (IOException e) {
+                    throw new RuntimeException("I/O error during flush", e);
+                }
+                return readExtendedQueryResponse();
+            } else {
+                // Cache miss: use named statement so we can cache it
+                String stmtName = "_djb_s" + (stmtCounter++);
+                encoder.writeParse(stmtName, sql, null);
+                encoder.writeBind("", stmtName, params);
+                encoder.writeDescribePortal();
+                encoder.writeExecute();
+                encoder.writeSync();
+                try {
+                    encoder.flush(out);
+                } catch (IOException e) {
+                    throw new RuntimeException("I/O error during flush", e);
+                }
+                RowSet result = readExtendedQueryResponse();
+                // Cache after successful execution
+                if (!result.hasError()) {
+                    var stmt = new PreparedStatementCache.CachedStatement(
+                        sql, stmtName, -1, null, null);
+                    handleEvicted(psCache.cache(sql, stmt));
+                }
+                return result;
+            }
+        }
+
+        // No caching: use unnamed statement (current behavior)
         encoder.writeParse(sql, null);
         encoder.writeBind(params);
         encoder.writeDescribePortal();
         encoder.writeExecute();
         encoder.writeSync();
+        try {
+            encoder.flush(out);
+        } catch (IOException e) {
+            throw new RuntimeException("I/O error during flush", e);
+        }
+        return readExtendedQueryResponse();
     }
 
     @Override
@@ -341,7 +525,7 @@ public final class PgConnection extends BaseConnection {
                 BackendMessage msg = decoder.readMessage();
                 switch (msg) {
                     case BackendMessage.RowDescription rd -> columns = rd.columns();
-                    case BackendMessage.DataRow dr -> rows.add(new Row(columns, dr.values()));
+                    case BackendMessage.DataRow dr -> rows.add(createRow(columns, dr.values()));
                     case BackendMessage.CommandComplete cc -> rowsAffected = cc.rowsAffected();
                     case BackendMessage.EmptyQueryResponse eq -> {}
                     case BackendMessage.ErrorResponse err -> {
@@ -362,8 +546,7 @@ public final class PgConnection extends BaseConnection {
         }
     }
 
-    @Override
-    protected RowSet readExtendedQueryResponse() {
+    private RowSet readExtendedQueryResponse() {
         try {
             ColumnDescriptor[] columns = null;
             List<Row> rows = new ArrayList<>();
@@ -376,7 +559,7 @@ public final class PgConnection extends BaseConnection {
                     case BackendMessage.BindComplete bc -> {}
                     case BackendMessage.RowDescription rd -> columns = rd.columns();
                     case BackendMessage.NoData nd -> {}
-                    case BackendMessage.DataRow dr -> rows.add(new Row(columns, dr.values()));
+                    case BackendMessage.DataRow dr -> rows.add(createRow(columns, dr.values()));
                     case BackendMessage.CommandComplete cc -> rowsAffected = cc.rowsAffected();
                     case BackendMessage.EmptyQueryResponse eq -> {}
                     case BackendMessage.PortalSuspended ps -> {}
@@ -395,6 +578,18 @@ public final class PgConnection extends BaseConnection {
             }
         } catch (IOException e) {
             throw new RuntimeException("I/O error reading response", e);
+        }
+    }
+
+    @Override
+    protected void closeCachedStatement(PreparedStatementCache.CachedStatement stmt) {
+        try {
+            encoder.writeCloseStatement(stmt.pgStatementName());
+            encoder.writeSync();
+            encoder.flush(out);
+            drainUntilReady();
+        } catch (IOException e) {
+            // best effort
         }
     }
 
@@ -502,6 +697,11 @@ public final class PgConnection extends BaseConnection {
         } catch (com.ongres.scram.common.exception.ScramException e) {
             throw new PgException("FATAL", "28P01", "SCRAM authentication failed: " + e.getMessage(), null, null);
         }
+    }
+
+    @Override
+    protected BinaryCodec binaryCodec() {
+        return PgBinaryCodec.INSTANCE;
     }
 
     private void drainUntilReady() throws IOException {

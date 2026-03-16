@@ -5,6 +5,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Result of executing a SQL statement. Contains rows (if any) and metadata.
  */
@@ -13,7 +15,7 @@ public final class RowSet implements Iterable<Row> {
     private final List<Row> rows;
     private final List<ColumnDescriptor> columns;
     private final int rowsAffected;
-    private final DbException error;
+    private final @Nullable DbException error;
 
     public RowSet(List<Row> rows, List<ColumnDescriptor> columns, int rowsAffected) {
         this.rows = rows;
@@ -88,7 +90,7 @@ public final class RowSet implements Iterable<Row> {
         return error != null;
     }
 
-    public DbException getError() {
+    public @Nullable DbException getError() {
         return error;
     }
 }

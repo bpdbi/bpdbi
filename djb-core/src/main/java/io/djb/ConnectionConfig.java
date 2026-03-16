@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Database connection configuration.
  */
@@ -11,10 +13,14 @@ public final class ConnectionConfig {
 
     private String host = "localhost";
     private int port;
-    private String database;
-    private String username;
-    private String password;
-    private Map<String, String> properties;
+    private @Nullable String database;
+    private @Nullable String username;
+    private @Nullable String password;
+    private @Nullable Map<String, String> properties;
+    private SslMode sslMode = SslMode.DISABLE;
+    private boolean cachePreparedStatements = false;
+    private int preparedStatementCacheMaxSize = 256;
+    private int preparedStatementCacheSqlLimit = 2048;
 
     public ConnectionConfig() {}
 
@@ -66,6 +72,18 @@ public final class ConnectionConfig {
             }
         }
 
+        // Extract sslmode from properties if present
+        if (config.properties != null && config.properties.containsKey("sslmode")) {
+            String mode = config.properties.remove("sslmode");
+            config.sslMode = switch (mode) {
+                case "disable" -> SslMode.DISABLE;
+                case "prefer" -> SslMode.PREFER;
+                case "require" -> SslMode.REQUIRE;
+                default -> SslMode.DISABLE;
+            };
+            if (config.properties.isEmpty()) config.properties = null;
+        }
+
         // Set default port based on scheme if not specified
         if (config.port == -1) {
             String scheme = parsed.getScheme();
@@ -87,15 +105,27 @@ public final class ConnectionConfig {
     public int port() { return port; }
     public ConnectionConfig port(int port) { this.port = port; return this; }
 
-    public String database() { return database; }
+    public @Nullable String database() { return database; }
     public ConnectionConfig database(String database) { this.database = database; return this; }
 
-    public String username() { return username; }
+    public @Nullable String username() { return username; }
     public ConnectionConfig username(String username) { this.username = username; return this; }
 
-    public String password() { return password; }
+    public @Nullable String password() { return password; }
     public ConnectionConfig password(String password) { this.password = password; return this; }
 
-    public Map<String, String> properties() { return properties; }
-    public ConnectionConfig properties(Map<String, String> properties) { this.properties = properties; return this; }
+    public SslMode sslMode() { return sslMode; }
+    public ConnectionConfig sslMode(SslMode sslMode) { this.sslMode = sslMode; return this; }
+
+    public @Nullable Map<String, String> properties() { return properties; }
+    public ConnectionConfig properties(@Nullable Map<String, String> properties) { this.properties = properties; return this; }
+
+    public boolean cachePreparedStatements() { return cachePreparedStatements; }
+    public ConnectionConfig cachePreparedStatements(boolean cachePreparedStatements) { this.cachePreparedStatements = cachePreparedStatements; return this; }
+
+    public int preparedStatementCacheMaxSize() { return preparedStatementCacheMaxSize; }
+    public ConnectionConfig preparedStatementCacheMaxSize(int preparedStatementCacheMaxSize) { this.preparedStatementCacheMaxSize = preparedStatementCacheMaxSize; return this; }
+
+    public int preparedStatementCacheSqlLimit() { return preparedStatementCacheSqlLimit; }
+    public ConnectionConfig preparedStatementCacheSqlLimit(int preparedStatementCacheSqlLimit) { this.preparedStatementCacheSqlLimit = preparedStatementCacheSqlLimit; return this; }
 }

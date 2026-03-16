@@ -124,8 +124,8 @@ public final class PgDecoder {
             int typeOID = buf.readInt();
             short typeSize = buf.readShort();
             int typeMod = buf.readInt();
-            buf.readShort(); // format code (text/binary) — we request text for now
-            columns[i] = new ColumnDescriptor(name, tableOID, colAttr, typeOID, typeSize, typeMod);
+            int format = buf.readUnsignedShort(); // 0=text, 1=binary
+            columns[i] = new ColumnDescriptor(name, tableOID, colAttr, typeOID, typeSize, typeMod, format);
         }
         return new BackendMessage.RowDescription(columns);
     }

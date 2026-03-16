@@ -3,17 +3,20 @@ package io.djb.impl;
 import io.djb.TypeRegistry;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * Parses SQL with :name style named parameters and converts to positional placeholders.
+ * Correctly skips parameters inside single-quoted strings, double-quoted identifiers,
+ * line comments ({@code --}), and block comments ({@code /* ... * /}).
  */
 public final class NamedParamParser {
 
     private NamedParamParser() {}
 
-    public record ParsedQuery(String sql, String[] params) {}
+    public record ParsedQuery(String sql, @Nullable String[] params) {}
 
     /**
      * Parse SQL containing :name parameters and convert to positional placeholders.
@@ -24,46 +27,90 @@ public final class NamedParamParser {
      * @param typeRegistry for converting values to strings
      * @return parsed query with positional SQL and ordered parameter array
      */
-    public static ParsedQuery parse(String sql, Map<String, Object> params,
+    public static ParsedQuery parse(String sql, Map<String, @Nullable Object> params,
                                      String placeholderPrefix, TypeRegistry typeRegistry) {
         var result = new StringBuilder(sql.length());
         var paramValues = new ArrayList<String>();
-        boolean inSingleQuote = false;
-        boolean inDoubleQuote = false;
-        boolean escaped = false;
         int paramIndex = 0;
+        int len = sql.length();
 
-        for (int i = 0; i < sql.length(); i++) {
+        for (int i = 0; i < len; i++) {
             char c = sql.charAt(i);
 
-            if (escaped) {
-                result.append(c);
-                escaped = false;
-                continue;
-            }
-            if (c == '\\') {
-                result.append(c);
-                escaped = true;
-                continue;
-            }
-            if (c == '\'' && !inDoubleQuote) {
-                inSingleQuote = !inSingleQuote;
-                result.append(c);
-                continue;
-            }
-            if (c == '"' && !inSingleQuote) {
-                inDoubleQuote = !inDoubleQuote;
-                result.append(c);
+            // Line comment: -- until end of line
+            if (c == '-' && i + 1 < len && sql.charAt(i + 1) == '-') {
+                int end = sql.indexOf('\n', i);
+                if (end == -1) end = len;
+                result.append(sql, i, end);
+                i = end - 1; // loop will i++
                 continue;
             }
 
-            if (c == ':' && !inSingleQuote && !inDoubleQuote && i + 1 < sql.length()
+            // Block comment: /* ... */
+            if (c == '/' && i + 1 < len && sql.charAt(i + 1) == '*') {
+                int end = sql.indexOf("*/", i + 2);
+                if (end == -1) end = len - 2; // unterminated comment: consume rest
+                end += 2; // include the */
+                result.append(sql, i, end);
+                i = end - 1; // loop will i++
+                continue;
+            }
+
+            // Single-quoted string literal (with '' escape)
+            if (c == '\'') {
+                result.append(c);
+                i++;
+                while (i < len) {
+                    char sc = sql.charAt(i);
+                    result.append(sc);
+                    if (sc == '\'') {
+                        // Check for escaped quote ''
+                        if (i + 1 < len && sql.charAt(i + 1) == '\'') {
+                            i++;
+                            result.append(sql.charAt(i));
+                        } else {
+                            break; // end of string
+                        }
+                    } else if (sc == '\\') {
+                        // Backslash escape: copy next char too
+                        if (i + 1 < len) {
+                            i++;
+                            result.append(sql.charAt(i));
+                        }
+                    }
+                    i++;
+                }
+                continue;
+            }
+
+            // Double-quoted identifier
+            if (c == '"') {
+                result.append(c);
+                i++;
+                while (i < len) {
+                    char dc = sql.charAt(i);
+                    result.append(dc);
+                    if (dc == '"') {
+                        // Check for escaped quote ""
+                        if (i + 1 < len && sql.charAt(i + 1) == '"') {
+                            i++;
+                            result.append(sql.charAt(i));
+                        } else {
+                            break; // end of identifier
+                        }
+                    }
+                    i++;
+                }
+                continue;
+            }
+
+            // Named parameter :name (but not :: cast operator)
+            if (c == ':' && i + 1 < len
                 && isNameStart(sql.charAt(i + 1))
-                && (i == 0 || sql.charAt(i - 1) != ':')) { // skip :: (PG cast)
-                // Found a named parameter
+                && (i == 0 || sql.charAt(i - 1) != ':')) {
                 int nameStart = i + 1;
                 int nameEnd = nameStart;
-                while (nameEnd < sql.length() && isNameChar(sql.charAt(nameEnd))) {
+                while (nameEnd < len && isNameChar(sql.charAt(nameEnd))) {
                     nameEnd++;
                 }
                 String name = sql.substring(nameStart, nameEnd);

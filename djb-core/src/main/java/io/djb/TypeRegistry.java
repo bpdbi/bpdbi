@@ -2,9 +2,9 @@ package io.djb;
 
 import java.math.BigDecimal;
 import java.time.*;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * Registry of {@link TypeBinder}s for converting Java objects to SQL parameter strings.
@@ -13,6 +13,7 @@ import java.util.UUID;
 public final class TypeRegistry {
 
     private final Map<Class<?>, TypeBinder<?>> binders = new LinkedHashMap<>();
+    private final Set<Class<?>> jsonTypes = new LinkedHashSet<>();
 
     public <T> TypeRegistry register(Class<T> type, TypeBinder<T> binder) {
         binders.put(type, binder);
@@ -20,11 +21,30 @@ public final class TypeRegistry {
     }
 
     /**
+     * Register a type as JSON. When binding parameters, values of this type will be
+     * serialized via the connection's {@link JsonMapper} instead of {@link TypeBinder}.
+     * When reading results, columns mapped to this type will be deserialized as JSON
+     * even if the column is not a JSON/JSONB type in the database.
+     */
+    public TypeRegistry registerAsJson(Class<?> type) {
+        jsonTypes.add(type);
+        return this;
+    }
+
+    public Set<Class<?>> jsonTypes() {
+        return Collections.unmodifiableSet(jsonTypes);
+    }
+
+    public boolean isJsonType(Class<?> type) {
+        return jsonTypes.contains(type);
+    }
+
+    /**
      * Convert a value to its SQL string representation using the registered binder.
      * Returns null if the value is null.
      */
     @SuppressWarnings("unchecked")
-    public String bind(Object value) {
+    public @Nullable String bind(@Nullable Object value) {
         if (value == null) return null;
         Class<?> type = value.getClass();
         TypeBinder<Object> binder = (TypeBinder<Object>) binders.get(type);

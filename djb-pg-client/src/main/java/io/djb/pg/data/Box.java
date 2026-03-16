@@ -3,7 +3,7 @@ package io.djb.pg.data;
 /**
  * A PostgreSQL box: (upper-right),(lower-left).
  */
-public record Box(Point upperRight, Point lowerLeft) {
+public record Box(Point upperRightCorner, Point lowerLeftCorner) {
 
     public static Box parse(String s) {
         s = s.trim();
@@ -15,6 +15,6 @@ public record Box(Point upperRight, Point lowerLeft) {
 
     @Override
     public String toString() {
-        return upperRight + "," + lowerLeft;
+        return upperRightCorner + "," + lowerLeftCorner;
     }
 }
