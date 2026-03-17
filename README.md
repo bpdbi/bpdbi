@@ -1,4 +1,4 @@
-# Djb — Blocking Pipelined Database Interface for the JVM
+# Bpdbi — Blocking Pipelined Database Interface for the JVM
 
 A blocking database library the JVM that treats **pipelining** as a first-class concept.
 
@@ -17,13 +17,13 @@ and [MySQL 5.7.12+](https://dev.mysql.com/blog-archive/mysql-5-7-12-part-2-impro
 Vert.x (`vertx-sql-client`) does support pipelines (for these databases) —it does not use JDBC—
 but forces [reactive/async programming](docs/why-not-write-all-code-reactive.md).
 
-Djb gives you pipelining with straightforward blocking code — ideal for **Java 21+ virtual threads,
+Bpdbi gives you pipelining with straightforward blocking code — ideal for **Java 21+ virtual threads,
 where blocking is inexpensive and readability of the code matters more than maximum throughput.
 
-Djb provides a better developer experience than JDBC alone, it can be compared to Jdbi's DX.
+Bpdbi provides a better developer experience than JDBC alone, it can be compared to Jdbi's DX.
 
 The whole library is a lot smaller that the typical JVM db stack, where a db driver, JDBC, and
-something like Jdbi are needed (easily several MB of libraries), where Djb is under 200kB.
+something like Jdbi are needed (easily several MB of libraries), where Bpdbi is under 200kB.
 
 ## Why pipelining?
 
@@ -42,11 +42,11 @@ RowSet result = conn.query("SELECT * FROM my_table WHERE id = $1", 42);
 Without pipelining each of those would be a separate db roundtrip.
 Over a network with 1ms latency, that's 4ms saved on every request — and it adds up.
 
-**Dependency minimalism.** Djb incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
+**Dependency minimalism.** Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
 the Postgres JDBC driver (~1.1MB), or MySQL Connector/J (~2.5MB). It also provides named parameters,
 row mapping, and type binding commonly found in libraries like Jdbi (~1MB) or Spring Data JDBC (~
 3MB) —
-without pulling in those dependencies. Djb does not use the JVM reflection API out of the box
+without pulling in those dependencies. Bpdbi does not use the JVM reflection API out of the box
 (some optional mapper modules use it).
 
 ## Design Principles
@@ -54,7 +54,7 @@ without pulling in those dependencies. Djb does not use the JVM reflection API o
 **Pipelining first** — The `enqueue()`/`flush()` API is not an afterthought.
 Simple `query()` calls participate in the same pipeline machinery,
 so you get batched I/O without restructuring your code.
-Djb has no separate "batch" API — pipelining is a strict superset of batching.
+Bpdbi has no separate "batch" API — pipelining is a strict superset of batching.
 A batch sends N copies of the same statement with different parameters;
 a pipeline sends N arbitrary statements (different SQL, different parameter counts)
 in a single network write. Anything you'd do with batch, you can do with pipeline —
@@ -96,7 +96,7 @@ reflection.
 IDEs and tools like NullAway can statically verify correct null handling at compile time.
 AI Coding Agents also like them.
 
-**No compile-time SQL validation** — Djb does not attempt to type-check the boundary between
+**No compile-time SQL validation** — Bpdbi does not attempt to type-check the boundary between
 your JVM code and the database. SQL strings are opaque at compile time, just like in JDBC.
 Tools that do validate SQL at compile time (e.g. jOOQ, SQLC, SqlDelight) add significant
 complexity and code generation steps. We believe a simpler policy works well in practice:
@@ -108,10 +108,10 @@ typos, and type errors at test time rather than compile time — with far less m
 and JSpecify annotations (a single 3KB jar).
 No Netty, no reactive runtime, no reflection by default — ideal for GraalVM native images.
 
-**GraalVM native-image ready** — The core library and drivers (`djb-core`, `djb-pg-client`,
-`djb-mysql-client`, `djb-pool`) use zero reflection and work out of the box with
-`native-image`. The optional mapper modules (`djb-record-mapper`,
-`djb-javabean-mapper`) ship with GraalVM `reflect-config.json` metadata for their own
+**GraalVM native-image ready** — The core library and drivers (`bpdbi-core`, `bpdbi-pg-client`,
+`bpdbi-mysql-client`, `bpdbi-pool`) use zero reflection and work out of the box with
+`native-image`. The optional mapper modules (`bpdbi-record-mapper`,
+`bpdbi-javabean-mapper`) ship with GraalVM `reflect-config.json` metadata for their own
 classes; you only need to register your application's record/bean types. The Kotlin module
 uses compile-time code generation (kotlinx.serialization) and needs no reflection at all.
 
@@ -122,13 +122,13 @@ uses compile-time code generation (kotlinx.serialization) and needs no reflectio
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation(platform("io.djb:djb-bom:0.1.0"))
-    implementation("io.djb:djb-pg-client")                // Postgres driver
-    // implementation("io.djb:djb-mysql-client")          // MySQL driver
-    // implementation("io.djb:djb-pool")                  // Connection pool
-    // implementation("io.djb:djb-javabean-mapper")       // JavaBean mapping per row (reflection-based)
-    // implementation("io.djb:djb-record-mapper")         // Java record mapping per row (reflection-based)
-    // implementation("io.djb:djb-kotlin")                // Kotlin extensions + kotlinx.serialization based row mapper
+    implementation(platform("io.github.bpdbi:bpdbi-bom:0.1.0"))
+    implementation("io.github.bpdbi:bpdbi-pg-client")                // Postgres driver
+    // implementation("io.github.bpdbi:bpdbi-mysql-client")          // MySQL driver
+    // implementation("io.github.bpdbi:bpdbi-pool")                  // Connection pool
+    // implementation("io.github.bpdbi:bpdbi-javabean-mapper")       // JavaBean mapping per row (reflection-based)
+    // implementation("io.github.bpdbi:bpdbi-record-mapper")         // Java record mapping per row (reflection-based)
+    // implementation("io.github.bpdbi:bpdbi-kotlin")                // Kotlin extensions + kotlinx.serialization based row mapper
 }
 ```
 
@@ -657,21 +657,21 @@ NULL values return `null` — check with `row.isNull("col")`.
 
 #### Postgres-specific types
 
-The `io.djb.pg.data` package provides types for Postgres geometric, network,
-and temporal types. They are read as strings and parsed:
+The `io.github.bpdbi.pg.data` package provides types for Postgres geometric, network,
+and temporal types. They are decoded directly from binary wire format via parameterized queries:
 
 ```java
 // Geometric types
-Point p = Point.parse(row.getString("location"));        // (x,y)
-Circle c = Circle.parse(row.getString("area"));          // <(x,y),r>
-Box b = Box.parse(row.getString("bounds"));              // (x1,y1),(x2,y2)
-Polygon poly = Polygon.parse(row.getString("region"));   // ((x1,y1),(x2,y2),...)
+Point p = row.get("location", Point.class);        // (x,y)
+Circle c = row.get("area", Circle.class);          // <(x,y),r>
+Box b = row.get("bounds", Box.class);              // (x1,y1),(x2,y2)
+Polygon poly = row.get("region", Polygon.class);   // ((x1,y1),(x2,y2),...)
 
 // Network types
-Inet addr = Inet.parse(row.getString("ip"));             // 192.168.1.1/24
+Inet addr = row.get("ip", Inet.class);             // 192.168.1.1/24
 
 // Interval
-Interval iv = Interval.parse(row.getString("duration")); // 1 year 2 mons 3 days
+Interval iv = row.get("duration", Interval.class); // 1 year 2 mons 3 days
 Duration d = iv.toDuration();
 ```
 
@@ -679,16 +679,16 @@ Duration d = iv.toDuration();
 
 ```kotlin
 // Geometric types
-val p = Point.parse(row.getString("location"))        // (x,y)
-val c = Circle.parse(row.getString("area"))           // <(x,y),r>
-val b = Box.parse(row.getString("bounds"))            // (x1,y1),(x2,y2)
-val poly = Polygon.parse(row.getString("region"))     // ((x1,y1),(x2,y2),...)
+val p = row.get("location", Point::class.java)        // (x,y)
+val c = row.get("area", Circle::class.java)           // <(x,y),r>
+val b = row.get("bounds", Box::class.java)            // (x1,y1),(x2,y2)
+val poly = row.get("region", Polygon::class.java)     // ((x1,y1),(x2,y2),...)
 
 // Network types
-val addr = Inet.parse(row.getString("ip"))            // 192.168.1.1/24
+val addr = row.get("ip", Inet::class.java)            // 192.168.1.1/24
 
 // Interval
-val iv = Interval.parse(row.getString("duration"))    // 1 year 2 mons 3 days
+val iv = row.get("duration", Interval::class.java)    // 1 year 2 mons 3 days
 val d = iv.toDuration()
 ```
 
@@ -696,7 +696,7 @@ val d = iv.toDuration()
 
 #### JSON columns
 
-Djb has pluggable JSON support via the `JsonMapper` interface. Provide your own implementation
+Bpdbi has pluggable JSON support via the `JsonMapper` interface. Provide your own implementation
 backed by Jackson, Gson, Moshi, or any other JSON library:
 
 ```java
@@ -747,9 +747,9 @@ conn.query("INSERT INTO orders (id, metadata) VALUES ($1, $2::jsonb)",
 
 Without a `JsonMapper` set, JSON columns are still available as raw strings via `row.getString()`.
 
-<details><summary>Kotlin equivalent (using djb-kotlin)</summary>
+<details><summary>Kotlin equivalent (using bpdbi-kotlin)</summary>
 
-With `djb-kotlin`, JSON support uses `kotlinx.serialization` instead of `JsonMapper`.
+With `bpdbi-kotlin`, JSON support uses `kotlinx.serialization` instead of `JsonMapper`.
 Mark JSON fields with `@SqlJsonValue` — no setup needed:
 
 ```kotlin
@@ -947,7 +947,7 @@ job.join()
 
 ## Connection Pooling
 
-Djb ships its own lightweight connection pool in `djb-pool`:
+Bpdbi ships its own lightweight connection pool in `bpdbi-pool`:
 
 ```java
 var pool = new ConnectionPool(
@@ -1022,11 +1022,11 @@ This works with any driver — just swap `PgConnection.connect(...)` for
 
 ## Recommended HTTP frameworks
 
-Djb uses blocking I/O and is designed for virtual threads — it pairs well with HTTP frameworks that
+Bpdbi uses blocking I/O and is designed for virtual threads — it pairs well with HTTP frameworks that
 are not mandatorily reactive/async:
 
 - **[http4k](https://www.http4k.org/)** — Functional, zero-reflection, tiny. The philosophical twin
-  of djb on the HTTP side.
+  of bpdbi on the HTTP side.
 - **[Javalin](https://javalin.io/)** — Minimal Jetty wrapper with built-in virtual thread support.
   Very popular in both Java and Kotlin.
 - **[Helidon SE](https://helidon.io/) 4+** — Oracle's lightweight framework. Versions 1–3 were
@@ -1039,24 +1039,24 @@ are not mandatorily reactive/async:
 - **[Jooby](https://jooby.io/)** — Modular micro-framework, explicit about dependencies, virtual
   thread support.
 - **`com.sun.net.httpserver`** — The JDK's built-in HTTP server. Zero dependencies, pairs naturally
-  with djb's minimalism.
+  with bpdbi's minimalism.
 
 Frameworks like Spring Boot are opinionated about their own data stacks (Spring Data, Hibernate) and
 assume a JDBC `DataSource` integration for transactions, health checks, and connection management.
 
-Quarkus and the underlying Vert.x are reactive/async frameworks, so not a good fit for Djb.
-That said, Djb started as a port of the `vertx-sql-client` package!
+Quarkus and the underlying Vert.x are reactive/async frameworks, so not a good fit for Bpdbi.
+That said, Bpdbi started as a port of the `vertx-sql-client` package!
 
 ## Modules
 
-* `djb-bom`                       BOM (Bill of Materials) for version alignment
-* `djb-core`                      Database-agnostic API (Connection, Row, RowSet, pipelining logic)
-* `djb-pg-client`                 Postgres driver (wire protocol, auth, PG types)
-* `djb-mysql-client`              MySQL driver (wire protocol, auth)
-* `djb-pool`                      Simple connection pool with idle/lifetime eviction
-* `djb-kotlin`                    Kotlin extensions (kotlinx.serialization-based row decoding)
-* `djb-record-mapper`             Reflection-based Java record mapping (GraalVM metadata included)
-* `djb-javabean-mapper`           Reflection-based JavaBean (POJO) mapping (GraalVM metadata
+* `bpdbi-bom`                       BOM (Bill of Materials) for version alignment
+* `bpdbi-core`                      Database-agnostic API (Connection, Row, RowSet, pipelining logic)
+* `bpdbi-pg-client`                 Postgres driver (wire protocol, auth, PG types)
+* `bpdbi-mysql-client`              MySQL driver (wire protocol, auth)
+* `bpdbi-pool`                      Simple connection pool with idle/lifetime eviction
+* `bpdbi-kotlin`                    Kotlin extensions (kotlinx.serialization-based row decoding)
+* `bpdbi-record-mapper`             Reflection-based Java record mapping (GraalVM metadata included)
+* `bpdbi-javabean-mapper`           Reflection-based JavaBean (POJO) mapping (GraalVM metadata
   included)
 
 Each driver implements its own wire protocol by extending `BaseConnection`.
@@ -1066,9 +1066,9 @@ Use the BOM to align versions across modules:
 
 ```kotlin
 dependencies {
-    implementation(platform("io.djb:djb-bom:0.1.0"))
-    implementation("io.djb:djb-pg-client")    // no version needed
-    implementation("io.djb:djb-pool")          // no version needed
+    implementation(platform("io.github.bpdbi:bpdbi-bom:0.1.0"))
+    implementation("io.github.bpdbi:bpdbi-pg-client")    // no version needed
+    implementation("io.github.bpdbi:bpdbi-pool")          // no version needed
 }
 ```
 
@@ -1078,11 +1078,11 @@ See [`examples/`](examples/) for runnable examples.
 
 - JDK 21+
 - JSpecify (3kB)
-- Only for `djb-pg-client`: `scram-client` a small (70kB) encryption library for SCRAM
+- Only for `bpdbi-pg-client`: `scram-client` a small (70kB) encryption library for SCRAM
   authentication
-- Only for `djb-pool`: Apache `commons-pool2` a battle tested pool that's not JDBC/DataSource
+- Only for `bpdbi-pool`: Apache `commons-pool2` a battle tested pool that's not JDBC/DataSource
   specific
-- Only for `djb-kotlin`: `kotlin-stdlib` (for `kotlin.time` and `kotlin.uuid`) and
+- Only for `bpdbi-kotlin`: `kotlin-stdlib` (for `kotlin.time` and `kotlin.uuid`) and
   `kotlinx-serialization`
 
 ## Develop
@@ -1108,7 +1108,7 @@ Early development. Not yet published to Maven Central — the dependency coordin
 
 ## Todo
 
-* Look into the testcases of our lib/jdbi RowMapper -- see if we have parity in Djb
+* Look into the testcases of our lib/jdbi RowMapper -- see if we have parity in Bpdbi
 * Test for nested records
 * Double check we have all kotlin's time types implemented
 * Make explicit when it's positional mapping and when ist' "by name"

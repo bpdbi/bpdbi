@@ -1,0 +1,9 @@
+[
+  {
+    "type": {
+      "name": "io.github.bpdbi.mapper.RecordRowMapper"
+    },
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  }
+]

@@ -1,13 +1,13 @@
-rootProject.name = "djb"
+rootProject.name = "bpdbi"
 
 include(
-    "djb-bom",
-    "djb-core",
-    "djb-pg-client",
-    "djb-mysql-client",
-    "djb-kotlin",
-    "djb-record-mapper",
-    "djb-javabean-mapper",
-    "djb-pool",
+    "bpdbi-bom",
+    "bpdbi-core",
+    "bpdbi-pg-client",
+    "bpdbi-mysql-client",
+    "bpdbi-kotlin",
+    "bpdbi-record-mapper",
+    "bpdbi-javabean-mapper",
+    "bpdbi-pool",
     "examples"
 )

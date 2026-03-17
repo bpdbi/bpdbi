@@ -4,8 +4,8 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":djb-pg-client"))
-    implementation(project(":djb-mysql-client"))
+    implementation(project(":bpdbi-pg-client"))
+    implementation(project(":bpdbi-mysql-client"))
 }
 
 // Not a publishable artifact
@@ -14,5 +14,5 @@ tasks.jar { enabled = false }
 // Default main class — override with -PmainClass=...
 application {
     mainClass = project.findProperty("mainClass") as String?
-        ?: "io.djb.examples.PgBasicExample"
+        ?: "io.github.bpdbi.examples.PgBasicExample"
 }

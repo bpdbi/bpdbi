@@ -1,9 +1,0 @@
-[
-  {
-    "type": {
-      "name": "io.djb.mapper.JavaBeanRowMapper"
-    },
-    "allDeclaredConstructors": true,
-    "allDeclaredMethods": true
-  }
-]

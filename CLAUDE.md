@@ -1,4 +1,4 @@
-# djb — Blocking Pipelined SQL Client
+# bpdbi — Blocking Pipelined SQL Client
 
 ## Build & Test
 
@@ -10,23 +10,23 @@
 ./gradlew test
 
 # Run tests for a specific module
-./gradlew :djb-pg-client:test
-./gradlew :djb-mysql-client:test
-./gradlew :djb-core:test
+./gradlew :bpdbi-pg-client:test
+./gradlew :bpdbi-mysql-client:test
+./gradlew :bpdbi-core:test
 
 # Run a single test class
-./gradlew :djb-pg-client:test --tests "io.djb.pg.PgConnectionTest"
+./gradlew :bpdbi-pg-client:test --tests "io.github.bpdbi.pg.PgConnectionTest"
 ```
 
 ## Project Structure
 
-- `djb-core/` — Database-agnostic API: Connection, Row, RowSet, pipelining, type registries
-- `djb-pg-client/` — Postgres wire protocol driver
-- `djb-mysql-client/` — MySQL wire protocol driver
-- `djb-kotlin/` — Kotlin extensions, binders for Kotlin types and mapping of rows via `kotlinx.serialization`
-- `djb-record-mapper/` — Java record mapping of rows via reflection
-- `djb-javabean-mapper/` — JavaBean/POJO mapping of rows via reflection
-- `djb-pool/` — Simple connection pool
+- `bpdbi-core/` — Database-agnostic API: Connection, Row, RowSet, pipelining, type registries
+- `bpdbi-pg-client/` — Postgres wire protocol driver
+- `bpdbi-mysql-client/` — MySQL wire protocol driver
+- `bpdbi-kotlin/` — Kotlin extensions, binders for Kotlin types and mapping of rows via `kotlinx.serialization`
+- `bpdbi-record-mapper/` — Java record mapping of rows via reflection
+- `bpdbi-javabean-mapper/` — JavaBean/POJO mapping of rows via reflection
+- `bpdbi-pool/` — Simple connection pool
 - `examples/` — Runnable examples
 
 ## Architecture

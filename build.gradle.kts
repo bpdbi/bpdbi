@@ -5,7 +5,7 @@ plugins {
     id("com.diffplug.spotless") version "7.0.4"
 }
 
-group = "io.djb"
+group = "io.github.bpdbi"
 version = "0.1.0-SNAPSHOT"
 
 nexusPublishing {
@@ -28,7 +28,7 @@ subprojects {
         mavenCentral()
     }
 
-    if (name != "djb-bom") {
+    if (name != "bpdbi-bom") {
         apply(plugin = "java")
         apply(plugin = "com.diffplug.spotless")
 
@@ -52,13 +52,13 @@ subprojects {
 
 // Publishing config for all library modules (excludes examples)
 val publishedModules = setOf(
-    "djb-core",
-    "djb-pg-client",
-    "djb-mysql-client",
-    "djb-kotlin",
-    "djb-record-mapper",
-    "djb-javabean-mapper",
-    "djb-pool",
+    "bpdbi-core",
+    "bpdbi-pg-client",
+    "bpdbi-mysql-client",
+    "bpdbi-kotlin",
+    "bpdbi-record-mapper",
+    "bpdbi-javabean-mapper",
+    "bpdbi-pool",
 )
 
 subprojects {
@@ -82,8 +82,8 @@ subprojects {
 
                     pom {
                         name = project.name
-                        description = "djb — Blocking pipelined SQL client for Java 21+"
-                        url = "https://github.com/cies/djb"
+                        description = "bpdbi — Blocking pipelined SQL client for Java 21+"
+                        url = "https://github.com/cies/bpdbi"
                         licenses {
                             license {
                                 name = "The Apache License, Version 2.0"
@@ -98,9 +98,9 @@ subprojects {
                             }
                         }
                         scm {
-                            connection = "scm:git:git://github.com/cies/djb.git"
-                            developerConnection = "scm:git:ssh://github.com/cies/djb.git"
-                            url = "https://github.com/cies/djb"
+                            connection = "scm:git:git://github.com/cies/bpdbi.git"
+                            developerConnection = "scm:git:ssh://github.com/cies/bpdbi.git"
+                            url = "https://github.com/cies/bpdbi"
                         }
                     }
                 }
