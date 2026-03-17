@@ -7,8 +7,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Demonstrates djb with Java 21 virtual threads. Each virtual thread gets its own connection — no
  * pool needed for moderate concurrency.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.VirtualThreadsExample
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.VirtualThreadsExample
  */
 public class VirtualThreadsExample {
 
@@ -26,23 +26,19 @@ public class VirtualThreadsExample {
     // Launch 100 virtual threads, each with its own connection
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < numTasks; i++) {
-        executor.submit(() -> {
-          try (var conn = PgConnection.connect(
-              "localhost",
-              5432,
-              "postgres",
-              "postgres",
-              "postgres"
-          )) {
-            // Each virtual thread does a pipelined transaction
-            conn.enqueue("BEGIN");
-            conn.enqueue("UPDATE vt_counter SET count = count + 1 WHERE id = 1");
-            conn.enqueue("COMMIT");
-            conn.flush();
+        executor.submit(
+            () -> {
+              try (var conn =
+                  PgConnection.connect("localhost", 5432, "postgres", "postgres", "postgres")) {
+                // Each virtual thread does a pipelined transaction
+                conn.enqueue("BEGIN");
+                conn.enqueue("UPDATE vt_counter SET count = count + 1 WHERE id = 1");
+                conn.enqueue("COMMIT");
+                conn.flush();
 
-            completed.incrementAndGet();
-          }
-        });
+                completed.incrementAndGet();
+              }
+            });
       }
     } // executor.close() waits for all tasks
 

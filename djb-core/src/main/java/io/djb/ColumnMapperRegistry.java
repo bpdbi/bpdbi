@@ -12,16 +12,18 @@ import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Registry of {@link ColumnMapper}s for converting database text values to Java types.
  *
- * <p>Used by {@link Row#get(int, Class)} and {@link Row#get(String, Class)} to deserialize
- * column values into typed Java objects. The default registry (from {@link #defaults()}) handles
- * common types: {@code String}, primitive wrappers, {@code BigDecimal}, {@code UUID},
- * {@code LocalDate}, {@code LocalDateTime}, {@code OffsetDateTime}.
+ * <p>Used by {@link Row#get(int, Class)} and {@link Row#get(String, Class)} to deserialize column
+ * values into typed Java objects. The default registry (from {@link #defaults()}) handles common
+ * types: {@code String}, primitive wrappers, {@code BigDecimal}, {@code UUID}, {@code LocalDate},
+ * {@code LocalDateTime}, {@code OffsetDateTime}.
  *
  * <p>Register custom mappers for domain types:
+ *
  * <pre>{@code
  * conn.mapperRegistry().register(Money.class, (value, col) -> new Money(new BigDecimal(value)));
  * Money price = row.get("price", Money.class);
@@ -34,20 +36,15 @@ public final class ColumnMapperRegistry {
 
   private final Map<Class<?>, ColumnMapper<?>> mappers = new LinkedHashMap<>();
 
-  public <T> ColumnMapperRegistry register(
-      Class<T> type,
-      ColumnMapper<T> mapper
-  ) {
+  public <T> @NonNull ColumnMapperRegistry register(
+      @NonNull Class<T> type, @NonNull ColumnMapper<T> mapper) {
     mappers.put(type, mapper);
     return this;
   }
 
   @SuppressWarnings("unchecked")
-  public <T> T map(
-      Class<T> type,
-      String value,
-      String columnName
-  ) {
+  @NonNull
+  public <T> T map(@NonNull Class<T> type, @NonNull String value, @NonNull String columnName) {
     ColumnMapper<T> mapper = (ColumnMapper<T>) mappers.get(type);
     if (mapper != null) {
       return mapper.map(value, columnName);
@@ -65,11 +62,14 @@ public final class ColumnMapperRegistry {
       return result;
     }
     throw new IllegalArgumentException(
-        "No ColumnMapper registered for type " + type.getName()
-            + " (column: " + columnName + "). Register one via ColumnMapperRegistry.register().");
+        "No ColumnMapper registered for type "
+            + type.getName()
+            + " (column: "
+            + columnName
+            + "). Register one via ColumnMapperRegistry.register().");
   }
 
-  public boolean hasMapper(Class<?> type) {
+  public boolean hasMapper(@NonNull Class<?> type) {
     if (mappers.containsKey(type)) {
       return true;
     }
@@ -81,10 +81,8 @@ public final class ColumnMapperRegistry {
     return type.isEnum();
   }
 
-  /**
-   * Create a registry with built-in mappers for common types.
-   */
-  public static ColumnMapperRegistry defaults() {
+  /** Create a registry with built-in mappers for common types. */
+  public static @NonNull ColumnMapperRegistry defaults() {
     var reg = new ColumnMapperRegistry();
     reg.register(String.class, (v, c) -> v);
     reg.register(Integer.class, (v, c) -> Integer.parseInt(v));
@@ -93,9 +91,7 @@ public final class ColumnMapperRegistry {
     reg.register(Float.class, (v, c) -> Float.parseFloat(v));
     reg.register(Double.class, (v, c) -> Double.parseDouble(v));
     reg.register(
-        Boolean.class,
-        (v, c) -> "t".equals(v) || "true".equalsIgnoreCase(v) || "1".equals(v)
-    );
+        Boolean.class, (v, c) -> "t".equals(v) || "true".equalsIgnoreCase(v) || "1".equals(v));
     reg.register(BigDecimal.class, (v, c) -> new BigDecimal(v));
     reg.register(UUID.class, (v, c) -> UUID.fromString(v));
     reg.register(LocalDate.class, (v, c) -> LocalDate.parse(v));
@@ -103,15 +99,15 @@ public final class ColumnMapperRegistry {
     reg.register(LocalDateTime.class, (v, c) -> LocalDateTime.parse(v.replace(' ', 'T')));
     reg.register(OffsetDateTime.class, (v, c) -> OffsetDateTime.parse(v.replace(' ', 'T')));
     reg.register(
-        Instant.class, (v, c) -> {
+        Instant.class,
+        (v, c) -> {
           String s = v.replace(' ', 'T');
           try {
             return OffsetDateTime.parse(s).toInstant();
           } catch (DateTimeParseException e) {
             return LocalDateTime.parse(s).toInstant(ZoneOffset.UTC);
           }
-        }
-    );
+        });
     reg.register(OffsetTime.class, (v, c) -> OffsetTime.parse(v));
     return reg;
   }

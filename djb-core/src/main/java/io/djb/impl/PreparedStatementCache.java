@@ -7,6 +7,8 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * LRU cache for prepared statements, keyed by SQL string. Based on vertx-sql-client's
@@ -15,8 +17,8 @@ import java.util.Map;
  * <p>Not thread-safe — each connection has its own cache instance.
  */
 @SuppressWarnings("serial")
-public class PreparedStatementCache extends
-    LinkedHashMap<String, PreparedStatementCache.CachedStatement> {
+public class PreparedStatementCache
+    extends LinkedHashMap<String, PreparedStatementCache.CachedStatement> {
 
   private final int capacity;
   private List<CachedStatement> removed;
@@ -30,7 +32,7 @@ public class PreparedStatementCache extends
    * Cache a statement. Returns the list of evicted statements that the caller must close
    * server-side.
    */
-  public List<CachedStatement> cache(String sql, CachedStatement stmt) {
+  public @NonNull List<CachedStatement> cache(@NonNull String sql, @NonNull CachedStatement stmt) {
     put(sql, stmt);
     if (removed != null) {
       List<CachedStatement> evicted = removed;
@@ -45,7 +47,7 @@ public class PreparedStatementCache extends
    *
    * @return the evicted statement, or null if empty
    */
-  public CachedStatement evict() {
+  public @Nullable CachedStatement evict() {
     Iterator<CachedStatement> it = values().iterator();
     if (it.hasNext()) {
       CachedStatement value = it.next();
@@ -85,22 +87,21 @@ public class PreparedStatementCache extends
   @SuppressWarnings("ArrayRecordComponent")
   // internal record; nullable arrays are intentional (null = not applicable for this DB)
   public record CachedStatement(
-      String sql,
-      String pgStatementName,   // PG: named statement, null for MySQL
-      int mysqlStatementId,     // MySQL: server-assigned ID, -1 for PG
-      ColumnDescriptor[] columns,
-      int[] columnTypes,        // MySQL binary column types, null for PG
-      List<String> parameterNames // named param ordering, null if positional
-  ) {
+      @NonNull String sql,
+      @Nullable String pgStatementName, // PG: named statement, null for MySQL
+      int mysqlStatementId, // MySQL: server-assigned ID, -1 for PG
+      ColumnDescriptor @Nullable [] columns,
+      int @Nullable [] columnTypes, // MySQL binary column types, null for PG
+      @Nullable List<String> parameterNames // named param ordering, null if positional
+      ) {
 
-    /**
-     * Convenience constructor without parameterNames (positional params only).
-     */
+    /** Convenience constructor without parameterNames (positional params only). */
     public CachedStatement(
-        String sql, String pgStatementName,
-        int mysqlStatementId, ColumnDescriptor[] columns,
-        int[] columnTypes
-    ) {
+        @NonNull String sql,
+        @Nullable String pgStatementName,
+        int mysqlStatementId,
+        ColumnDescriptor @Nullable [] columns,
+        int @Nullable [] columnTypes) {
       this(sql, pgStatementName, mysqlStatementId, columns, columnTypes, null);
     }
   }

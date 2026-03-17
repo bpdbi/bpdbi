@@ -48,12 +48,14 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Postgres implementation of {@link io.djb.Connection}.
  *
- * <p><b>Not thread-safe.</b> Each connection must be used by a single thread at a time.
- * Designed for one-connection-per-(virtual-)thread usage with Java 21+ virtual threads.
+ * <p><b>Not thread-safe.</b> Each connection must be used by a single thread at a time. Designed
+ * for one-connection-per-(virtual-)thread usage with Java 21+ virtual threads.
  */
 public final class PgConnection extends BaseConnection {
 
@@ -74,55 +76,44 @@ public final class PgConnection extends BaseConnection {
     this.decoder = decoder;
   }
 
-  /**
-   * Connect to a Postgres server.
-   */
-  public static PgConnection connect(
-      String host,
+  /** Connect to a Postgres server. */
+  public static @NonNull PgConnection connect(
+      @NonNull String host,
       int port,
-      String database,
-      String user,
-      String password
-  ) {
+      @NonNull String database,
+      @NonNull String user,
+      @NonNull String password) {
     return connect(host, port, database, user, password, null);
   }
 
-  /**
-   * Connect to a Postgres server with optional properties.
-   */
-  public static PgConnection connect(
-      String host,
+  /** Connect to a Postgres server with optional properties. */
+  public static @NonNull PgConnection connect(
+      @NonNull String host,
       int port,
-      String database,
-      String user,
-      String password,
-      Map<String, String> properties
-  ) {
+      @NonNull String database,
+      @NonNull String user,
+      @NonNull String password,
+      @Nullable Map<String, String> properties) {
     return connect(host, port, database, user, password, properties, SslMode.DISABLE);
   }
 
-  /**
-   * Connect to a Postgres server with SSL mode.
-   */
-  public static PgConnection connect(
-      String host,
+  /** Connect to a Postgres server with SSL mode. */
+  public static @NonNull PgConnection connect(
+      @NonNull String host,
       int port,
-      String database,
-      String user,
-      String password,
-      Map<String, String> properties,
-      SslMode sslMode
-  ) {
+      @NonNull String database,
+      @NonNull String user,
+      @NonNull String password,
+      @Nullable Map<String, String> properties,
+      @NonNull SslMode sslMode) {
     var config = new ConnectionConfig(host, port, database, user, password);
     config.sslMode(sslMode);
     config.properties(properties);
     return connect(config);
   }
 
-  /**
-   * Connect using a ConnectionConfig (supports URI parsing, SSL, and all options).
-   */
-  public static PgConnection connect(ConnectionConfig config) {
+  /** Connect using a ConnectionConfig (supports URI parsing, SSL, and all options). */
+  public static @NonNull PgConnection connect(@NonNull ConnectionConfig config) {
     try {
       Socket socket = new Socket(config.host(), config.port() > 0 ? config.port() : 5432);
       socket.setTcpNoDelay(true);
@@ -142,17 +133,11 @@ public final class PgConnection extends BaseConnection {
       var conn = new PgConnection(socket, out, encoder, decoder);
       conn.initCache(config);
       conn.performStartup(
-          config.username(),
-          config.database(),
-          config.password(),
-          config.properties()
-      );
+          config.username(), config.database(), config.password(), config.properties());
       return conn;
     } catch (IOException e) {
       throw new DbConnectionException(
-          "Failed to connect to Postgres at " + config.host() + ":" + config.port(),
-          e
-      );
+          "Failed to connect to Postgres at " + config.host() + ":" + config.port(), e);
     }
   }
 
@@ -177,8 +162,7 @@ public final class PgConnection extends BaseConnection {
       try {
         SSLContext ctx = buildSslContext(config);
         SSLSocketFactory factory = ctx.getSocketFactory();
-        SSLSocket sslSocket = (SSLSocket) factory.createSocket(
-            socket, host, port, true);
+        SSLSocket sslSocket = (SSLSocket) factory.createSocket(socket, host, port, true);
         sslSocket.setUseClientMode(true);
 
         // Enable hostname verification for VERIFY_FULL
@@ -194,7 +178,8 @@ public final class PgConnection extends BaseConnection {
         throw new IOException("SSL handshake failed", e);
       }
     } else if (response == 'N') {
-      if (sslMode == SslMode.REQUIRE || sslMode == SslMode.VERIFY_CA
+      if (sslMode == SslMode.REQUIRE
+          || sslMode == SslMode.VERIFY_CA
           || sslMode == SslMode.VERIFY_FULL) {
         socket.close();
         throw new IOException("Server does not support SSL but sslMode=" + sslMode);
@@ -211,12 +196,13 @@ public final class PgConnection extends BaseConnection {
    * Build an SSLContext based on the connection configuration.
    *
    * <p>Priority order:
+   *
    * <ol>
-   *   <li>User-provided {@link ConnectionConfig#sslContext()} — used as-is</li>
-   *   <li>PEM certificate file via {@link ConnectionConfig#pemCertPath()}</li>
-   *   <li>JKS trust store via {@link ConnectionConfig#trustStorePath()}</li>
-   *   <li>For VERIFY_CA/VERIFY_FULL — system default trust store</li>
-   *   <li>For REQUIRE/PREFER — trust-all (no certificate verification)</li>
+   *   <li>User-provided {@link ConnectionConfig#sslContext()} — used as-is
+   *   <li>PEM certificate file via {@link ConnectionConfig#pemCertPath()}
+   *   <li>JKS trust store via {@link ConnectionConfig#trustStorePath()}
+   *   <li>For VERIFY_CA/VERIFY_FULL — system default trust store
+   *   <li>For REQUIRE/PREFER — trust-all (no certificate verification)
    * </ol>
    */
   private static SSLContext buildSslContext(ConnectionConfig config) {
@@ -239,7 +225,8 @@ public final class PgConnection extends BaseConnection {
             ks.setCertificateEntry("cert-" + (i++), cert);
           }
         }
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        TrustManagerFactory tmf =
+            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         tmf.init(ks);
         ctx.init(null, tmf.getTrustManagers(), null);
         return ctx;
@@ -248,12 +235,13 @@ public final class PgConnection extends BaseConnection {
       // 3. JKS trust store
       if (config.trustStorePath() != null) {
         KeyStore ks = KeyStore.getInstance("JKS");
-        char[] pass = config.trustStorePassword() != null
-            ? config.trustStorePassword().toCharArray() : null;
+        char[] pass =
+            config.trustStorePassword() != null ? config.trustStorePassword().toCharArray() : null;
         try (InputStream tsIn = new FileInputStream(config.trustStorePath())) {
           ks.load(tsIn, pass);
         }
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        TrustManagerFactory tmf =
+            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         tmf.init(ks);
         ctx.init(null, tmf.getTrustManagers(), null);
         return ctx;
@@ -261,7 +249,8 @@ public final class PgConnection extends BaseConnection {
 
       // 4. For VERIFY_CA/VERIFY_FULL — use system default trust store
       if (config.sslMode() == SslMode.VERIFY_CA || config.sslMode() == SslMode.VERIFY_FULL) {
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        TrustManagerFactory tmf =
+            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         tmf.init((KeyStore) null); // uses default system trust store
         ctx.init(null, tmf.getTrustManagers(), null);
         return ctx;
@@ -269,18 +258,19 @@ public final class PgConnection extends BaseConnection {
 
       // 5. REQUIRE/PREFER — trust-all (no certificate verification)
       ctx.init(
-          null, new TrustManager[]{new X509TrustManager() {
-            public void checkClientTrusted(X509Certificate[] certs, String authType) {
-            }
+          null,
+          new TrustManager[] {
+            new X509TrustManager() {
+              public void checkClientTrusted(X509Certificate[] certs, String authType) {}
 
-            public void checkServerTrusted(X509Certificate[] certs, String authType) {
-            }
+              public void checkServerTrusted(X509Certificate[] certs, String authType) {}
 
-            public X509Certificate[] getAcceptedIssuers() {
-              return new X509Certificate[0];
+              public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+              }
             }
-          }}, null
-      );
+          },
+          null);
       return ctx;
     } catch (Exception e) {
       throw new DbConnectionException("Failed to create SSL context", e);
@@ -293,7 +283,7 @@ public final class PgConnection extends BaseConnection {
   }
 
   @Override
-  public Map<String, String> parameters() {
+  public @NonNull Map<String, String> parameters() {
     return Collections.unmodifiableMap(parameters);
   }
 
@@ -308,7 +298,7 @@ public final class PgConnection extends BaseConnection {
   // --- Prepared statements ---
 
   @Override
-  public PreparedStatement prepare(String sql) {
+  public @NonNull PreparedStatement prepare(@NonNull String sql) {
     // Parse named parameters if present
     List<String> parameterNames = null;
     String sqlToSend = sql;
@@ -346,15 +336,15 @@ public final class PgConnection extends BaseConnection {
           }
           case BackendMessage.ReadyForQuery rq -> {
             if (isCacheable(sql)) {
-              var cached = new PreparedStatementCache.CachedStatement(
-                  sql, stmtName, -1, columns, null, paramNames);
+              var cached =
+                  new PreparedStatementCache.CachedStatement(
+                      sql, stmtName, -1, columns, null, paramNames);
               handleEvicted(psCache.cache(sql, cached));
               return new CachedPgPreparedStatement(cached);
             }
             return new PgPreparedStatement(stmtName, columns, paramNames);
           }
-          default -> {
-          }
+          default -> {}
         }
       }
     } catch (IOException e) {
@@ -363,7 +353,7 @@ public final class PgConnection extends BaseConnection {
   }
 
   @Override
-  public Cursor cursor(String sql, Object... params) {
+  public @NonNull Cursor cursor(@NonNull String sql, @Nullable Object... params) {
     String portalName = "_djb_p" + (stmtCounter++);
     String[] textParams = null;
     if (params != null && params.length > 0) {
@@ -392,8 +382,7 @@ public final class PgConnection extends BaseConnection {
           case BackendMessage.ReadyForQuery rq -> {
             return new PgCursor(portalName, columns);
           }
-          default -> {
-          }
+          default -> {}
         }
       }
     } catch (IOException e) {
@@ -409,7 +398,7 @@ public final class PgConnection extends BaseConnection {
    *
    * @param channel the channel name to listen on
    */
-  public void listen(String channel) {
+  public void listen(@NonNull String channel) {
     query("LISTEN " + quoteIdentifier(channel));
   }
 
@@ -418,25 +407,23 @@ public final class PgConnection extends BaseConnection {
    *
    * @param channel the channel name to stop listening on
    */
-  public void unlisten(String channel) {
+  public void unlisten(@NonNull String channel) {
     query("UNLISTEN " + quoteIdentifier(channel));
   }
 
-  /**
-   * Unsubscribe from all notification channels. Sends {@code UNLISTEN *}.
-   */
+  /** Unsubscribe from all notification channels. Sends {@code UNLISTEN *}. */
   public void unlistenAll() {
     query("UNLISTEN *");
   }
 
   /**
-   * Send a notification on a channel with an optional payload. Sends
-   * {@code NOTIFY channel, 'payload'}.
+   * Send a notification on a channel with an optional payload. Sends {@code NOTIFY channel,
+   * 'payload'}.
    *
    * @param channel the channel name
    * @param payload the notification payload (may be empty)
    */
-  public void notify(String channel, String payload) {
+  public void notify(@NonNull String channel, @NonNull String payload) {
     query("NOTIFY " + quoteIdentifier(channel) + ", " + quoteLiteral(payload));
   }
 
@@ -446,6 +433,7 @@ public final class PgConnection extends BaseConnection {
    * processing.
    *
    * <p>To poll for notifications without executing a query, call with an empty query:
+   *
    * <pre>{@code
    * conn.query("");  // triggers a network roundtrip, buffering any pending notifications
    * List<PgNotification> notes = conn.getNotifications();
@@ -453,7 +441,7 @@ public final class PgConnection extends BaseConnection {
    *
    * @return list of notifications received since the last call (never null, may be empty)
    */
-  public List<PgNotification> getNotifications() {
+  public @NonNull List<PgNotification> getNotifications() {
     var result = List.copyOf(notifications);
     notifications.clear();
     return result;
@@ -467,9 +455,7 @@ public final class PgConnection extends BaseConnection {
     return "'" + literal.replace("'", "''") + "'";
   }
 
-  /**
-   * Cancel a running query on this connection (sends cancel request via a new TCP connection).
-   */
+  /** Cancel a running query on this connection (sends cancel request via a new TCP connection). */
   public void cancelRequest() {
     try (var cancelSocket = new Socket(socket.getInetAddress(), socket.getPort())) {
       var cancelEncoder = new PgEncoder();
@@ -564,21 +550,21 @@ public final class PgConnection extends BaseConnection {
   private final class PgPreparedStatement implements PreparedStatement {
 
     private final String name;
+    // Retained from the server's RowDescription response during prepare();
+    // not currently used but available for future column metadata access on prepared statements.
+    @SuppressWarnings("unused") // kept for future PreparedStatement.getColumns() API
     private final ColumnDescriptor[] columns;
     private final List<String> parameterNames;
     private boolean closed = false;
 
-    PgPreparedStatement(
-        String name, ColumnDescriptor[] columns,
-        List<String> parameterNames
-    ) {
+    PgPreparedStatement(String name, ColumnDescriptor[] columns, List<String> parameterNames) {
       this.name = name;
       this.columns = columns;
       this.parameterNames = parameterNames;
     }
 
     @Override
-    public RowSet query(Object... params) {
+    public @NonNull RowSet query(Object... params) {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
@@ -602,7 +588,7 @@ public final class PgConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet query(Map<String, Object> params) {
+    public @NonNull RowSet query(@NonNull Map<String, Object> params) {
       if (parameterNames == null) {
         throw new IllegalStateException(
             "This statement was not prepared with named parameters (:name syntax)");
@@ -646,7 +632,7 @@ public final class PgConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet query(Object... params) {
+    public @NonNull RowSet query(Object... params) {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
@@ -670,15 +656,13 @@ public final class PgConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet query(Map<String, Object> params) {
+    public @NonNull RowSet query(@NonNull Map<String, Object> params) {
       if (cached.parameterNames() == null) {
         throw new IllegalStateException(
             "This statement was not prepared with named parameters (:name syntax)");
       }
-      return query(convertPgParams(NamedParamParser.resolveParams(
-          cached.parameterNames(),
-          params
-      )));
+      return query(
+          convertPgParams(NamedParamParser.resolveParams(cached.parameterNames(), params)));
     }
 
     @Override
@@ -705,7 +689,7 @@ public final class PgConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet read(int count) {
+    public @NonNull RowSet read(int count) {
       if (closed) {
         throw new IllegalStateException("Cursor is closed");
       }
@@ -735,8 +719,7 @@ public final class PgConnection extends BaseConnection {
             case BackendMessage.ReadyForQuery rq -> {
               return new RowSet(rows, columns != null ? List.of(columns) : List.of(), rowsAffected);
             }
-            default -> {
-            }
+            default -> {}
           }
         }
       } catch (IOException e) {
@@ -774,12 +757,12 @@ public final class PgConnection extends BaseConnection {
   // --- BaseConnection protocol methods ---
 
   @Override
-  protected String placeholderPrefix() {
+  protected @NonNull String placeholderPrefix() {
     return "$";
   }
 
   @Override
-  protected RowSet executeExtendedQuery(String sql, String[] params) {
+  protected @NonNull RowSet executeExtendedQuery(@NonNull String sql, @NonNull String[] params) {
     // Parameterless queries use the simple query protocol (text-format results) because:
     // 1. The extended protocol rejects multi-statement strings ("SELECT 1; SELECT 2")
     // 2. Text format lets getString() work for types without a binary decoder (geometric,
@@ -818,8 +801,7 @@ public final class PgConnection extends BaseConnection {
         RowSet result = readExtendedQueryResponse();
         // Cache after successful execution
         if (result.getError() == null) {
-          var stmt = new PreparedStatementCache.CachedStatement(
-              sql, stmtName, -1, null, null);
+          var stmt = new PreparedStatementCache.CachedStatement(sql, stmtName, -1, null, null);
           handleEvicted(psCache.cache(sql, stmt));
         }
         return result;
@@ -871,24 +853,19 @@ public final class PgConnection extends BaseConnection {
             rowCount++;
           }
           case BackendMessage.CommandComplete cc -> rowsAffected = cc.rowsAffected();
-          case BackendMessage.EmptyQueryResponse eq -> {
-          }
+          case BackendMessage.EmptyQueryResponse eq -> {}
           case BackendMessage.ErrorResponse err -> {
             drainUntilReady();
             return new RowSet(PgException.fromErrorResponse(err));
           }
-          case BackendMessage.NoticeResponse notice -> {
-          }
-          case BackendMessage.NotificationResponse notif -> notifications.add(new PgNotification(
-              notif.processId(),
-              notif.channel(),
-              notif.payload()
-          ));
+          case BackendMessage.NoticeResponse notice -> {}
+          case BackendMessage.NotificationResponse notif ->
+              notifications.add(
+                  new PgNotification(notif.processId(), notif.channel(), notif.payload()));
           case BackendMessage.ReadyForQuery rq -> {
             return buildTextRowSet(columns, buffers, rowCount, rowsAffected);
           }
-          default -> {
-          }
+          default -> {}
         }
       }
     } catch (IOException e) {
@@ -897,9 +874,7 @@ public final class PgConnection extends BaseConnection {
   }
 
   private RowSet buildTextRowSet(
-      ColumnDescriptor[] columns, ColumnBuffer[] buffers,
-      int rowCount, int rowsAffected
-  ) {
+      ColumnDescriptor[] columns, ColumnBuffer[] buffers, int rowCount, int rowsAffected) {
     if (columns == null) {
       return new RowSet(List.of(), List.of(), rowsAffected);
     }
@@ -918,26 +893,20 @@ public final class PgConnection extends BaseConnection {
         switch (msg) {
           case BackendMessage.RowDescription rd -> columns = rd.columns();
           case BackendMessage.DataRow dr -> consumer.accept(createTextRow(columns, dr.values()));
-          case BackendMessage.CommandComplete cc -> {
-          }
-          case BackendMessage.EmptyQueryResponse eq -> {
-          }
+          case BackendMessage.CommandComplete cc -> {}
+          case BackendMessage.EmptyQueryResponse eq -> {}
           case BackendMessage.ErrorResponse err -> {
             drainUntilReady();
             throw PgException.fromErrorResponse(err);
           }
-          case BackendMessage.NoticeResponse notice -> {
-          }
-          case BackendMessage.NotificationResponse notif -> notifications.add(new PgNotification(
-              notif.processId(),
-              notif.channel(),
-              notif.payload()
-          ));
+          case BackendMessage.NoticeResponse notice -> {}
+          case BackendMessage.NotificationResponse notif ->
+              notifications.add(
+                  new PgNotification(notif.processId(), notif.channel(), notif.payload()));
           case BackendMessage.ReadyForQuery rq -> {
             return;
           }
-          default -> {
-          }
+          default -> {}
         }
       }
     } catch (IOException e) {
@@ -962,29 +931,22 @@ public final class PgConnection extends BaseConnection {
                 case BackendMessage.DataRow dr -> {
                   return createTextRow(columns[0], dr.values());
                 }
-                case BackendMessage.CommandComplete cc -> {
-                }
-                case BackendMessage.EmptyQueryResponse eq -> {
-                }
+                case BackendMessage.CommandComplete cc -> {}
+                case BackendMessage.EmptyQueryResponse eq -> {}
                 case BackendMessage.ErrorResponse err -> {
                   drainUntilReady();
                   exhausted.set(true);
                   throw PgException.fromErrorResponse(err);
                 }
-                case BackendMessage.NoticeResponse notice -> {
-                }
+                case BackendMessage.NoticeResponse notice -> {}
                 case BackendMessage.NotificationResponse notif ->
-                    notifications.add(new PgNotification(
-                        notif.processId(),
-                        notif.channel(),
-                        notif.payload()
-                    ));
+                    notifications.add(
+                        new PgNotification(notif.processId(), notif.channel(), notif.payload()));
                 case BackendMessage.ReadyForQuery rq -> {
                   exhausted.set(true);
                   return null;
                 }
-                default -> {
-                }
+                default -> {}
               }
             }
           } catch (IOException e) {
@@ -1001,8 +963,7 @@ public final class PgConnection extends BaseConnection {
             }
             exhausted.set(true);
           }
-        }
-    );
+        });
   }
 
   @Override
@@ -1024,41 +985,32 @@ public final class PgConnection extends BaseConnection {
       while (true) {
         BackendMessage msg = decoder.readMessage();
         switch (msg) {
-          case BackendMessage.ParseComplete pc -> {
-          }
-          case BackendMessage.BindComplete bc -> {
-          }
+          case BackendMessage.ParseComplete pc -> {}
+          case BackendMessage.BindComplete bc -> {}
           case BackendMessage.RowDescription rd -> {
             columns = rd.columns();
             buffers = newColumnBuffers(columns.length);
           }
-          case BackendMessage.NoData nd -> {
-          }
+          case BackendMessage.NoData nd -> {}
           case BackendMessage.DataRow dr -> {
             appendToBuffers(buffers, dr.values());
             rowCount++;
           }
           case BackendMessage.CommandComplete cc -> rowsAffected = cc.rowsAffected();
-          case BackendMessage.EmptyQueryResponse eq -> {
-          }
-          case BackendMessage.PortalSuspended ps -> {
-          }
+          case BackendMessage.EmptyQueryResponse eq -> {}
+          case BackendMessage.PortalSuspended ps -> {}
           case BackendMessage.ErrorResponse err -> {
             drainUntilReady();
             return new RowSet(PgException.fromErrorResponse(err));
           }
-          case BackendMessage.NoticeResponse notice -> {
-          }
-          case BackendMessage.NotificationResponse notif -> notifications.add(new PgNotification(
-              notif.processId(),
-              notif.channel(),
-              notif.payload()
-          ));
+          case BackendMessage.NoticeResponse notice -> {}
+          case BackendMessage.NotificationResponse notif ->
+              notifications.add(
+                  new PgNotification(notif.processId(), notif.channel(), notif.payload()));
           case BackendMessage.ReadyForQuery rq -> {
             return buildRowSet(columns, buffers, rowCount, rowsAffected);
           }
-          default -> {
-          }
+          default -> {}
         }
       }
     } catch (IOException e) {
@@ -1080,10 +1032,7 @@ public final class PgConnection extends BaseConnection {
 
   @Override
   protected void executeExtendedQueryStreaming(
-      String sql,
-      String[] params,
-      Consumer<Row> consumer
-  ) {
+      @NonNull String sql, @NonNull String[] params, @NonNull Consumer<Row> consumer) {
     if (params.length == 0) {
       encoder.writeQuery(sql);
       try {
@@ -1115,36 +1064,26 @@ public final class PgConnection extends BaseConnection {
       while (true) {
         BackendMessage msg = decoder.readMessage();
         switch (msg) {
-          case BackendMessage.ParseComplete pc -> {
-          }
-          case BackendMessage.BindComplete bc -> {
-          }
+          case BackendMessage.ParseComplete pc -> {}
+          case BackendMessage.BindComplete bc -> {}
           case BackendMessage.RowDescription rd -> columns = rd.columns();
-          case BackendMessage.NoData nd -> {
-          }
+          case BackendMessage.NoData nd -> {}
           case BackendMessage.DataRow dr -> consumer.accept(createRow(columns, dr.values()));
-          case BackendMessage.CommandComplete cc -> {
-          }
-          case BackendMessage.EmptyQueryResponse eq -> {
-          }
-          case BackendMessage.PortalSuspended ps -> {
-          }
+          case BackendMessage.CommandComplete cc -> {}
+          case BackendMessage.EmptyQueryResponse eq -> {}
+          case BackendMessage.PortalSuspended ps -> {}
           case BackendMessage.ErrorResponse err -> {
             drainUntilReady();
             throw PgException.fromErrorResponse(err);
           }
-          case BackendMessage.NoticeResponse notice -> {
-          }
-          case BackendMessage.NotificationResponse notif -> notifications.add(new PgNotification(
-              notif.processId(),
-              notif.channel(),
-              notif.payload()
-          ));
+          case BackendMessage.NoticeResponse notice -> {}
+          case BackendMessage.NotificationResponse notif ->
+              notifications.add(
+                  new PgNotification(notif.processId(), notif.channel(), notif.payload()));
           case BackendMessage.ReadyForQuery rq -> {
             return;
           }
-          default -> {
-          }
+          default -> {}
         }
       }
     } catch (IOException e) {
@@ -1153,7 +1092,8 @@ public final class PgConnection extends BaseConnection {
   }
 
   @Override
-  protected RowStream createExtendedQueryRowStream(String sql, String[] params) {
+  protected @NonNull RowStream createExtendedQueryRowStream(
+      @NonNull String sql, @NonNull String[] params) {
     if (params.length == 0) {
       encoder.writeQuery(sql);
       try {
@@ -1188,41 +1128,30 @@ public final class PgConnection extends BaseConnection {
             while (true) {
               BackendMessage msg = decoder.readMessage();
               switch (msg) {
-                case BackendMessage.ParseComplete pc -> {
-                }
-                case BackendMessage.BindComplete bc -> {
-                }
+                case BackendMessage.ParseComplete pc -> {}
+                case BackendMessage.BindComplete bc -> {}
                 case BackendMessage.RowDescription rd -> columns[0] = rd.columns();
-                case BackendMessage.NoData nd -> {
-                }
+                case BackendMessage.NoData nd -> {}
                 case BackendMessage.DataRow dr -> {
                   return createRow(columns[0], dr.values());
                 }
-                case BackendMessage.CommandComplete cc -> {
-                }
-                case BackendMessage.EmptyQueryResponse eq -> {
-                }
-                case BackendMessage.PortalSuspended ps -> {
-                }
+                case BackendMessage.CommandComplete cc -> {}
+                case BackendMessage.EmptyQueryResponse eq -> {}
+                case BackendMessage.PortalSuspended ps -> {}
                 case BackendMessage.ErrorResponse err -> {
                   drainUntilReady();
                   exhausted.set(true);
                   throw PgException.fromErrorResponse(err);
                 }
-                case BackendMessage.NoticeResponse notice -> {
-                }
+                case BackendMessage.NoticeResponse notice -> {}
                 case BackendMessage.NotificationResponse notif ->
-                    notifications.add(new PgNotification(
-                        notif.processId(),
-                        notif.channel(),
-                        notif.payload()
-                    ));
+                    notifications.add(
+                        new PgNotification(notif.processId(), notif.channel(), notif.payload()));
                 case BackendMessage.ReadyForQuery rq -> {
                   exhausted.set(true);
                   return null;
                 }
-                default -> {
-                }
+                default -> {}
               }
             }
           } catch (IOException e) {
@@ -1239,8 +1168,7 @@ public final class PgConnection extends BaseConnection {
             }
             exhausted.set(true);
           }
-        }
-    );
+        });
   }
 
   @Override
@@ -1265,11 +1193,8 @@ public final class PgConnection extends BaseConnection {
   // --- PG-specific startup/auth ---
 
   private void performStartup(
-      String user,
-      String database,
-      String password,
-      Map<String, String> properties
-  ) throws IOException {
+      String user, String database, String password, Map<String, String> properties)
+      throws IOException {
     encoder.writeStartupMessage(user, database, properties);
     encoder.flush(out);
 
@@ -1277,8 +1202,7 @@ public final class PgConnection extends BaseConnection {
     while (!done) {
       BackendMessage msg = decoder.readMessage();
       switch (msg) {
-        case BackendMessage.AuthenticationOk ok -> {
-        }
+        case BackendMessage.AuthenticationOk ok -> {}
         case BackendMessage.AuthenticationCleartextPassword cleartext -> {
           encoder.writePasswordMessage(password);
           encoder.flush(out);
@@ -1298,38 +1222,32 @@ public final class PgConnection extends BaseConnection {
           String encoding = parameters.get("client_encoding");
           if (encoding != null && !encoding.equalsIgnoreCase("UTF8")) {
             throw new PgException(
-                "FATAL", "08000",
-                encoding + " encoding is not supported, only UTF8", null, null
-            );
+                "FATAL", "08000", encoding + " encoding is not supported, only UTF8", null, null);
           }
           done = true;
         }
         case BackendMessage.ErrorResponse err -> throw PgException.fromErrorResponse(err);
-        case BackendMessage.NoticeResponse notice -> {
-        }
-        default -> throw new DbConnectionException(
-            "Unexpected message during startup: " + msg.getClass().getSimpleName());
+        case BackendMessage.NoticeResponse notice -> {}
+        default ->
+            throw new DbConnectionException(
+                "Unexpected message during startup: " + msg.getClass().getSimpleName());
       }
     }
   }
 
-  private void handleSaslAuth(
-      AuthenticationSasl sasl,
-      String user,
-      String password
-  ) throws IOException {
+  private void handleSaslAuth(AuthenticationSasl sasl, String user, String password)
+      throws IOException {
     try {
-      var scramClient = com.ongres.scram.client.ScramClient.builder()
-          .advertisedMechanisms(List.of(sasl.mechanisms().split(",")))
-          .username(user)
-          .password(password.toCharArray())
-          .build();
+      var scramClient =
+          com.ongres.scram.client.ScramClient.builder()
+              .advertisedMechanisms(List.of(sasl.mechanisms().split(",")))
+              .username(user)
+              .password(password.toCharArray())
+              .build();
 
       var clientFirstMsg = scramClient.clientFirstMessage();
       encoder.writeScramInitialMessage(
-          scramClient.getScramMechanism().getName(),
-          clientFirstMsg.toString()
-      );
+          scramClient.getScramMechanism().getName(), clientFirstMsg.toString());
       encoder.flush(out);
 
       BackendMessage msg = decoder.readMessage();
@@ -1355,17 +1273,12 @@ public final class PgConnection extends BaseConnection {
       scramClient.serverFinalMessage(new String(data, StandardCharsets.UTF_8));
     } catch (com.ongres.scram.common.exception.ScramException e) {
       throw new PgException(
-          "FATAL",
-          "28P01",
-          "SCRAM authentication failed: " + e.getMessage(),
-          null,
-          null
-      );
+          "FATAL", "28P01", "SCRAM authentication failed: " + e.getMessage(), null, null);
     }
   }
 
   @Override
-  protected BinaryCodec binaryCodec() {
+  protected @NonNull BinaryCodec binaryCodec() {
     return PgBinaryCodec.INSTANCE;
   }
 

@@ -22,14 +22,12 @@ import org.junit.jupiter.api.Test;
  */
 public abstract class AbstractConnectionTest {
 
-  /**
-   * Create a new connection to the test database.
-   */
+  /** Create a new connection to the test database. */
   protected abstract Connection connect();
 
   /**
-   * Return DDL to create a temporary table. Postgres uses "CREATE TEMP TABLE", MySQL uses
-   * "CREATE TEMPORARY TABLE"; column types may differ (e.g. "text" vs "VARCHAR(255)").
+   * Return DDL to create a temporary table. Postgres uses "CREATE TEMP TABLE", MySQL uses "CREATE
+   * TEMPORARY TABLE"; column types may differ (e.g. "text" vs "VARCHAR(255)").
    */
   protected abstract String tempTableDDL(String name, String columns);
 
@@ -70,10 +68,8 @@ public abstract class AbstractConnectionTest {
   @Test
   void simpleQueryError() {
     try (var conn = connect()) {
-      var ex = assertThrows(
-          DbException.class,
-          () -> conn.query("SELECT * FROM nonexistent_table_xyz")
-      );
+      var ex =
+          assertThrows(DbException.class, () -> conn.query("SELECT * FROM nonexistent_table_xyz"));
       assertNotNull(ex.getMessage());
     }
   }

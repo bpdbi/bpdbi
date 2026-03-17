@@ -25,72 +25,55 @@ class RecordRowMapperTest {
 
   // --- Test records ---
 
-  record SimpleUser(Integer id, String name, String email) {
+  record SimpleUser(Integer id, String name, String email) {}
 
-  }
-
-  record PrimitiveUser(int id, String name) {
-
-  }
+  record PrimitiveUser(int id, String name) {}
 
   record AllTypes(
-      String s, Integer i, Long l, Short sh, Float f, Double d, Boolean b,
-      BigDecimal bd, UUID uuid
-  ) {
+      String s,
+      Integer i,
+      Long l,
+      Short sh,
+      Float f,
+      Double d,
+      Boolean b,
+      BigDecimal bd,
+      UUID uuid) {}
 
+  record DateTimeRecord(LocalDate date, LocalTime time, LocalDateTime dateTime) {}
+
+  record PrimitivesRecord(int i, long l, short s, float f, double d, boolean b) {}
+
+  record SingleField(String value) {}
+
+  record BytesRecord(String name, byte[] data) {}
+
+  record SnakeCaseUser(int id, String firstName, String lastName) {}
+
+  record MixedAnnotation(int id, String displayName, String email) {}
+
+  record WithOffsetDateTime(String name, OffsetDateTime created) {}
+
+  record MixedNulls(int id, Integer nullableId, String name, Long count) {}
+
+  record EmptyStringsRecord(String first, String second) {}
+
+  enum Status {
+    ACTIVE,
+    INACTIVE
   }
 
-  record DateTimeRecord(LocalDate date, LocalTime time, LocalDateTime dateTime) {
-
-  }
-
-  record PrimitivesRecord(int i, long l, short s, float f, double d, boolean b) {
-
-  }
-
-  record SingleField(String value) {
-
-  }
-
-  record BytesRecord(String name, byte[] data) {
-
-  }
-
-  record SnakeCaseUser(int id, String firstName, String lastName) {
-
-  }
-
-  record MixedAnnotation(int id, String displayName, String email) {
-
-  }
-
-  record WithOffsetDateTime(String name, OffsetDateTime created) {
-
-  }
-
-  record MixedNulls(int id, Integer nullableId, String name, Long count) {
-
-  }
-
-  record EmptyStringsRecord(String first, String second) {
-
-  }
-
-  enum Status {ACTIVE, INACTIVE}
-
-  record OrderWithStatus(int id, Status status) {
-
-  }
+  record OrderWithStatus(int id, Status status) {}
 
   // --- Tests ---
 
   @Test
   void mapsSimpleRecord() {
     RowMapper<SimpleUser> mapper = RecordRowMapper.of(SimpleUser.class);
-    Row r = row(
-        new String[]{"id", "name", "email"},
-        new String[]{"42", "Alice", "alice@example.com"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "email"},
+            new String[] {"42", "Alice", "alice@example.com"});
 
     SimpleUser user = mapper.map(r);
 
@@ -102,7 +85,7 @@ class RecordRowMapperTest {
   @Test
   void mapsPrimitiveInt() {
     RowMapper<PrimitiveUser> mapper = RecordRowMapper.of(PrimitiveUser.class);
-    Row r = row(new String[]{"id", "name"}, new String[]{"7", "Bob"});
+    Row r = row(new String[] {"id", "name"}, new String[] {"7", "Bob"});
 
     PrimitiveUser user = mapper.map(r);
 
@@ -113,10 +96,10 @@ class RecordRowMapperTest {
   @Test
   void primitiveDefaultsToZeroOnNull() {
     RowMapper<PrimitivesRecord> mapper = RecordRowMapper.of(PrimitivesRecord.class);
-    Row r = row(
-        new String[]{"i", "l", "s", "f", "d", "b"},
-        new String[]{null, null, null, null, null, null}
-    );
+    Row r =
+        row(
+            new String[] {"i", "l", "s", "f", "d", "b"},
+            new String[] {null, null, null, null, null, null});
 
     PrimitivesRecord rec = mapper.map(r);
 
@@ -131,7 +114,7 @@ class RecordRowMapperTest {
   @Test
   void boxedTypesReturnNullOnNull() {
     RowMapper<SimpleUser> mapper = RecordRowMapper.of(SimpleUser.class);
-    Row r = row(new String[]{"id", "name", "email"}, new String[]{null, null, null});
+    Row r = row(new String[] {"id", "name", "email"}, new String[] {null, null, null});
 
     SimpleUser user = mapper.map(r);
 
@@ -144,10 +127,12 @@ class RecordRowMapperTest {
   void mapsNumericAndUuidTypes() {
     UUID testUuid = UUID.randomUUID();
     RowMapper<AllTypes> mapper = RecordRowMapper.of(AllTypes.class);
-    Row r = row(
-        new String[]{"s", "i", "l", "sh", "f", "d", "b", "bd", "uuid"},
-        new String[]{"hello", "1", "2", "3", "1.5", "2.5", "true", "99.99", testUuid.toString()}
-    );
+    Row r =
+        row(
+            new String[] {"s", "i", "l", "sh", "f", "d", "b", "bd", "uuid"},
+            new String[] {
+              "hello", "1", "2", "3", "1.5", "2.5", "true", "99.99", testUuid.toString()
+            });
 
     AllTypes rec = mapper.map(r);
 
@@ -165,10 +150,10 @@ class RecordRowMapperTest {
   @Test
   void mapsDateTimeTypes() {
     RowMapper<DateTimeRecord> mapper = RecordRowMapper.of(DateTimeRecord.class);
-    Row r = row(
-        new String[]{"date", "time", "dateTime"},
-        new String[]{"2024-06-15", "14:30:00", "2024-06-15T14:30:00"}
-    );
+    Row r =
+        row(
+            new String[] {"date", "time", "dateTime"},
+            new String[] {"2024-06-15", "14:30:00", "2024-06-15T14:30:00"});
 
     DateTimeRecord rec = mapper.map(r);
 
@@ -180,7 +165,7 @@ class RecordRowMapperTest {
   @Test
   void mapsSingleFieldRecord() {
     RowMapper<SingleField> mapper = RecordRowMapper.of(SingleField.class);
-    Row r = row(new String[]{"value"}, new String[]{"test"});
+    Row r = row(new String[] {"value"}, new String[] {"test"});
 
     assertEquals("test", mapper.map(r).value());
   }
@@ -188,7 +173,7 @@ class RecordRowMapperTest {
   @Test
   void mapsByteArray() {
     RowMapper<BytesRecord> mapper = RecordRowMapper.of(BytesRecord.class);
-    Row r = row(new String[]{"name", "data"}, new String[]{"file.bin", "rawbytes"});
+    Row r = row(new String[] {"name", "data"}, new String[] {"file.bin", "rawbytes"});
 
     BytesRecord rec = mapper.map(r);
     assertEquals("file.bin", rec.name());
@@ -199,14 +184,10 @@ class RecordRowMapperTest {
   void reuseMapperAcrossMultipleRows() {
     RowMapper<SimpleUser> mapper = RecordRowMapper.of(SimpleUser.class);
 
-    SimpleUser u1 = mapper.map(row(
-        new String[]{"id", "name", "email"},
-        new String[]{"1", "A", "a@x"}
-    ));
-    SimpleUser u2 = mapper.map(row(
-        new String[]{"id", "name", "email"},
-        new String[]{"2", "B", "b@x"}
-    ));
+    SimpleUser u1 =
+        mapper.map(row(new String[] {"id", "name", "email"}, new String[] {"1", "A", "a@x"}));
+    SimpleUser u2 =
+        mapper.map(row(new String[] {"id", "name", "email"}, new String[] {"2", "B", "b@x"}));
 
     assertEquals(1, u1.id());
     assertEquals("A", u1.name());
@@ -218,10 +199,10 @@ class RecordRowMapperTest {
   void mapsColumnsByPosition() {
     RowMapper<SnakeCaseUser> mapper = RecordRowMapper.of(SnakeCaseUser.class);
     // Column names don't matter — only position
-    Row r = row(
-        new String[]{"user_id", "first_name", "last_name"},
-        new String[]{"1", "Alice", "Smith"}
-    );
+    Row r =
+        row(
+            new String[] {"user_id", "first_name", "last_name"},
+            new String[] {"1", "Alice", "Smith"});
 
     SnakeCaseUser user = mapper.map(r);
 
@@ -233,22 +214,15 @@ class RecordRowMapperTest {
   @SuppressWarnings({"unchecked", "rawtypes"})
   @Test
   void rejectsNonRecordClass() {
-    assertThrows(
-        IllegalArgumentException.class, () ->
-            RecordRowMapper.of((Class) String.class)
-    );
+    assertThrows(IllegalArgumentException.class, () -> RecordRowMapper.of((Class) String.class));
   }
 
   @Test
   void rejectsUnsupportedComponentType() {
-    record BadRecord(Object unsupported) {
+    record BadRecord(Object unsupported) {}
 
-    }
-
-    IllegalArgumentException ex = assertThrows(
-        IllegalArgumentException.class, () ->
-            RecordRowMapper.of(BadRecord.class)
-    );
+    IllegalArgumentException ex =
+        assertThrows(IllegalArgumentException.class, () -> RecordRowMapper.of(BadRecord.class));
     assertTrue(ex.getMessage().contains("Unsupported type"));
     assertTrue(ex.getMessage().contains("unsupported"));
   }
@@ -256,7 +230,7 @@ class RecordRowMapperTest {
   @Test
   void throwsWhenRowHasFewerColumnsThanRecord() {
     RowMapper<SimpleUser> mapper = RecordRowMapper.of(SimpleUser.class);
-    Row r = row(new String[]{"id", "name"}, new String[]{"1", "Alice"});
+    Row r = row(new String[] {"id", "name"}, new String[] {"1", "Alice"});
 
     // Record expects 3 columns but row only has 2
     assertThrows(IndexOutOfBoundsException.class, () -> mapper.map(r));
@@ -265,27 +239,23 @@ class RecordRowMapperTest {
   @Test
   void mapsOffsetDateTime() {
     RowMapper<WithOffsetDateTime> mapper = RecordRowMapper.of(WithOffsetDateTime.class);
-    Row r = row(
-        new String[]{"name", "created"},
-        new String[]{"event", "2024-06-15T14:30:00+02:00"}
-    );
+    Row r =
+        row(new String[] {"name", "created"}, new String[] {"event", "2024-06-15T14:30:00+02:00"});
 
     WithOffsetDateTime rec = mapper.map(r);
 
     assertEquals("event", rec.name());
     assertEquals(
-        OffsetDateTime.of(2024, 6, 15, 14, 30, 0, 0, ZoneOffset.ofHours(2)),
-        rec.created()
-    );
+        OffsetDateTime.of(2024, 6, 15, 14, 30, 0, 0, ZoneOffset.ofHours(2)), rec.created());
   }
 
   @Test
   void mixedPrimitiveAndBoxedNulls() {
     RowMapper<MixedNulls> mapper = RecordRowMapper.of(MixedNulls.class);
-    Row r = row(
-        new String[]{"id", "nullable_id", "name", "count"},
-        new String[]{null, null, "Alice", null}
-    );
+    Row r =
+        row(
+            new String[] {"id", "nullable_id", "name", "count"},
+            new String[] {null, null, "Alice", null});
 
     MixedNulls rec = mapper.map(r);
 
@@ -301,10 +271,7 @@ class RecordRowMapperTest {
   @Test
   void distinguishesEmptyStringFromNull() {
     RowMapper<EmptyStringsRecord> mapper = RecordRowMapper.of(EmptyStringsRecord.class);
-    Row r = row(
-        new String[]{"first", "second"},
-        new String[]{"", null}
-    );
+    Row r = row(new String[] {"first", "second"}, new String[] {"", null});
 
     EmptyStringsRecord rec = mapper.map(r);
 
@@ -316,10 +283,10 @@ class RecordRowMapperTest {
   void mapsRowWithMoreColumnsThanRecordComponents() {
     // Extra trailing columns should be ignored (only first N consumed)
     RowMapper<PrimitiveUser> mapper = RecordRowMapper.of(PrimitiveUser.class);
-    Row r = row(
-        new String[]{"id", "name", "extra1", "extra2"},
-        new String[]{"5", "Charlie", "ignored", "also_ignored"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "extra1", "extra2"},
+            new String[] {"5", "Charlie", "ignored", "also_ignored"});
 
     PrimitiveUser user = mapper.map(r);
 
@@ -330,7 +297,7 @@ class RecordRowMapperTest {
   @Test
   void mapsEnumField() {
     RowMapper<OrderWithStatus> mapper = RecordRowMapper.of(OrderWithStatus.class);
-    Row r = row(new String[]{"id", "status"}, new String[]{"1", "ACTIVE"});
+    Row r = row(new String[] {"id", "status"}, new String[] {"1", "ACTIVE"});
 
     OrderWithStatus order = mapper.map(r);
 
@@ -341,7 +308,7 @@ class RecordRowMapperTest {
   @Test
   void nullEnumFieldReturnsNull() {
     RowMapper<OrderWithStatus> mapper = RecordRowMapper.of(OrderWithStatus.class);
-    Row r = row(new String[]{"id", "status"}, new String[]{"1", null});
+    Row r = row(new String[] {"id", "status"}, new String[] {"1", null});
 
     OrderWithStatus order = mapper.map(r);
 
@@ -352,10 +319,10 @@ class RecordRowMapperTest {
   @Test
   void mapsAllNullBigDecimalAndUuid() {
     RowMapper<AllTypes> mapper = RecordRowMapper.of(AllTypes.class);
-    Row r = row(
-        new String[]{"s", "i", "l", "sh", "f", "d", "b", "bd", "uuid"},
-        new String[]{null, null, null, null, null, null, null, null, null}
-    );
+    Row r =
+        row(
+            new String[] {"s", "i", "l", "sh", "f", "d", "b", "bd", "uuid"},
+            new String[] {null, null, null, null, null, null, null, null, null});
 
     AllTypes rec = mapper.map(r);
 
@@ -372,19 +339,29 @@ class RecordRowMapperTest {
 
   // --- 2. Comprehensive null matrix ---
 
-  record NullableTypes(Integer i, Long l, Short s, Float f, Double d, Boolean b,
-                       BigDecimal bd, UUID uuid, LocalDate date, LocalTime time,
-                       LocalDateTime dateTime, OffsetDateTime odt) {
-
-  }
+  record NullableTypes(
+      Integer i,
+      Long l,
+      Short s,
+      Float f,
+      Double d,
+      Boolean b,
+      BigDecimal bd,
+      UUID uuid,
+      LocalDate date,
+      LocalTime time,
+      LocalDateTime dateTime,
+      OffsetDateTime odt) {}
 
   @Test
   void allBoxedTypesReturnNullIndependently() {
     RowMapper<NullableTypes> mapper = RecordRowMapper.of(NullableTypes.class);
-    Row r = row(
-        new String[]{"i", "l", "s", "f", "d", "b", "bd", "uuid", "date", "time", "dateTime", "odt"},
-        new String[]{null, null, null, null, null, null, null, null, null, null, null, null}
-    );
+    Row r =
+        row(
+            new String[] {
+              "i", "l", "s", "f", "d", "b", "bd", "uuid", "date", "time", "dateTime", "odt"
+            },
+            new String[] {null, null, null, null, null, null, null, null, null, null, null, null});
 
     NullableTypes rec = mapper.map(r);
 
@@ -406,62 +383,47 @@ class RecordRowMapperTest {
 
   @Test
   void errorMessageIncludesFieldNameForUnsupportedType() {
-    record UnsupportedField(String name, Object badField) {
+    record UnsupportedField(String name, Object badField) {}
 
-    }
-
-    IllegalArgumentException ex = assertThrows(
-        IllegalArgumentException.class, () ->
-            RecordRowMapper.of(UnsupportedField.class)
-    );
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class, () -> RecordRowMapper.of(UnsupportedField.class));
     assertTrue(
         ex.getMessage().contains("badField"),
-        "Error message should include the field name 'badField', got: " + ex.getMessage()
-    );
+        "Error message should include the field name 'badField', got: " + ex.getMessage());
   }
 
   @Test
   void errorMessageForTooFewColumnsWithNestedRecord() {
-    record Inner(String a, String b) {
+    record Inner(String a, String b) {}
 
-    }
-    record Outer(int id, Inner inner) {
-
-    }
+    record Outer(int id, Inner inner) {}
 
     RowMapper<Outer> mapper = RecordRowMapper.of(Outer.class);
     // Outer needs 3 columns (id, a, b) but we only provide 2
-    Row r = row(new String[]{"id", "a"}, new String[]{"1", "hello"});
+    Row r = row(new String[] {"id", "a"}, new String[] {"1", "hello"});
 
     assertThrows(IndexOutOfBoundsException.class, () -> mapper.map(r));
   }
 
   // --- 4. Nested null patterns ---
 
-  record OptionalAddress(String street, String city) {
+  record OptionalAddress(String street, String city) {}
 
-  }
-
-  record UserOptAddr(int id, String name, OptionalAddress addr) {
-
-  }
+  record UserOptAddr(int id, String name, OptionalAddress addr) {}
 
   @Test
   void nestedRecordAllNullFieldsStillConstructsObject() {
     RowMapper<UserOptAddr> mapper = RecordRowMapper.of(UserOptAddr.class);
-    Row r = row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{"1", "Alice", null, null}
-    );
+    Row r =
+        row(new String[] {"id", "name", "street", "city"}, new String[] {"1", "Alice", null, null});
 
     UserOptAddr user = mapper.map(r);
 
     assertEquals(1, user.id());
     assertEquals("Alice", user.name());
     assertNotNull(
-        user.addr(),
-        "Nested record with all null fields should still be constructed, not null"
-    );
+        user.addr(), "Nested record with all null fields should still be constructed, not null");
     assertNull(user.addr().street());
     assertNull(user.addr().city());
   }
@@ -469,10 +431,10 @@ class RecordRowMapperTest {
   @Test
   void nestedWithMixedNullAndNonNull() {
     RowMapper<UserOptAddr> mapper = RecordRowMapper.of(UserOptAddr.class);
-    Row r = row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{"2", "Bob", null, "Springfield"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "street", "city"},
+            new String[] {"2", "Bob", null, "Springfield"});
 
     UserOptAddr user = mapper.map(r);
 
@@ -486,19 +448,14 @@ class RecordRowMapperTest {
 
   @Test
   void extremeIntegerValues() {
-    record IntRecord(Integer i) {
+    record IntRecord(Integer i) {}
 
-    }
     RowMapper<IntRecord> mapper = RecordRowMapper.of(IntRecord.class);
 
-    IntRecord max = mapper.map(row(
-        new String[]{"i"},
-        new String[]{String.valueOf(Integer.MAX_VALUE)}
-    ));
-    IntRecord min = mapper.map(row(
-        new String[]{"i"},
-        new String[]{String.valueOf(Integer.MIN_VALUE)}
-    ));
+    IntRecord max =
+        mapper.map(row(new String[] {"i"}, new String[] {String.valueOf(Integer.MAX_VALUE)}));
+    IntRecord min =
+        mapper.map(row(new String[] {"i"}, new String[] {String.valueOf(Integer.MIN_VALUE)}));
 
     assertEquals(Integer.MAX_VALUE, max.i());
     assertEquals(Integer.MIN_VALUE, min.i());
@@ -506,19 +463,14 @@ class RecordRowMapperTest {
 
   @Test
   void extremeLongValues() {
-    record LongRecord(Long l) {
+    record LongRecord(Long l) {}
 
-    }
     RowMapper<LongRecord> mapper = RecordRowMapper.of(LongRecord.class);
 
-    LongRecord max = mapper.map(row(
-        new String[]{"l"},
-        new String[]{String.valueOf(Long.MAX_VALUE)}
-    ));
-    LongRecord min = mapper.map(row(
-        new String[]{"l"},
-        new String[]{String.valueOf(Long.MIN_VALUE)}
-    ));
+    LongRecord max =
+        mapper.map(row(new String[] {"l"}, new String[] {String.valueOf(Long.MAX_VALUE)}));
+    LongRecord min =
+        mapper.map(row(new String[] {"l"}, new String[] {String.valueOf(Long.MIN_VALUE)}));
 
     assertEquals(Long.MAX_VALUE, max.l());
     assertEquals(Long.MIN_VALUE, min.l());
@@ -526,27 +478,25 @@ class RecordRowMapperTest {
 
   @Test
   void largeBigDecimal() {
-    record BdRecord(BigDecimal bd) {
+    record BdRecord(BigDecimal bd) {}
 
-    }
     RowMapper<BdRecord> mapper = RecordRowMapper.of(BdRecord.class);
 
     String large = "123456789012345678901234567890.123456789";
-    BdRecord rec = mapper.map(row(new String[]{"bd"}, new String[]{large}));
+    BdRecord rec = mapper.map(row(new String[] {"bd"}, new String[] {large}));
 
     assertEquals(new BigDecimal(large), rec.bd());
   }
 
   @Test
   void negativeNumbers() {
-    record Negatives(int i, long l, float f, double d, short s) {
+    record Negatives(int i, long l, float f, double d, short s) {}
 
-    }
     RowMapper<Negatives> mapper = RecordRowMapper.of(Negatives.class);
-    Row r = row(
-        new String[]{"i", "l", "f", "d", "s"},
-        new String[]{"-42", "-9999999999", "-3.14", "-2.718281828", "-7"}
-    );
+    Row r =
+        row(
+            new String[] {"i", "l", "f", "d", "s"},
+            new String[] {"-42", "-9999999999", "-3.14", "-2.718281828", "-7"});
 
     Negatives rec = mapper.map(r);
 
@@ -563,11 +513,10 @@ class RecordRowMapperTest {
   void dateTimeWithSpaceInsteadOfT() {
     // MySQL returns "2024-06-15 14:30:00" (space instead of T).
     // Row.getLocalDateTime replaces space with T before parsing, so this succeeds.
-    record DtRecord(LocalDateTime dateTime) {
+    record DtRecord(LocalDateTime dateTime) {}
 
-    }
     RowMapper<DtRecord> mapper = RecordRowMapper.of(DtRecord.class);
-    Row r = row(new String[]{"dateTime"}, new String[]{"2024-06-15 14:30:00"});
+    Row r = row(new String[] {"dateTime"}, new String[] {"2024-06-15 14:30:00"});
 
     DtRecord rec = mapper.map(r);
 
@@ -576,14 +525,13 @@ class RecordRowMapperTest {
 
   @Test
   void offsetDateTimeWithDifferentOffsets() {
-    record OdtRecord(OffsetDateTime india, OffsetDateTime brazil) {
+    record OdtRecord(OffsetDateTime india, OffsetDateTime brazil) {}
 
-    }
     RowMapper<OdtRecord> mapper = RecordRowMapper.of(OdtRecord.class);
-    Row r = row(
-        new String[]{"india", "brazil"},
-        new String[]{"2024-06-15T14:30:00+05:30", "2024-06-15T14:30:00-03:00"}
-    );
+    Row r =
+        row(
+            new String[] {"india", "brazil"},
+            new String[] {"2024-06-15T14:30:00+05:30", "2024-06-15T14:30:00-03:00"});
 
     OdtRecord rec = mapper.map(r);
 
@@ -597,14 +545,10 @@ class RecordRowMapperTest {
 
   @Test
   void unicodeInStrings() {
-    record UnicodeRecord(String emoji, String chinese, String accented) {
+    record UnicodeRecord(String emoji, String chinese, String accented) {}
 
-    }
     RowMapper<UnicodeRecord> mapper = RecordRowMapper.of(UnicodeRecord.class);
-    Row r = row(
-        new String[]{"emoji", "chinese", "accented"},
-        new String[]{"🎉", "你好", "àéîöü"}
-    );
+    Row r = row(new String[] {"emoji", "chinese", "accented"}, new String[] {"🎉", "你好", "àéîöü"});
 
     UnicodeRecord rec = mapper.map(r);
 
@@ -615,14 +559,13 @@ class RecordRowMapperTest {
 
   @Test
   void specialSqlCharacters() {
-    record SqlChars(String quoted, String escaped, String semicolon) {
+    record SqlChars(String quoted, String escaped, String semicolon) {}
 
-    }
     RowMapper<SqlChars> mapper = RecordRowMapper.of(SqlChars.class);
-    Row r = row(
-        new String[]{"quoted", "escaped", "semicolon"},
-        new String[]{"it's a test", "back\\slash", "SELECT 1; DROP TABLE users"}
-    );
+    Row r =
+        row(
+            new String[] {"quoted", "escaped", "semicolon"},
+            new String[] {"it's a test", "back\\slash", "SELECT 1; DROP TABLE users"});
 
     SqlChars rec = mapper.map(r);
 
@@ -635,17 +578,27 @@ class RecordRowMapperTest {
 
   @Test
   void columnPositionWithManyFields() {
-    record ManyFields(String f0, int f1, long f2, String f3, double f4,
-                      boolean f5, String f6, short f7, float f8, String f9,
-                      Integer f10, Long f11) {
+    record ManyFields(
+        String f0,
+        int f1,
+        long f2,
+        String f3,
+        double f4,
+        boolean f5,
+        String f6,
+        short f7,
+        float f8,
+        String f9,
+        Integer f10,
+        Long f11) {}
 
-    }
     RowMapper<ManyFields> mapper = RecordRowMapper.of(ManyFields.class);
-    Row r = row(
-        new String[]{"f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11"},
-        new String[]{"zero", "1", "2", "three", "4.0", "true", "six", "7", "8.5", "nine", "10",
-            "11"}
-    );
+    Row r =
+        row(
+            new String[] {"f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11"},
+            new String[] {
+              "zero", "1", "2", "three", "4.0", "true", "six", "7", "8.5", "nine", "10", "11"
+            });
 
     ManyFields rec = mapper.map(r);
 

@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decodes MySQL backend (server → client) protocol packets from an InputStream. MySQL packets:
@@ -21,7 +23,7 @@ public final class MysqlDecoder {
   private int lastSequenceId;
   private boolean deprecateEof = false;
 
-  public MysqlDecoder(InputStream in) {
+  public MysqlDecoder(@NonNull InputStream in) {
     this.in = in;
   }
 
@@ -33,10 +35,8 @@ public final class MysqlDecoder {
     return lastSequenceId;
   }
 
-  /**
-   * Read one complete MySQL packet. Returns raw payload bytes.
-   */
-  public byte[] readPacket() throws IOException {
+  /** Read one complete MySQL packet. Returns raw payload bytes. */
+  public byte @NonNull [] readPacket() throws IOException {
     // Read 3-byte length (LE) + 1-byte sequence ID
     byte[] header = readExactly(4);
     int length = (header[0] & 0xFF) | ((header[1] & 0xFF) << 8) | ((header[2] & 0xFF) << 16);
@@ -60,10 +60,8 @@ public final class MysqlDecoder {
     return payload;
   }
 
-  /**
-   * Read an OK packet from payload. Assumes first byte is 0x00 or 0xFE.
-   */
-  public OkPacket readOkPacket(byte[] payload) {
+  /** Read an OK packet from payload. Assumes first byte is 0x00 or 0xFE. */
+  public @NonNull OkPacket readOkPacket(byte @NonNull [] payload) {
     var buf = ByteBuffer.wrap(payload);
     buf.readByte(); // header (0x00 or 0xFE)
     int affectedRows = (int) readLengthEncodedInt(buf);
@@ -73,10 +71,8 @@ public final class MysqlDecoder {
     return new OkPacket(affectedRows, lastInsertId, serverStatus, warnings);
   }
 
-  /**
-   * Read an ERR packet from payload.
-   */
-  public ErrPacket readErrPacket(byte[] payload) {
+  /** Read an ERR packet from payload. */
+  public @NonNull ErrPacket readErrPacket(byte @NonNull [] payload) {
     var buf = ByteBuffer.wrap(payload);
     buf.readByte(); // header (0xFF)
     int errorCode = readShortLE(buf);
@@ -84,19 +80,14 @@ public final class MysqlDecoder {
     byte[] stateBytes = new byte[5];
     buf.readBytes(stateBytes);
     String sqlState = new String(stateBytes, StandardCharsets.US_ASCII);
-    String message = new String(
-        payload,
-        buf.readerIndex(),
-        payload.length - buf.readerIndex(),
-        StandardCharsets.UTF_8
-    );
+    String message =
+        new String(
+            payload, buf.readerIndex(), payload.length - buf.readerIndex(), StandardCharsets.UTF_8);
     return new ErrPacket(errorCode, sqlState, message);
   }
 
-  /**
-   * Read an EOF packet.
-   */
-  public EofPacket readEofPacket(byte[] payload) {
+  /** Read an EOF packet. */
+  public @NonNull EofPacket readEofPacket(byte @NonNull [] payload) {
     var buf = ByteBuffer.wrap(payload);
     buf.readByte(); // header (0xFE)
     int warnings = readShortLE(buf);
@@ -104,18 +95,14 @@ public final class MysqlDecoder {
     return new EofPacket(warnings, serverStatus);
   }
 
-  /**
-   * Read column count from a result set response.
-   */
-  public int readColumnCount(byte[] payload) {
+  /** Read column count from a result set response. */
+  public int readColumnCount(byte @NonNull [] payload) {
     var buf = ByteBuffer.wrap(payload);
     return (int) readLengthEncodedInt(buf);
   }
 
-  /**
-   * Read a column definition packet.
-   */
-  public ColumnDescriptor readColumnDefinition(byte[] payload) {
+  /** Read a column definition packet. */
+  public @NonNull ColumnDescriptor readColumnDefinition(byte @NonNull [] payload) {
     var buf = ByteBuffer.wrap(payload);
     skipLengthEncodedString(buf); // catalog
     skipLengthEncodedString(buf); // schema
@@ -135,10 +122,8 @@ public final class MysqlDecoder {
     return new ColumnDescriptor(name, 0, (short) 0, typeId, (short) 0, 0);
   }
 
-  /**
-   * Read a text result row (length-encoded strings, 0xFB = NULL).
-   */
-  public byte[][] readTextRow(byte[] payload, int columnCount) {
+  /** Read a text result row (length-encoded strings, 0xFB = NULL). */
+  public byte @NonNull [][] readTextRow(byte @NonNull [] payload, int columnCount) {
     var buf = ByteBuffer.wrap(payload);
     byte[][] values = new byte[columnCount][];
     for (int i = 0; i < columnCount; i++) {
@@ -156,10 +141,8 @@ public final class MysqlDecoder {
     return values;
   }
 
-  /**
-   * Parse the initial handshake packet sent by the server.
-   */
-  public HandshakePacket readHandshake(byte[] payload) {
+  /** Parse the initial handshake packet sent by the server. */
+  public @NonNull HandshakePacket readHandshake(byte @NonNull [] payload) {
     var buf = ByteBuffer.wrap(payload);
     int protocolVersion = buf.readUnsignedByte();
     String serverVersion = readNullTerminatedString(buf, StandardCharsets.US_ASCII);
@@ -196,15 +179,18 @@ public final class MysqlDecoder {
     }
 
     return new HandshakePacket(
-        protocolVersion, serverVersion, connectionId,
-        authPluginData, serverCapabilities, charset, statusFlags, authPluginName
-    );
+        protocolVersion,
+        serverVersion,
+        connectionId,
+        authPluginData,
+        serverCapabilities,
+        charset,
+        statusFlags,
+        authPluginName);
   }
 
-  /**
-   * Read COM_STMT_PREPARE response. Returns statement metadata.
-   */
-  public PrepareResult readPrepareResult(byte[] payload) {
+  /** Read COM_STMT_PREPARE response. Returns statement metadata. */
+  public @NonNull PrepareResult readPrepareResult(byte @NonNull [] payload) {
     var buf = ByteBuffer.wrap(payload);
     buf.readByte(); // status (0x00)
     int statementId = readIntLE(buf);
@@ -219,7 +205,8 @@ public final class MysqlDecoder {
    * Read a binary result row (from COM_STMT_EXECUTE response). Binary rows: header(1=0x00) +
    * null_bitmap + column_values
    */
-  public byte[][] readBinaryRow(byte[] payload, int columnCount, int[] columnTypes) {
+  public byte @NonNull [][] readBinaryRow(
+      byte @NonNull [] payload, int columnCount, int @NonNull [] columnTypes) {
     var buf = ByteBuffer.wrap(payload);
     buf.readByte(); // header byte (0x00)
 
@@ -245,7 +232,7 @@ public final class MysqlDecoder {
     // MySQL column types from protocol
     return switch (columnType) {
       case 0x01 -> // TINY (INT8)
-          new byte[]{buf.readByte()};
+          new byte[] {buf.readByte()};
       case 0x02, 0x0D -> { // SHORT (INT16), YEAR
         byte[] b = new byte[2];
         buf.readBytes(b);
@@ -290,9 +277,7 @@ public final class MysqlDecoder {
 
   // --- Record types ---
 
-  public record PrepareResult(int statementId, int numColumns, int numParams, int numWarnings) {
-
-  }
+  public record PrepareResult(int statementId, int numColumns, int numParams, int numWarnings) {}
 
   // --- Low-level helpers ---
 
@@ -315,8 +300,10 @@ public final class MysqlDecoder {
     return switch (firstByte) {
       case 0xFB -> -1; // NULL
       case 0xFC -> (buf.readUnsignedByte()) | ((long) buf.readUnsignedByte() << 8);
-      case 0xFD -> (buf.readUnsignedByte()) | ((long) buf.readUnsignedByte() << 8) |
-          ((long) buf.readUnsignedByte() << 16);
+      case 0xFD ->
+          (buf.readUnsignedByte())
+              | ((long) buf.readUnsignedByte() << 8)
+              | ((long) buf.readUnsignedByte() << 16);
       case 0xFE -> {
         long value = 0;
         for (int i = 0; i < 8; i++) {
@@ -333,15 +320,17 @@ public final class MysqlDecoder {
   }
 
   static int readIntLE(ByteBuffer buf) {
-    return (buf.readUnsignedByte()) | (buf.readUnsignedByte() << 8)
-        | (buf.readUnsignedByte() << 16) | (buf.readUnsignedByte() << 24);
+    return (buf.readUnsignedByte())
+        | (buf.readUnsignedByte() << 8)
+        | (buf.readUnsignedByte() << 16)
+        | (buf.readUnsignedByte() << 24);
   }
 
-  public static String readNullTerminatedString(ByteBuffer buf, Charset charset) {
+  public static @NonNull String readNullTerminatedString(
+      @NonNull ByteBuffer buf, @NonNull Charset charset) {
     int start = buf.readerIndex();
     //noinspection StatementWithEmptyBody
-    while (buf.readByte() != 0) {
-    }
+    while (buf.readByte() != 0) {}
     int end = buf.readerIndex() - 1;
     int len = end - start;
     byte[] bytes = new byte[len];
@@ -351,7 +340,7 @@ public final class MysqlDecoder {
     return new String(bytes, charset);
   }
 
-  static String readLengthEncodedString(ByteBuffer buf) {
+  static @Nullable String readLengthEncodedString(ByteBuffer buf) {
     long length = readLengthEncodedInt(buf);
     if (length < 0) {
       return null;
@@ -371,22 +360,18 @@ public final class MysqlDecoder {
   // --- Record types ---
 
   public record HandshakePacket(
-      int protocolVersion, String serverVersion, int connectionId,
-      byte[] authPluginData, int serverCapabilities,
-      int charset, int statusFlags, String authPluginName
-  ) {
+      int protocolVersion,
+      @NonNull String serverVersion,
+      int connectionId,
+      byte @NonNull [] authPluginData,
+      int serverCapabilities,
+      int charset,
+      int statusFlags,
+      @NonNull String authPluginName) {}
 
-  }
+  public record OkPacket(int affectedRows, long lastInsertId, int serverStatus, int warnings) {}
 
-  public record OkPacket(int affectedRows, long lastInsertId, int serverStatus, int warnings) {
+  public record ErrPacket(int errorCode, @NonNull String sqlState, @NonNull String message) {}
 
-  }
-
-  public record ErrPacket(int errorCode, String sqlState, String message) {
-
-  }
-
-  public record EofPacket(int warnings, int serverStatus) {
-
-  }
+  public record EofPacket(int warnings, int serverStatus) {}
 }

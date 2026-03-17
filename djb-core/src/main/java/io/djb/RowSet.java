@@ -13,15 +13,16 @@ import org.jspecify.annotations.Nullable;
  * pipelined batch).
  *
  * <p>Implements {@link Iterable}{@code <Row>} so results can be used in enhanced for-loops:
+ *
  * <pre>{@code
  * for (Row row : conn.query("SELECT * FROM users")) {
  *     System.out.println(row.getString("name"));
  * }
  * }</pre>
  *
- * <p>In pipelined execution ({@link Connection#flush()}), each RowSet may independently
- * succeed or fail. Check {@link #getError()} is not null before accessing rows, or let
- * the getters throw automatically via the internal {@code checkError()} guard.
+ * <p>In pipelined execution ({@link Connection#flush()}), each RowSet may independently succeed or
+ * fail. Check {@link #getError()} is not null before accessing rows, or let the getters throw
+ * automatically via the internal {@code checkError()} guard.
  *
  * @see Row
  * @see Connection#query(String)
@@ -29,31 +30,23 @@ import org.jspecify.annotations.Nullable;
  */
 public final class RowSet implements Iterable<Row> {
 
-  @NonNull
-  private final List<Row> rows;
+  @NonNull private final List<Row> rows;
 
-  @NonNull
-  private final List<ColumnDescriptor> columns;
+  @NonNull private final List<ColumnDescriptor> columns;
 
   private final int rowsAffected;
 
-  @Nullable
-  private final DbException error;
+  @Nullable private final DbException error;
 
   public RowSet(
-      @NonNull List<Row> rows,
-      @NonNull List<ColumnDescriptor> columns,
-      int rowsAffected
-  ) {
+      @NonNull List<Row> rows, @NonNull List<ColumnDescriptor> columns, int rowsAffected) {
     this.rows = rows;
     this.columns = columns;
     this.rowsAffected = rowsAffected;
     this.error = null;
   }
 
-  /**
-   * Create a RowSet representing a failed statement in a pipeline.
-   */
+  /** Create a RowSet representing a failed statement in a pipeline. */
   public RowSet(@NonNull DbException error) {
     this.rows = Collections.emptyList();
     this.columns = Collections.emptyList();
@@ -78,12 +71,12 @@ public final class RowSet implements Iterable<Row> {
     return rowsAffected;
   }
 
-  public List<ColumnDescriptor> columnDescriptors() {
+  public @NonNull List<ColumnDescriptor> columnDescriptors() {
     checkError();
     return columns;
   }
 
-  public Row first() {
+  public @NonNull Row first() {
     checkError();
     if (rows.isEmpty()) {
       throw new IllegalStateException("No rows in result");
@@ -91,7 +84,7 @@ public final class RowSet implements Iterable<Row> {
     return rows.getFirst();
   }
 
-  public Stream<Row> stream() {
+  public @NonNull Stream<Row> stream() {
     checkError();
     return rows.stream();
   }
@@ -103,10 +96,8 @@ public final class RowSet implements Iterable<Row> {
     return rows.iterator();
   }
 
-  /**
-   * Map all rows to typed objects using the given mapper.
-   */
-  public <T> List<T> mapTo(RowMapper<T> mapper) {
+  /** Map all rows to typed objects using the given mapper. */
+  public <T> @NonNull List<T> mapTo(@NonNull RowMapper<T> mapper) {
     checkError();
     return rows.stream().map(mapper::map).toList();
   }
@@ -116,7 +107,8 @@ public final class RowSet implements Iterable<Row> {
    *
    * @throws IllegalStateException if no rows
    */
-  public <T> T mapFirst(RowMapper<T> mapper) {
+  @NonNull
+  public <T> T mapFirst(@NonNull RowMapper<T> mapper) {
     return mapper.map(first());
   }
 

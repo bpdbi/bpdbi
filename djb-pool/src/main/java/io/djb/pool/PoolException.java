@@ -1,17 +1,17 @@
 package io.djb.pool;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
-/**
- * Base exception for connection pool errors.
- */
+/** Base exception for connection pool errors. */
 @SuppressWarnings("serial")
 public class PoolException extends RuntimeException {
 
-  public PoolException(String message) {
+  public PoolException(@NonNull String message) {
     super(message);
   }
 
-  public PoolException(String message, Throwable cause) {
+  public PoolException(@NonNull String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

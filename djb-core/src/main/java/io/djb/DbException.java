@@ -1,17 +1,20 @@
 package io.djb;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Base exception for all database errors (unchecked).
  *
  * <p>Database-specific drivers extend this with additional fields:
+ *
  * <ul>
  *   <li>{@code PgException} — adds detail, hint, schema, table, column, constraint
  *   <li>{@code MysqlException} — adds MySQL error code
  * </ul>
  *
- * <p>{@link DbConnectionException} is a subclass for transport and I/O errors, allowing
- * callers to distinguish SQL errors from connectivity failures.
+ * <p>{@link DbConnectionException} is a subclass for transport and I/O errors, allowing callers to
+ * distinguish SQL errors from connectivity failures.
  *
  * @see DbConnectionException
  */
@@ -21,28 +24,28 @@ public class DbException extends RuntimeException {
   private final String severity;
   private final String sqlState;
 
-  public DbException(String severity, String sqlState, String message) {
+  public DbException(
+      @Nullable String severity, @Nullable String sqlState, @NonNull String message) {
     super(message);
     this.severity = severity;
     this.sqlState = sqlState;
   }
 
   public DbException(
-      String severity,
-      String sqlState,
-      String message,
-      Throwable cause
-  ) {
+      @Nullable String severity,
+      @Nullable String sqlState,
+      @NonNull String message,
+      @Nullable Throwable cause) {
     super(message, cause);
     this.severity = severity;
     this.sqlState = sqlState;
   }
 
-  public String severity() {
+  public @Nullable String severity() {
     return severity;
   }
 
-  public String sqlState() {
+  public @Nullable String sqlState() {
     return sqlState;
   }
 

@@ -5,8 +5,8 @@ import io.djb.pg.PgException;
 
 /**
  * Demonstrates error handling: query errors, pipeline errors, recovery.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.ErrorHandlingExample
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.ErrorHandlingExample
  */
 public class ErrorHandlingExample {
 

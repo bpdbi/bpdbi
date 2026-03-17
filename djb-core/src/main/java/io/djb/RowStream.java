@@ -9,13 +9,15 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A closeable, iterable stream of rows backed by direct wire-protocol reading. Rows are fetched
  * lazily from the server — constant memory regardless of result size.
  *
- * <p>Must be closed after use to drain any remaining server messages and keep the
- * connection in a clean state. Use with try-with-resources:
+ * <p>Must be closed after use to drain any remaining server messages and keep the connection in a
+ * clean state. Use with try-with-resources:
+ *
  * <pre>{@code
  * try (var rows = conn.stream("SELECT * FROM big_table")) {
  *     for (Row row : rows) {
@@ -24,11 +26,11 @@ import org.jspecify.annotations.NonNull;
  * }
  * }</pre>
  *
- * <p>Row objects are only valid during iteration. Do not retain references to rows
- * after advancing the iterator or closing the stream.
+ * <p>Row objects are only valid during iteration. Do not retain references to rows after advancing
+ * the iterator or closing the stream.
  *
- * <p>Only one pass is supported — calling {@link #iterator()}, {@link #stream()},
- * or {@link #forEach(Consumer)} consumes the rows. A second call will see no remaining rows.
+ * <p>Only one pass is supported — calling {@link #iterator()}, {@link #stream()}, or {@link
+ * #forEach(Consumer)} consumes the rows. A second call will see no remaining rows.
  */
 public final class RowStream implements AutoCloseable, Iterable<Row> {
 
@@ -40,13 +42,13 @@ public final class RowStream implements AutoCloseable, Iterable<Row> {
    * @param nextRow supplies the next row, or null when exhausted
    * @param onClose called on close to drain remaining messages and clean up
    */
-  public RowStream(Supplier<Row> nextRow, Runnable onClose) {
+  public RowStream(@NonNull Supplier<@Nullable Row> nextRow, @NonNull Runnable onClose) {
     this.nextRow = nextRow;
     this.onClose = onClose;
   }
 
   @Override
-  public void forEach(Consumer<? super Row> action) {
+  public void forEach(@NonNull Consumer<? super Row> action) {
     Row row;
     while ((row = nextRow.get()) != null) {
       action.accept(row);
@@ -57,11 +59,10 @@ public final class RowStream implements AutoCloseable, Iterable<Row> {
    * Return a {@link Stream}{@code <Row>} for filter/map/collect composition. The returned stream
    * does not need separate closing — closing this RowStream suffices.
    */
-  public Stream<Row> stream() {
+  public @NonNull Stream<Row> stream() {
     return StreamSupport.stream(
         Spliterators.spliteratorUnknownSize(iterator(), Spliterator.ORDERED | Spliterator.NONNULL),
-        false
-    );
+        false);
   }
 
   @Override

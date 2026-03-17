@@ -46,8 +46,8 @@ class ConnectionConfigTest {
 
   @Test
   void parseUriWithQueryParams() {
-    var c = ConnectionConfig.fromUri(
-        "postgresql://u:p@host/db?sslmode=require&application_name=myapp");
+    var c =
+        ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=require&application_name=myapp");
     assertEquals("db", c.database());
     assertEquals(SslMode.REQUIRE, c.sslMode());
     assertNotNull(c.properties());
@@ -72,12 +72,13 @@ class ConnectionConfigTest {
 
   @Test
   void builderStyle() {
-    var c = new ConnectionConfig()
-        .host("myhost")
-        .port(5432)
-        .database("mydb")
-        .username("user")
-        .password("pass");
+    var c =
+        new ConnectionConfig()
+            .host("myhost")
+            .port(5432)
+            .database("mydb")
+            .username("user")
+            .password("pass");
     assertEquals("myhost", c.host());
     assertEquals(5432, c.port());
     assertEquals("mydb", c.database());
@@ -150,8 +151,9 @@ class ConnectionConfigTest {
 
   @Test
   void parseUriMultipleQueryParams() {
-    var c = ConnectionConfig.fromUri(
-        "postgresql://u:p@host/db?sslmode=require&application_name=myapp&connect_timeout=10");
+    var c =
+        ConnectionConfig.fromUri(
+            "postgresql://u:p@host/db?sslmode=require&application_name=myapp&connect_timeout=10");
     assertEquals(SslMode.REQUIRE, c.sslMode());
     assertNotNull(c.properties());
     assertEquals("myapp", c.properties().get("application_name"));
@@ -185,9 +187,7 @@ class ConnectionConfigTest {
   @Test
   void socketTimeoutNegativeThrows() {
     assertThrows(
-        IllegalArgumentException.class, () ->
-            new ConnectionConfig().socketTimeoutMillis(-1)
-    );
+        IllegalArgumentException.class, () -> new ConnectionConfig().socketTimeoutMillis(-1));
   }
 
   @Test
@@ -200,12 +200,13 @@ class ConnectionConfigTest {
 
   @Test
   void sslConfigFluent() {
-    var c = new ConnectionConfig()
-        .sslMode(SslMode.VERIFY_FULL)
-        .pemCertPath("/cert.pem")
-        .trustStorePath("/trust.jks")
-        .trustStorePassword("changeit")
-        .hostnameVerification(true);
+    var c =
+        new ConnectionConfig()
+            .sslMode(SslMode.VERIFY_FULL)
+            .pemCertPath("/cert.pem")
+            .trustStorePath("/trust.jks")
+            .trustStorePassword("changeit")
+            .hostnameVerification(true);
     assertEquals(SslMode.VERIFY_FULL, c.sslMode());
     assertEquals("/cert.pem", c.pemCertPath());
     assertEquals("/trust.jks", c.trustStorePath());
@@ -215,10 +216,11 @@ class ConnectionConfigTest {
 
   @Test
   void cacheConfigFluent() {
-    var c = new ConnectionConfig()
-        .cachePreparedStatements(true)
-        .preparedStatementCacheMaxSize(128)
-        .preparedStatementCacheSqlLimit(1024);
+    var c =
+        new ConnectionConfig()
+            .cachePreparedStatements(true)
+            .preparedStatementCacheMaxSize(128)
+            .preparedStatementCacheSqlLimit(1024);
     assertTrue(c.cachePreparedStatements());
     assertEquals(128, c.preparedStatementCacheMaxSize());
     assertEquals(1024, c.preparedStatementCacheSqlLimit());

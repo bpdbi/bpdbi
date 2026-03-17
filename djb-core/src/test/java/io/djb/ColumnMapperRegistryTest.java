@@ -43,34 +43,29 @@ class ColumnMapperRegistryTest {
   void defaultMapBigDecimal() {
     assertEquals(
         new BigDecimal("123.456"),
-        ColumnMapperRegistry.defaults().map(BigDecimal.class, "123.456", "col")
-    );
+        ColumnMapperRegistry.defaults().map(BigDecimal.class, "123.456", "col"));
   }
 
   @Test
   void defaultMapUUID() {
     var uuid = UUID.fromString("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
     assertEquals(
-        uuid, ColumnMapperRegistry.defaults().map(
-            UUID.class,
-            "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "col"
-        )
-    );
+        uuid,
+        ColumnMapperRegistry.defaults()
+            .map(UUID.class, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "col"));
   }
 
   @Test
   void defaultMapLocalDate() {
     assertEquals(
         LocalDate.of(2024, 1, 15),
-        ColumnMapperRegistry.defaults().map(LocalDate.class, "2024-01-15", "col")
-    );
+        ColumnMapperRegistry.defaults().map(LocalDate.class, "2024-01-15", "col"));
   }
 
   @Test
   void customMapper() {
-    record Money(BigDecimal amount) {
+    record Money(BigDecimal amount) {}
 
-    }
     var reg = ColumnMapperRegistry.defaults();
     reg.register(Money.class, (v, c) -> new Money(new BigDecimal(v)));
     var money = reg.map(Money.class, "9.99", "price");
@@ -79,35 +74,30 @@ class ColumnMapperRegistryTest {
 
   @Test
   void unknownTypeThrows() {
-    record Unknown() {
-
-    }
+    record Unknown() {}
     assertThrows(
         IllegalArgumentException.class,
-        () -> ColumnMapperRegistry.defaults().map(Unknown.class, "x", "col")
-    );
+        () -> ColumnMapperRegistry.defaults().map(Unknown.class, "x", "col"));
   }
 
-  enum Status {ACTIVE, INACTIVE}
+  enum Status {
+    ACTIVE,
+    INACTIVE
+  }
 
   @Test
   void mapsEnumByName() {
     assertEquals(
-        Status.ACTIVE,
-        ColumnMapperRegistry.defaults().map(Status.class, "ACTIVE", "status")
-    );
+        Status.ACTIVE, ColumnMapperRegistry.defaults().map(Status.class, "ACTIVE", "status"));
     assertEquals(
-        Status.INACTIVE,
-        ColumnMapperRegistry.defaults().map(Status.class, "INACTIVE", "status")
-    );
+        Status.INACTIVE, ColumnMapperRegistry.defaults().map(Status.class, "INACTIVE", "status"));
   }
 
   @Test
   void enumUnknownValueThrows() {
     assertThrows(
         IllegalArgumentException.class,
-        () -> ColumnMapperRegistry.defaults().map(Status.class, "UNKNOWN", "status")
-    );
+        () -> ColumnMapperRegistry.defaults().map(Status.class, "UNKNOWN", "status"));
   }
 
   @Test

@@ -1,5 +1,7 @@
 package io.djb;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pluggable JSON serialization/deserialization interface. Users provide their own implementation
@@ -15,8 +17,7 @@ package io.djb;
  */
 public interface JsonMapper {
 
-  <T> T fromJson(String json, Class<T> type);
+  @Nullable <T> T fromJson(@NonNull String json, @NonNull Class<T> type);
 
-
-  String toJson(Object value);
+  @NonNull String toJson(@NonNull Object value);
 }

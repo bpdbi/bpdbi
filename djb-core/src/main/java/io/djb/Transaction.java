@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A database transaction with auto-rollback support. Implements {@link Connection} so it can be
@@ -21,27 +23,20 @@ import java.util.function.Consumer;
 public final class Transaction implements Connection {
 
   private final Connection conn;
-  private final String savepointName;  // null = root transaction, non-null = nested (savepoint)
+  private final String savepointName; // null = root transaction, non-null = nested (savepoint)
   private final AtomicInteger savepointCounter;
   private boolean finished = false;
 
-  /**
-   * Create a root transaction (sends BEGIN).
-   */
-  public Transaction(Connection conn) {
+  /** Create a root transaction (sends BEGIN). */
+  public Transaction(@NonNull Connection conn) {
     this.conn = conn;
     this.savepointName = null;
     this.savepointCounter = new AtomicInteger(0);
     conn.query("BEGIN");
   }
 
-  /**
-   * Create a nested transaction (sends SAVEPOINT).
-   */
-  private Transaction(
-      Connection conn, String savepointName,
-      AtomicInteger savepointCounter
-  ) {
+  /** Create a nested transaction (sends SAVEPOINT). */
+  private Transaction(Connection conn, String savepointName, AtomicInteger savepointCounter) {
     this.conn = conn;
     this.savepointName = savepointName;
     this.savepointCounter = savepointCounter;
@@ -53,55 +48,55 @@ public final class Transaction implements Connection {
   }
 
   @Override
-  public RowSet query(String sql) {
+  public @NonNull RowSet query(@NonNull String sql) {
     checkNotFinished();
     return conn.query(sql);
   }
 
   @Override
-  public RowSet query(String sql, Object... params) {
+  public @NonNull RowSet query(@NonNull String sql, @Nullable Object... params) {
     checkNotFinished();
     return conn.query(sql, params);
   }
 
   @Override
-  public RowSet query(String sql, Map<String, Object> params) {
+  public @NonNull RowSet query(@NonNull String sql, @NonNull Map<String, Object> params) {
     checkNotFinished();
     return conn.query(sql, params);
   }
 
   @Override
-  public int enqueue(String sql) {
+  public int enqueue(@NonNull String sql) {
     checkNotFinished();
     return conn.enqueue(sql);
   }
 
   @Override
-  public int enqueue(String sql, Object... params) {
+  public int enqueue(@NonNull String sql, @Nullable Object... params) {
     checkNotFinished();
     return conn.enqueue(sql, params);
   }
 
   @Override
-  public int enqueue(String sql, Map<String, Object> params) {
+  public int enqueue(@NonNull String sql, @NonNull Map<String, Object> params) {
     checkNotFinished();
     return conn.enqueue(sql, params);
   }
 
   @Override
-  public List<RowSet> flush() {
+  public @NonNull List<RowSet> flush() {
     checkNotFinished();
     return conn.flush();
   }
 
   @Override
-  public PreparedStatement prepare(String sql) {
+  public @NonNull PreparedStatement prepare(@NonNull String sql) {
     checkNotFinished();
     return conn.prepare(sql);
   }
 
   @Override
-  public Cursor cursor(String sql, Object... params) {
+  public @NonNull Cursor cursor(@NonNull String sql, @Nullable Object... params) {
     checkNotFinished();
     return conn.cursor(sql, params);
   }
@@ -111,17 +106,14 @@ public final class Transaction implements Connection {
    * close if not committed.
    */
   @Override
-  public Transaction begin() {
+  public @NonNull Transaction begin() {
     checkNotFinished();
     String sp = "_djb_sp_" + savepointCounter.getAndIncrement();
     return new Transaction(conn, sp, savepointCounter);
   }
 
   @Override
-  public List<RowSet> executeMany(
-      String sql,
-      List<Object[]> paramSets
-  ) {
+  public @NonNull List<RowSet> executeMany(@NonNull String sql, @NonNull List<Object[]> paramSets) {
     checkNotFinished();
     return conn.executeMany(sql, paramSets);
   }
@@ -133,60 +125,56 @@ public final class Transaction implements Connection {
   }
 
   @Override
-  public Map<String, String> parameters() {
+  public @NonNull Map<String, String> parameters() {
     checkNotFinished();
     return conn.parameters();
   }
 
   @Override
-  public void queryStream(String sql, Consumer<Row> consumer) {
+  public void queryStream(@NonNull String sql, @NonNull Consumer<Row> consumer) {
     checkNotFinished();
     conn.queryStream(sql, consumer);
   }
 
   @Override
-  public void queryStream(
-      String sql,
-      Consumer<Row> consumer,
-      Object... params
-  ) {
+  public void queryStream(@NonNull String sql, @NonNull Consumer<Row> consumer, @Nullable Object... params) {
     checkNotFinished();
     conn.queryStream(sql, consumer, params);
   }
 
   @Override
-  public RowStream stream(String sql, Object... params) {
+  public @NonNull RowStream stream(@NonNull String sql, @Nullable Object... params) {
     checkNotFinished();
     return conn.stream(sql, params);
   }
 
   @Override
-  public BinderRegistry binderRegistry() {
+  public @NonNull BinderRegistry binderRegistry() {
     return conn.binderRegistry();
   }
 
   @Override
-  public void setBinderRegistry(BinderRegistry registry) {
+  public void setBinderRegistry(@NonNull BinderRegistry registry) {
     conn.setBinderRegistry(registry);
   }
 
   @Override
-  public ColumnMapperRegistry mapperRegistry() {
+  public @NonNull ColumnMapperRegistry mapperRegistry() {
     return conn.mapperRegistry();
   }
 
   @Override
-  public void setColumnMapperRegistry(ColumnMapperRegistry registry) {
+  public void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry) {
     conn.setColumnMapperRegistry(registry);
   }
 
   @Override
-  public JsonMapper jsonMapper() {
+  public @Nullable JsonMapper jsonMapper() {
     return conn.jsonMapper();
   }
 
   @Override
-  public void setJsonMapper(JsonMapper mapper) {
+  public void setJsonMapper(@Nullable JsonMapper mapper) {
     conn.setJsonMapper(mapper);
   }
 

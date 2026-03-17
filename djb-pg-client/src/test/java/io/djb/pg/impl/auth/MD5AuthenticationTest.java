@@ -11,8 +11,8 @@ class MD5AuthenticationTest {
   void encode() {
     assertEquals(
         "md54cd35160716308e3e571bbba12bb7591",
-        MD5Authentication.encode("scott", "tiger", "salt'n'pepper".getBytes(StandardCharsets.UTF_8))
-    );
+        MD5Authentication.encode(
+            "scott", "tiger", "salt'n'pepper".getBytes(StandardCharsets.UTF_8)));
   }
 
   @Test

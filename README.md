@@ -1,11 +1,11 @@
-# Djb — Pipelined blocking Postgres and MySQL on the JVM
+# Djb — Blocking Pipelined Database Interface for the JVM
 
-A blocking SQL client for the JVM that treats **pipelining** as a first-class concept.
+A blocking database library the JVM that treats **pipelining** as a first-class concept.
 
 Ported from the battle-tested [Vert.x SQL Client](https://github.com/eclipse-vertx/vertx-sql-client)
-(the foundation of Quarkus), but stripped of all async/reactive machinery.
-Plain `java.net.Socket` I/O. No Netty dependencies. No event loop. No `Uni<T>` (or other
-implementations of futures).
+(the foundation of Quarkus), but stripped of all async/reactive machinery; thus "blocking".
+Since it's blocking, `java.net.Socket` is used for I/O (no Netty dependencies, event loop, `Uni<T>`,
+Kotlin coroutines or other implementations of the "future" pattern).
 
 ## Why?
 
@@ -14,13 +14,18 @@ which is available
 in [Postgres 14+](https://www.postgresql.org/docs/current/libpq-pipeline-mode.html)
 and [MySQL 5.7.12+](https://dev.mysql.com/blog-archive/mysql-5-7-12-part-2-improving-the-mysql-protocol/).
 
-Vert.x (`vertx-sql-client`) does support pipelines (for these databases), but
-forces [reactive/async programming](docs/why-not-write-all-code-reactive.md).
+Vert.x (`vertx-sql-client`) does support pipelines (for these databases) —it does not use JDBC—
+but forces [reactive/async programming](docs/why-not-write-all-code-reactive.md).
 
-Djb gives you pipelining with straightforward blocking code — ideal for **Java 21+ virtual threads
-**,
-where blocking is inexpensive and readability of the code matters more than a few percent better
-throughput.
+Djb gives you pipelining with straightforward blocking code — ideal for **Java 21+ virtual threads,
+where blocking is inexpensive and readability of the code matters more than maximum throughput.
+
+Djb provides a better developer experience than JDBC alone, it can be compared to Jdbi's DX.
+
+The whole library is a lot smaller that the typical JVM db stack, where a db driver, JDBC, and
+something like Jdbi are needed (easily several MB of libraries), where Djb is under 200kB.
+
+## Why pipelining?
 
 Pipelining sends multiple statements to the database in a single network write and reads all
 responses back at once.
@@ -66,8 +71,7 @@ Text format also makes `getString()` work naturally for types that lack a dedica
 (geometric, network, array, and interval types in Postgres).
 
 **Lazy decoding with column-oriented storage** — `Row` stores raw bytes from the wire and decodes
-them
-only when you call a typed getter (`getInteger`, `getString`, etc.).
+them only when you call a typed getter (`getInteger`, `getString`, etc.).
 Columns you never read are never decoded, keeping CPU overhead minimal.
 Buffered result sets use column-oriented storage internally: all values for a given column
 are packed into a single contiguous `byte[]` buffer, and each `Row` is a lightweight view
@@ -87,9 +91,10 @@ concurrent requests each get their own connection naturally.
 let you register custom converters for your domain types without forking the library or relying on
 reflection.
 
-**Null-safe API** — The entire public API is annotated with [JSpecify](https://jspecify.dev/) (
-`@NullMarked` / `@Nullable`).
+**Null-safe API** — The entire public API is annotated with [JSpecify](https://jspecify.dev/)
+(e.g.: `@NonNull` and `@Nullable`).
 IDEs and tools like NullAway can statically verify correct null handling at compile time.
+AI Coding Agents also like them.
 
 **No compile-time SQL validation** — Djb does not attempt to type-check the boundary between
 your JVM code and the database. SQL strings are opaque at compile time, just like in JDBC.
@@ -118,11 +123,12 @@ uses compile-time code generation (kotlinx.serialization) and needs no reflectio
 // build.gradle.kts
 dependencies {
     implementation(platform("io.djb:djb-bom:0.1.0"))
-    implementation("io.djb:djb-pg-client")               // Postgres driver
+    implementation("io.djb:djb-pg-client")                // Postgres driver
     // implementation("io.djb:djb-mysql-client")          // MySQL driver
     // implementation("io.djb:djb-pool")                  // Connection pool
-    // implementation("io.djb:djb-record-mapper")             // Java record mapping (reflection-based)
-    // implementation("io.djb:djb-kotlin")                // Kotlin extensions
+    // implementation("io.djb:djb-javabean-mapper")       // JavaBean mapping per row (reflection-based)
+    // implementation("io.djb:djb-record-mapper")         // Java record mapping per row (reflection-based)
+    // implementation("io.djb:djb-kotlin")                // Kotlin extensions + kotlinx.serialization based row mapper
 }
 ```
 
@@ -1029,19 +1035,17 @@ are not mandatorily reactive/async:
   thread pool (or virtual threads).
 - **[Micronaut](https://micronaut.io/)** — Compile-time DI, GraalVM-first. Supports both reactive
   and imperative — controller methods can simply return values.
-- **[Spark](https://sparkjava.com/)** — Dead-simple Java micro-framework with the same "just enough"
-  philosophy.
+- **[Spark](https://sparkjava.com/)** — Dead-simple Java micro-framework with the same "just enough" philosophy.
 - **[Jooby](https://jooby.io/)** — Modular micro-framework, explicit about dependencies, virtual
   thread support.
 - **`com.sun.net.httpserver`** — The JDK's built-in HTTP server. Zero dependencies, pairs naturally
   with djb's minimalism.
 
 Frameworks like Spring Boot are opinionated about their own data stacks (Spring Data, Hibernate) and
-assume a JDBC
-`DataSource` integration for transactions, health checks, and connection management.
+assume a JDBC `DataSource` integration for transactions, health checks, and connection management.
 
-Quarkus and the underlying Vert.x are reactive/async frameworks, so not a good fit for Djb:
-the Djb implementation is based on the `vertx-sql-client` package!
+Quarkus and the underlying Vert.x are reactive/async frameworks, so not a good fit for Djb.
+That said, Djb started as a port of the `vertx-sql-client` package!
 
 ## Modules
 
@@ -1080,6 +1084,22 @@ See [`examples/`](examples/) for runnable examples.
   specific
 - Only for `djb-kotlin`: `kotlin-stdlib` (for `kotlin.time` and `kotlin.uuid`) and
   `kotlinx-serialization`
+
+## Develop
+
+**Code formatting** — The project uses [Google Java Format](https://github.com/google/google-java-format)
+via [Spotless](https://github.com/diffplug/spotless). To check and fix formatting:
+
+```bash
+./gradlew spotlessCheck   # check for violations
+./gradlew spotlessApply   # auto-fix all violations
+```
+
+Your IDE will likely have a plugin for Google Java Format —
+see https://github.com/google/google-java-format#intellij-android-studio-and-other-jetbrains-ides
+for IntelliJ/Android Studio, or search your IDE's plugin marketplace.
+
+**Build & test** — see [`CLAUDE.md`](CLAUDE.md) for build commands and project structure.
 
 ## Status
 

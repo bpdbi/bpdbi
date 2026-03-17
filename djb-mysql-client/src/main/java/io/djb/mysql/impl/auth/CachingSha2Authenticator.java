@@ -2,6 +2,7 @@ package io.djb.mysql.impl.auth;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import org.jspecify.annotations.NonNull;
 
 /**
  * MySQL caching_sha2_password authentication. XOR(SHA256(password),
@@ -9,10 +10,9 @@ import java.security.NoSuchAlgorithmException;
  */
 public final class CachingSha2Authenticator {
 
-  private CachingSha2Authenticator() {
-  }
+  private CachingSha2Authenticator() {}
 
-  public static byte[] encode(byte[] password, byte[] nonce) {
+  public static byte @NonNull [] encode(byte @NonNull [] password, byte @NonNull [] nonce) {
     MessageDigest md;
     try {
       md = MessageDigest.getInstance("SHA-256");

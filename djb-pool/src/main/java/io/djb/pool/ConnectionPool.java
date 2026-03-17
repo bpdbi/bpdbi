@@ -12,21 +12,22 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A simple db connection pool for Djb connections.
  *
- * <p>Thread-safe. Each call to {@link #acquire()} borrows a connection from the pool;
- * callers return it by calling {@link Connection#close()} on the returned connection (which
- * redirects to the pool instead of closing). Alternatively, use
- * {@link #withConnection(ConnectionAction)} for automatic release.
+ * <p>Thread-safe. Each call to {@link #acquire()} borrows a connection from the pool; callers
+ * return it by calling {@link Connection#close()} on the returned connection (which redirects to
+ * the pool instead of closing). Alternatively, use {@link #withConnection(ConnectionAction)} for
+ * automatic release.
  *
- * <p>Connections are created lazily up to {@link PoolConfig#maxSize()}.
- * If all connections are in use, {@link #acquire()} blocks until one is returned or the configured
- * timeout expires.
+ * <p>Connections are created lazily up to {@link PoolConfig#maxSize()}. If all connections are in
+ * use, {@link #acquire()} blocks until one is returned or the configured timeout expires.
  *
- * <p>When {@link PoolConfig#maxIdleTimeMillis()} or {@link PoolConfig#maxLifetimeMillis()}
- * are configured and {@link PoolConfig#poolCleanerPeriodMillis()} &gt; 0, a background thread
+ * <p>When {@link PoolConfig#maxIdleTimeMillis()} or {@link PoolConfig#maxLifetimeMillis()} are
+ * configured and {@link PoolConfig#poolCleanerPeriodMillis()} &gt; 0, a background thread
  * periodically evicts expired connections and checks for leaked connections.
  */
 public final class ConnectionPool implements AutoCloseable {
@@ -40,36 +41,40 @@ public final class ConnectionPool implements AutoCloseable {
   private final AtomicInteger totalCount = new AtomicInteger(0);
   private final AtomicInteger waitCount = new AtomicInteger(0);
   private final AtomicBoolean closed = new AtomicBoolean(false);
-  private final ScheduledExecutorService cleaner;
-  private final ScheduledFuture<?> cleanerTask;
+  private final @Nullable ScheduledExecutorService cleaner;
+  private final @Nullable ScheduledFuture<?> cleanerTask;
 
-  public ConnectionPool(ConnectionFactory factory, PoolConfig config) {
+  public ConnectionPool(@NonNull ConnectionFactory factory, @NonNull PoolConfig config) {
     this.factory = factory;
     this.config = config;
     this.idle = new ArrayBlockingQueue<>(config.maxSize());
 
-    boolean needsCleaner = config.poolCleanerPeriodMillis() > 0
-        && (config.maxIdleTimeMillis() > 0 || config.maxLifetimeMillis() > 0
-        || config.leakDetectionThresholdMillis() > 0);
+    boolean needsCleaner =
+        config.poolCleanerPeriodMillis() > 0
+            && (config.maxIdleTimeMillis() > 0
+                || config.maxLifetimeMillis() > 0
+                || config.leakDetectionThresholdMillis() > 0);
     if (needsCleaner) {
-      this.cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "djb-pool-cleaner");
-        t.setDaemon(true);
-        return t;
-      });
-      this.cleanerTask = cleaner.scheduleAtFixedRate(
-          this::maintain,
-          config.poolCleanerPeriodMillis(),
-          config.poolCleanerPeriodMillis(),
-          TimeUnit.MILLISECONDS
-      );
+      this.cleaner =
+          Executors.newSingleThreadScheduledExecutor(
+              r -> {
+                Thread t = new Thread(r, "djb-pool-cleaner");
+                t.setDaemon(true);
+                return t;
+              });
+      this.cleanerTask =
+          cleaner.scheduleAtFixedRate(
+              this::maintain,
+              config.poolCleanerPeriodMillis(),
+              config.poolCleanerPeriodMillis(),
+              TimeUnit.MILLISECONDS);
     } else {
       this.cleaner = null;
       this.cleanerTask = null;
     }
   }
 
-  public ConnectionPool(ConnectionFactory factory) {
+  public ConnectionPool(@NonNull ConnectionFactory factory) {
     this(factory, new PoolConfig());
   }
 
@@ -77,13 +82,13 @@ public final class ConnectionPool implements AutoCloseable {
    * Acquire a connection from the pool. Creates a new one if the pool is below max size and no idle
    * connections are available.
    *
-   * <p>The returned connection's {@link Connection#close()} method returns it to the pool
-   * instead of closing the underlying connection, so callers can use try-with-resources.
+   * <p>The returned connection's {@link Connection#close()} method returns it to the pool instead
+   * of closing the underlying connection, so callers can use try-with-resources.
    *
    * @throws IllegalStateException if the pool is closed
-   * @throws RuntimeException      if the timeout expires or the wait queue is full
+   * @throws RuntimeException if the timeout expires or the wait queue is full
    */
-  public Connection acquire() {
+  public @NonNull Connection acquire() {
     while (true) {
       if (closed.get()) {
         throw new IllegalStateException("Pool is closed");
@@ -146,9 +151,7 @@ public final class ConnectionPool implements AutoCloseable {
     }
   }
 
-  /**
-   * Return a connection to the pool. Called internally by {@link PooledConnection#close()}.
-   */
+  /** Return a connection to the pool. Called internally by {@link PooledConnection#close()}. */
   void release(Connection connection) {
     if (!(connection instanceof PooledConnection pc)) {
       // Not a pooled connection — close it directly
@@ -166,42 +169,32 @@ public final class ConnectionPool implements AutoCloseable {
     }
   }
 
-  /**
-   * Execute an action with a pooled connection, automatically releasing it when done.
-   */
-  public <T> T withConnection(ConnectionFunction<T> action) {
+  /** Execute an action with a pooled connection, automatically releasing it when done. */
+  public <T> T withConnection(@NonNull ConnectionFunction<T> action) {
     try (Connection conn = acquire()) {
       return action.apply(conn);
     }
   }
 
-  /**
-   * Execute an action with a pooled connection (no return value).
-   */
+  /** Execute an action with a pooled connection (no return value). */
   @SuppressWarnings("overloads")
-  public void withConnection(ConnectionAction action) {
+  public void withConnection(@NonNull ConnectionAction action) {
     try (Connection conn = acquire()) {
       action.accept(conn);
     }
   }
 
-  /**
-   * Number of idle connections currently in the pool.
-   */
+  /** Number of idle connections currently in the pool. */
   public int idleCount() {
     return idle.size();
   }
 
-  /**
-   * Total number of connections (idle + in use).
-   */
+  /** Total number of connections (idle + in use). */
   public int totalCount() {
     return totalCount.get();
   }
 
-  /**
-   * Number of connections currently borrowed and in use.
-   */
+  /** Number of connections currently borrowed and in use. */
   public int activeCount() {
     return active.size();
   }
@@ -260,8 +253,12 @@ public final class ConnectionPool implements AutoCloseable {
     for (PooledConnection pc : active) {
       long held = now - pc.acquiredAt;
       if (held >= threshold) {
-        LOG.warning("Possible connection leak detected: connection held for " + held +
-                        "ms (threshold: " + threshold + "ms)");
+        LOG.warning(
+            "Possible connection leak detected: connection held for "
+                + held
+                + "ms (threshold: "
+                + threshold
+                + "ms)");
       }
     }
   }
@@ -312,12 +309,12 @@ public final class ConnectionPool implements AutoCloseable {
   @FunctionalInterface
   public interface ConnectionFunction<T> {
 
-    T apply(Connection connection);
+    T apply(@NonNull Connection connection);
   }
 
   @FunctionalInterface
   public interface ConnectionAction {
 
-    void accept(Connection connection);
+    void accept(@NonNull Connection connection);
   }
 }

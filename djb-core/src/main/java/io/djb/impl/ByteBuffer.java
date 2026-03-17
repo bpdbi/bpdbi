@@ -2,6 +2,7 @@ package io.djb.impl;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Growable byte buffer with separate read/write cursors. Used by protocol encoders/decoders across
@@ -23,11 +24,11 @@ public final class ByteBuffer {
     this.writerIndex = writerIndex;
   }
 
-  public static ByteBuffer wrap(byte[] data) {
+  public static @NonNull ByteBuffer wrap(byte @NonNull [] data) {
     return new ByteBuffer(data, 0, data.length);
   }
 
-  public static ByteBuffer wrap(byte[] data, int offset, int length) {
+  public static @NonNull ByteBuffer wrap(byte @NonNull [] data, int offset, int length) {
     return new ByteBuffer(data, offset, offset + length);
   }
 
@@ -68,23 +69,25 @@ public final class ByteBuffer {
   }
 
   public int readInt() {
-    int v = (data[readerIndex] & 0xFF) << 24
-        | (data[readerIndex + 1] & 0xFF) << 16
-        | (data[readerIndex + 2] & 0xFF) << 8
-        | (data[readerIndex + 3] & 0xFF);
+    int v =
+        (data[readerIndex] & 0xFF) << 24
+            | (data[readerIndex + 1] & 0xFF) << 16
+            | (data[readerIndex + 2] & 0xFF) << 8
+            | (data[readerIndex + 3] & 0xFF);
     readerIndex += 4;
     return v;
   }
 
   public long readLong() {
-    long v = (long) (data[readerIndex] & 0xFF) << 56
-        | (long) (data[readerIndex + 1] & 0xFF) << 48
-        | (long) (data[readerIndex + 2] & 0xFF) << 40
-        | (long) (data[readerIndex + 3] & 0xFF) << 32
-        | (long) (data[readerIndex + 4] & 0xFF) << 24
-        | (long) (data[readerIndex + 5] & 0xFF) << 16
-        | (long) (data[readerIndex + 6] & 0xFF) << 8
-        | (long) (data[readerIndex + 7] & 0xFF);
+    long v =
+        (long) (data[readerIndex] & 0xFF) << 56
+            | (long) (data[readerIndex + 1] & 0xFF) << 48
+            | (long) (data[readerIndex + 2] & 0xFF) << 40
+            | (long) (data[readerIndex + 3] & 0xFF) << 32
+            | (long) (data[readerIndex + 4] & 0xFF) << 24
+            | (long) (data[readerIndex + 5] & 0xFF) << 16
+            | (long) (data[readerIndex + 6] & 0xFF) << 8
+            | (long) (data[readerIndex + 7] & 0xFF);
     readerIndex += 8;
     return v;
   }
@@ -97,11 +100,11 @@ public final class ByteBuffer {
     return Double.longBitsToDouble(readLong());
   }
 
-  public void readBytes(byte[] dst) {
+  public void readBytes(byte @NonNull [] dst) {
     readBytes(dst, 0, dst.length);
   }
 
-  public void readBytes(byte[] dst, int offset, int length) {
+  public void readBytes(byte @NonNull [] dst, int offset, int length) {
     System.arraycopy(data, readerIndex, dst, offset, length);
     readerIndex += length;
   }
@@ -121,7 +124,7 @@ public final class ByteBuffer {
         | (data[index + 3] & 0xFF);
   }
 
-  public String readCString() {
+  public @NonNull String readCString() {
     int start = readerIndex;
     while (data[readerIndex] != 0) {
       readerIndex++;
@@ -180,17 +183,17 @@ public final class ByteBuffer {
     writeLong(Double.doubleToLongBits(value));
   }
 
-  public void writeBytes(byte[] src) {
+  public void writeBytes(byte @NonNull [] src) {
     writeBytes(src, 0, src.length);
   }
 
-  public void writeBytes(byte[] src, int offset, int length) {
+  public void writeBytes(byte @NonNull [] src, int offset, int length) {
     ensureCapacity(length);
     System.arraycopy(src, offset, data, writerIndex, length);
     writerIndex += length;
   }
 
-  public void writeCString(String s) {
+  public void writeCString(@NonNull String s) {
     byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
     ensureCapacity(bytes.length + 1);
     System.arraycopy(bytes, 0, data, writerIndex, bytes.length);
@@ -198,7 +201,7 @@ public final class ByteBuffer {
     data[writerIndex++] = 0;
   }
 
-  public void writeString(String s) {
+  public void writeString(@NonNull String s) {
     byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
     writeBytes(bytes);
   }
@@ -212,11 +215,11 @@ public final class ByteBuffer {
 
   // --- Lifecycle ---
 
-  public byte[] toByteArray() {
+  public byte @NonNull [] toByteArray() {
     return Arrays.copyOfRange(data, 0, writerIndex);
   }
 
-  public byte[] array() {
+  public byte @NonNull [] array() {
     return data;
   }
 

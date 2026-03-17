@@ -55,12 +55,13 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * MySQL implementation of {@link io.djb.Connection}.
  *
- * <p><b>Not thread-safe.</b> Each connection must be used by a single thread at a time.
- * Designed for one-connection-per-(virtual-)thread usage with Java 21+ virtual threads.
+ * <p><b>Not thread-safe.</b> Each connection must be used by a single thread at a time. Designed
+ * for one-connection-per-(virtual-)thread usage with Java 21+ virtual threads.
  */
 public final class MysqlConnection extends BaseConnection {
 
@@ -71,51 +72,44 @@ public final class MysqlConnection extends BaseConnection {
   private final Map<String, String> parameters = new HashMap<>();
   private final Charset charset = StandardCharsets.UTF_8;
   private int connectionId;
-  private byte[] authPluginData; // nonce from handshake, needed for RSA full auth
+  private byte @Nullable [] authPluginData; // nonce from handshake, needed for RSA full auth
   private SslMode sslMode = SslMode.DISABLE;
 
   private MysqlConnection(
-      Socket socket,
-      OutputStream out,
-      MysqlEncoder encoder,
-      MysqlDecoder decoder
-  ) {
+      Socket socket, OutputStream out, MysqlEncoder encoder, MysqlDecoder decoder) {
     this.socket = socket;
     this.out = out;
     this.encoder = encoder;
     this.decoder = decoder;
   }
 
-  public static MysqlConnection connect(
-      String host,
+  public static @NonNull MysqlConnection connect(
+      @NonNull String host,
       int port,
-      String database,
-      String user,
-      String password
-  ) {
+      @NonNull String database,
+      @NonNull String user,
+      @NonNull String password) {
     return connect(host, port, database, user, password, null, SslMode.DISABLE);
   }
 
-  public static MysqlConnection connect(
-      String host,
+  public static @NonNull MysqlConnection connect(
+      @NonNull String host,
       int port,
-      String database,
-      String user,
-      String password,
-      Map<String, String> properties
-  ) {
+      @NonNull String database,
+      @NonNull String user,
+      @NonNull String password,
+      @Nullable Map<String, String> properties) {
     return connect(host, port, database, user, password, properties, SslMode.DISABLE);
   }
 
-  public static MysqlConnection connect(
-      String host,
+  public static @NonNull MysqlConnection connect(
+      @NonNull String host,
       int port,
-      String database,
-      String user,
-      String password,
-      Map<String, String> properties,
-      SslMode sslMode
-  ) {
+      @NonNull String database,
+      @NonNull String user,
+      @NonNull String password,
+      @Nullable Map<String, String> properties,
+      @NonNull SslMode sslMode) {
     try {
       Socket socket = new Socket(host, port);
       socket.setTcpNoDelay(true);
@@ -134,16 +128,16 @@ public final class MysqlConnection extends BaseConnection {
     }
   }
 
-  public static MysqlConnection connect(ConnectionConfig config) {
-    var conn = connect(
-        config.host(),
-        config.port() > 0 ? config.port() : 3306,
-        config.database(),
-        config.username(),
-        config.password(),
-        config.properties(),
-        config.sslMode()
-    );
+  public static @NonNull MysqlConnection connect(@NonNull ConnectionConfig config) {
+    var conn =
+        connect(
+            config.host(),
+            config.port() > 0 ? config.port() : 3306,
+            config.database(),
+            config.username(),
+            config.password(),
+            config.properties(),
+            config.sslMode());
     conn.initCache(config);
     if (config.socketTimeoutMillis() > 0) {
       try {
@@ -156,7 +150,7 @@ public final class MysqlConnection extends BaseConnection {
   }
 
   @Override
-  public PreparedStatement prepare(String sql) {
+  public @NonNull PreparedStatement prepare(@NonNull String sql) {
     // Parse named parameters if present
     List<String> parameterNames = null;
     String sqlToSend = sql;
@@ -212,14 +206,9 @@ public final class MysqlConnection extends BaseConnection {
       }
 
       if (isCacheable(sql)) {
-        var cached = new PreparedStatementCache.CachedStatement(
-            sql,
-            null,
-            prepResult.statementId(),
-            columns,
-            columnTypes,
-            paramNames
-        );
+        var cached =
+            new PreparedStatementCache.CachedStatement(
+                sql, null, prepResult.statementId(), columns, columnTypes, paramNames);
         handleEvicted(psCache.cache(sql, cached));
         return new CachedMysqlPreparedStmt(cached);
       }
@@ -233,14 +222,14 @@ public final class MysqlConnection extends BaseConnection {
   /**
    * {@inheritDoc}
    *
-   * <p><b>MySQL limitation:</b> Unlike Postgres which uses true server-side cursors
-   * (portal + FETCH), MySQL's cursor implementation here eagerly fetches all rows into memory and
-   * then pages through them client-side. This means memory usage is proportional to the full result
-   * set size, not the batch size passed to {@link Cursor#read(int)}. For very large result sets,
-   * consider using {@code LIMIT}/{@code OFFSET} queries or streaming approaches instead.
+   * <p><b>MySQL limitation:</b> Unlike Postgres which uses true server-side cursors (portal +
+   * FETCH), MySQL's cursor implementation here eagerly fetches all rows into memory and then pages
+   * through them client-side. This means memory usage is proportional to the full result set size,
+   * not the batch size passed to {@link Cursor#read(int)}. For very large result sets, consider
+   * using {@code LIMIT}/{@code OFFSET} queries or streaming approaches instead.
    */
   @Override
-  public Cursor cursor(String sql, Object... params) {
+  public @NonNull Cursor cursor(@NonNull String sql, @Nullable Object... params) {
     RowSet all = query(sql, params);
     return new Cursor() {
       private int offset = 0;
@@ -253,15 +242,14 @@ public final class MysqlConnection extends BaseConnection {
       }
 
       @Override
-      public RowSet read(int count) {
+      public @NonNull RowSet read(int count) {
         int end = Math.min(offset + count, rows.size());
         var batch = rows.subList(offset, end);
         offset = end;
         return new RowSet(
             new ArrayList<>(batch),
             all.columnDescriptors(),
-            offset >= rows.size() ? all.rowsAffected() : 0
-        );
+            offset >= rows.size() ? all.rowsAffected() : 0);
       }
 
       @Override
@@ -292,7 +280,7 @@ public final class MysqlConnection extends BaseConnection {
   }
 
   @Override
-  public Map<String, String> parameters() {
+  public @NonNull Map<String, String> parameters() {
     return Collections.unmodifiableMap(parameters);
   }
 
@@ -311,10 +299,7 @@ public final class MysqlConnection extends BaseConnection {
     }
   }
 
-
-  private record Result(byte[] paramTypeBytes, byte[][] paramValues) {
-
-  }
+  private record Result(byte[] paramTypeBytes, byte[][] paramValues) {}
 
   private @NonNull Result getResult(Object[] params) {
     int numParams = params == null ? 0 : params.length;
@@ -339,58 +324,65 @@ public final class MysqlConnection extends BaseConnection {
   }
 
   private void encodeParam(int idx, Object val, byte[] types, byte[][] values) {
-    if (val instanceof Integer v) {
-      types[idx * 2] = 0x03;
-      types[idx * 2 + 1] = 0x00;
-      values[idx] = MysqlBinaryCodec.encodeInt4LE(v);
-    } else if (val instanceof Long v) {
-      types[idx * 2] = 0x08;
-      types[idx * 2 + 1] = 0x00;
-      values[idx] = MysqlBinaryCodec.encodeInt8LE(v);
-    } else if (val instanceof Double v) {
-      types[idx * 2] = 0x05;
-      types[idx * 2 + 1] = 0x00;
-      values[idx] = MysqlBinaryCodec.encodeFloat8LE(v);
-    } else if (val instanceof Float v) {
-      types[idx * 2] = 0x04;
-      types[idx * 2 + 1] = 0x00;
-      values[idx] = MysqlBinaryCodec.encodeFloat4LE(v);
-    } else if (val instanceof Short v) {
-      types[idx * 2] = 0x02;
-      types[idx * 2 + 1] = 0x00;
-      values[idx] = MysqlBinaryCodec.encodeInt2LE(v);
-    } else if (val instanceof Boolean v) {
-      types[idx * 2] = 0x01;
-      types[idx * 2 + 1] = 0x00;
-      values[idx] = MysqlBinaryCodec.encodeInt1(v ? 1 : 0);
-    } else {
-      types[idx * 2] = (byte) 0xFD;
-      types[idx * 2 + 1] = 0x00;
-      byte[] strBytes = val.toString().getBytes(StandardCharsets.UTF_8);
-      if (strBytes.length < 251) {
-        byte[] result = new byte[1 + strBytes.length];
-        result[0] = (byte) strBytes.length;
-        System.arraycopy(strBytes, 0, result, 1, strBytes.length);
-        values[idx] = result;
-      } else if (strBytes.length <= 0xFFFF) {
-        byte[] result = new byte[3 + strBytes.length];
-        result[0] = (byte) 0xFC;
-        result[1] = (byte) (strBytes.length & 0xFF);
-        result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
-        System.arraycopy(strBytes, 0, result, 3, strBytes.length);
-        values[idx] = result;
-      } else {
-        byte[] result = new byte[4 + strBytes.length];
-        result[0] = (byte) 0xFD;
-        result[1] = (byte) (strBytes.length & 0xFF);
-        result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
-        result[3] = (byte) ((strBytes.length >> 16) & 0xFF);
-        System.arraycopy(strBytes, 0, result, 4, strBytes.length);
-        values[idx] = result;
+    switch (val) {
+      case Integer v -> {
+        types[idx * 2] = 0x03;
+        types[idx * 2 + 1] = 0x00;
+        values[idx] = MysqlBinaryCodec.encodeInt4LE(v);
+      }
+      case Long v -> {
+        types[idx * 2] = 0x08;
+        types[idx * 2 + 1] = 0x00;
+        values[idx] = MysqlBinaryCodec.encodeInt8LE(v);
+      }
+      case Double v -> {
+        types[idx * 2] = 0x05;
+        types[idx * 2 + 1] = 0x00;
+        values[idx] = MysqlBinaryCodec.encodeFloat8LE(v);
+      }
+      case Float v -> {
+        types[idx * 2] = 0x04;
+        types[idx * 2 + 1] = 0x00;
+        values[idx] = MysqlBinaryCodec.encodeFloat4LE(v);
+      }
+      case Short v -> {
+        types[idx * 2] = 0x02;
+        types[idx * 2 + 1] = 0x00;
+        values[idx] = MysqlBinaryCodec.encodeInt2LE(v);
+      }
+      case Boolean v -> {
+        types[idx * 2] = 0x01;
+        types[idx * 2 + 1] = 0x00;
+        values[idx] = MysqlBinaryCodec.encodeInt1(v ? 1 : 0);
+      }
+      default -> {
+        types[idx * 2] = (byte) 0xFD;
+        types[idx * 2 + 1] = 0x00;
+        byte[] strBytes = val.toString().getBytes(StandardCharsets.UTF_8);
+        if (strBytes.length < 251) {
+          byte[] result = new byte[1 + strBytes.length];
+          result[0] = (byte) strBytes.length;
+          System.arraycopy(strBytes, 0, result, 1, strBytes.length);
+          values[idx] = result;
+        } else if (strBytes.length <= 0xFFFF) {
+          byte[] result = new byte[3 + strBytes.length];
+          result[0] = (byte) 0xFC;
+          result[1] = (byte) (strBytes.length & 0xFF);
+          result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
+          System.arraycopy(strBytes, 0, result, 3, strBytes.length);
+          values[idx] = result;
+        } else {
+          byte[] result = new byte[4 + strBytes.length];
+          result[0] = (byte) 0xFD;
+          result[1] = (byte) (strBytes.length & 0xFF);
+          result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
+          result[3] = (byte) ((strBytes.length >> 16) & 0xFF);
+          System.arraycopy(strBytes, 0, result, 4, strBytes.length);
+          values[idx] = result;
+        }
       }
     }
   }
-
 
   // --- Inner classes ---
 
@@ -406,7 +398,7 @@ public final class MysqlConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet query(Object... params) {
+    public @NonNull RowSet query(Object... params) {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
@@ -425,37 +417,45 @@ public final class MysqlConnection extends BaseConnection {
     }
 
     private void encodeParam(int idx, Object val, byte[] types, byte[][] values) {
-      if (val instanceof Integer v) {
-        types[idx * 2] = 0x03; // MYSQL_TYPE_LONG
-        types[idx * 2 + 1] = 0x00;
-        values[idx] = MysqlBinaryCodec.encodeInt4LE(v);
-      } else if (val instanceof Long v) {
-        types[idx * 2] = 0x08; // MYSQL_TYPE_LONGLONG
-        types[idx * 2 + 1] = 0x00;
-        values[idx] = MysqlBinaryCodec.encodeInt8LE(v);
-      } else if (val instanceof Double v) {
-        types[idx * 2] = 0x05; // MYSQL_TYPE_DOUBLE
-        types[idx * 2 + 1] = 0x00;
-        values[idx] = MysqlBinaryCodec.encodeFloat8LE(v);
-      } else if (val instanceof Float v) {
-        types[idx * 2] = 0x04; // MYSQL_TYPE_FLOAT
-        types[idx * 2 + 1] = 0x00;
-        values[idx] = MysqlBinaryCodec.encodeFloat4LE(v);
-      } else if (val instanceof Short v) {
-        types[idx * 2] = 0x02; // MYSQL_TYPE_SHORT
-        types[idx * 2 + 1] = 0x00;
-        values[idx] = MysqlBinaryCodec.encodeInt2LE(v);
-      } else if (val instanceof Boolean v) {
-        types[idx * 2] = 0x01; // MYSQL_TYPE_TINY
-        types[idx * 2 + 1] = 0x00;
-        values[idx] = MysqlBinaryCodec.encodeInt1(v ? 1 : 0);
-      } else {
-        // Everything else as length-encoded string (VARCHAR)
-        types[idx * 2] = (byte) 0xFD; // MYSQL_TYPE_VAR_STRING
-        types[idx * 2 + 1] = 0x00;
-        byte[] strBytes = val.toString().getBytes(StandardCharsets.UTF_8);
-        // Length-encoded: length prefix + data
-        values[idx] = encodeLengthPrefixed(strBytes);
+      switch (val) {
+        case Integer v -> {
+          types[idx * 2] = 0x03; // MYSQL_TYPE_LONG
+          types[idx * 2 + 1] = 0x00;
+          values[idx] = MysqlBinaryCodec.encodeInt4LE(v);
+        }
+        case Long v -> {
+          types[idx * 2] = 0x08; // MYSQL_TYPE_LONGLONG
+          types[idx * 2 + 1] = 0x00;
+          values[idx] = MysqlBinaryCodec.encodeInt8LE(v);
+        }
+        case Double v -> {
+          types[idx * 2] = 0x05; // MYSQL_TYPE_DOUBLE
+          types[idx * 2 + 1] = 0x00;
+          values[idx] = MysqlBinaryCodec.encodeFloat8LE(v);
+        }
+        case Float v -> {
+          types[idx * 2] = 0x04; // MYSQL_TYPE_FLOAT
+          types[idx * 2 + 1] = 0x00;
+          values[idx] = MysqlBinaryCodec.encodeFloat4LE(v);
+        }
+        case Short v -> {
+          types[idx * 2] = 0x02; // MYSQL_TYPE_SHORT
+          types[idx * 2 + 1] = 0x00;
+          values[idx] = MysqlBinaryCodec.encodeInt2LE(v);
+        }
+        case Boolean v -> {
+          types[idx * 2] = 0x01; // MYSQL_TYPE_TINY
+          types[idx * 2 + 1] = 0x00;
+          values[idx] = MysqlBinaryCodec.encodeInt1(v ? 1 : 0);
+        }
+        default -> {
+          // Everything else as length-encoded string (VARCHAR)
+          types[idx * 2] = (byte) 0xFD; // MYSQL_TYPE_VAR_STRING
+          types[idx * 2 + 1] = 0x00;
+          byte[] strBytes = val.toString().getBytes(StandardCharsets.UTF_8);
+          // Length-encoded: length prefix + data
+          values[idx] = encodeLengthPrefixed(strBytes);
+        }
       }
     }
 
@@ -484,7 +484,7 @@ public final class MysqlConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet query(Map<String, Object> params) {
+    public @NonNull RowSet query(@NonNull Map<String, Object> params) {
       if (parameterNames == null) {
         throw new IllegalStateException(
             "This statement was not prepared with named parameters (:name syntax)");
@@ -580,7 +580,7 @@ public final class MysqlConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet query(Object... params) {
+    public @NonNull RowSet query(Object... params) {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
@@ -588,7 +588,8 @@ public final class MysqlConnection extends BaseConnection {
         Result result = getResult(params);
 
         encoder.resetSequenceId();
-        encoder.writeComStmtExecute(cached.mysqlStatementId(), result.paramTypeBytes(), result.paramValues());
+        encoder.writeComStmtExecute(
+            cached.mysqlStatementId(), result.paramTypeBytes(), result.paramValues());
         encoder.flush(out);
 
         return readCachedBinaryQueryResponse();
@@ -647,7 +648,7 @@ public final class MysqlConnection extends BaseConnection {
     }
 
     @Override
-    public RowSet query(Map<String, Object> params) {
+    public @NonNull RowSet query(@NonNull Map<String, Object> params) {
       if (cached.parameterNames() == null) {
         throw new IllegalStateException(
             "This statement was not prepared with named parameters (:name syntax)");
@@ -661,7 +662,9 @@ public final class MysqlConnection extends BaseConnection {
     public void close() {
       if (!closed) {
         closed = true;
-        psCache.remove(cached.sql());
+        if (psCache != null) {
+          psCache.remove(cached.sql());
+        }
         closeCachedStatement(cached);
       }
     }
@@ -670,17 +673,17 @@ public final class MysqlConnection extends BaseConnection {
   // --- BaseConnection protocol methods ---
 
   @Override
-  protected BinaryCodec binaryCodec() {
+  protected @NonNull BinaryCodec binaryCodec() {
     return MysqlBinaryCodec.INSTANCE;
   }
 
   @Override
-  protected String placeholderPrefix() {
+  protected @NonNull String placeholderPrefix() {
     return "?";
   }
 
   @Override
-  protected RowSet executeExtendedQuery(String sql, String[] params) {
+  protected @NonNull RowSet executeExtendedQuery(@NonNull String sql, @NonNull String[] params) {
     // Parameterless queries use COM_QUERY (text-format results) because MySQL's prepared
     // statement protocol (COM_STMT_PREPARE) rejects many SQL commands: BEGIN, COMMIT,
     // ROLLBACK, SET, CREATE, ALTER, DROP, and other session/DDL statements return
@@ -694,12 +697,7 @@ public final class MysqlConnection extends BaseConnection {
       if (cached != null) {
         // Cache hit: skip prepare, go straight to execute
         return executeWithStatementId(
-            cached.mysqlStatementId(),
-            params,
-            cached.columns(),
-            cached.columnTypes(),
-            false
-        );
+            cached.mysqlStatementId(), params, cached.columns(), cached.columnTypes(), false);
       }
     }
 
@@ -738,23 +736,15 @@ public final class MysqlConnection extends BaseConnection {
       boolean shouldCache = isCacheable(sql);
 
       // Execute
-      RowSet result = executeWithStatementId(
-          prepResult.statementId(),
-          params,
-          columns,
-          columnTypes,
-          !shouldCache
-      );
+      RowSet result =
+          executeWithStatementId(
+              prepResult.statementId(), params, columns, columnTypes, !shouldCache);
 
       // Cache on success (skip close since cache owns it)
       if (shouldCache && result.getError() == null) {
-        var stmt = new PreparedStatementCache.CachedStatement(
-            sql,
-            null,
-            prepResult.statementId(),
-            columns,
-            columnTypes
-        );
+        var stmt =
+            new PreparedStatementCache.CachedStatement(
+                sql, null, prepResult.statementId(), columns, columnTypes);
         handleEvicted(psCache.cache(sql, stmt));
       }
 
@@ -769,8 +759,7 @@ public final class MysqlConnection extends BaseConnection {
       String[] params,
       ColumnDescriptor[] columns,
       int[] columnTypes,
-      boolean closeAfter
-  ) {
+      boolean closeAfter) {
     try {
       int numParams = params == null ? 0 : params.length;
       byte[] paramTypeBytes = null;
@@ -824,10 +813,8 @@ public final class MysqlConnection extends BaseConnection {
     }
   }
 
-  private RowSet readBinaryExecuteResponse(
-      ColumnDescriptor[] prepColumns,
-      int[] prepColumnTypes
-  ) throws IOException {
+  private RowSet readBinaryExecuteResponse(ColumnDescriptor[] prepColumns, int[] prepColumnTypes)
+      throws IOException {
     byte[] payload = decoder.readPacket();
     int header = payload[0] & 0xFF;
 
@@ -968,9 +955,7 @@ public final class MysqlConnection extends BaseConnection {
   }
 
   private RowSet buildTextRowSet(
-      ColumnDescriptor[] columns, ColumnBuffer[] buffers,
-      int rowCount, int rowsAffected
-  ) {
+      ColumnDescriptor[] columns, ColumnBuffer[] buffers, int rowCount, int rowsAffected) {
     List<Row> rows = new ArrayList<>(rowCount);
     for (int i = 0; i < rowCount; i++) {
       rows.add(createTextBufferedRow(columns, buffers, i));
@@ -1060,25 +1045,26 @@ public final class MysqlConnection extends BaseConnection {
               exhausted.set(true);
               throw new DbConnectionException("I/O error reading streaming row", e);
             }
-          }, () -> {
-        if (!exhausted.get()) {
-          try {
-            while (true) {
-              byte[] rowPayload = decoder.readPacket();
-              int firstByte = rowPayload[0] & 0xFF;
-              if (firstByte == EOF_PACKET && rowPayload.length < PACKET_PAYLOAD_LIMIT) {
-                break;
+          },
+          () -> {
+            if (!exhausted.get()) {
+              try {
+                while (true) {
+                  byte[] rowPayload = decoder.readPacket();
+                  int firstByte = rowPayload[0] & 0xFF;
+                  if (firstByte == EOF_PACKET && rowPayload.length < PACKET_PAYLOAD_LIMIT) {
+                    break;
+                  }
+                  if (firstByte == ERR_PACKET) {
+                    break;
+                  }
+                }
+              } catch (IOException e) {
+                // best effort drain
               }
-              if (firstByte == ERR_PACKET) {
-                break;
-              }
+              exhausted.set(true);
             }
-          } catch (IOException e) {
-            // best effort drain
-          }
-          exhausted.set(true);
-        }
-      });
+          });
     } catch (IOException e) {
       throw new DbConnectionException("I/O error setting up MySQL streaming", e);
     }
@@ -1098,10 +1084,7 @@ public final class MysqlConnection extends BaseConnection {
 
   @Override
   protected void executeExtendedQueryStreaming(
-      String sql,
-      String[] params,
-      Consumer<Row> consumer
-  ) {
+      @NonNull String sql, @NonNull String[] params, @NonNull Consumer<Row> consumer) {
     if (params.length == 0) {
       try {
         streamComQuery(sql, consumer);
@@ -1143,12 +1126,7 @@ public final class MysqlConnection extends BaseConnection {
 
       // Execute
       executeWithStatementIdStreaming(
-          prepResult.statementId(),
-          params,
-          columns,
-          columnTypes,
-          consumer
-      );
+          prepResult.statementId(), params, columns, columnTypes, consumer);
 
       // Close the statement (not caching in streaming path)
       encoder.resetSequenceId();
@@ -1164,8 +1142,8 @@ public final class MysqlConnection extends BaseConnection {
       String[] params,
       ColumnDescriptor[] columns,
       int[] columnTypes,
-      Consumer<Row> consumer
-  ) throws IOException {
+      Consumer<Row> consumer)
+      throws IOException {
     int numParams = params == null ? 0 : params.length;
     byte[] paramTypeBytes = null;
     byte[][] paramValues = null;
@@ -1207,10 +1185,8 @@ public final class MysqlConnection extends BaseConnection {
   }
 
   private void streamBinaryExecuteResponse(
-      ColumnDescriptor[] prepColumns,
-      int[] prepColumnTypes,
-      Consumer<Row> consumer
-  ) throws IOException {
+      ColumnDescriptor[] prepColumns, int[] prepColumnTypes, Consumer<Row> consumer)
+      throws IOException {
     byte[] payload = decoder.readPacket();
     int header = payload[0] & 0xFF;
 
@@ -1248,7 +1224,8 @@ public final class MysqlConnection extends BaseConnection {
   }
 
   @Override
-  protected RowStream createExtendedQueryRowStream(String sql, String[] params) {
+  protected @NonNull RowStream createExtendedQueryRowStream(
+      @NonNull String sql, @NonNull String[] params) {
     if (params.length == 0) {
       return createComQueryRowStream(sql);
     }
@@ -1331,10 +1308,7 @@ public final class MysqlConnection extends BaseConnection {
         encoder.resetSequenceId();
         encoder.writeComStmtClose(prepResult.statementId());
         encoder.flush(out);
-        return new RowStream(
-            () -> null, () -> {
-        }
-        );
+        return new RowStream(() -> null, () -> {});
       }
 
       int columnCount = decoder.readColumnCount(payload);
@@ -1373,34 +1347,34 @@ public final class MysqlConnection extends BaseConnection {
               exhausted.set(true);
               throw new DbConnectionException("I/O error reading streaming row", e);
             }
-          }, () -> {
-        if (!exhausted.get()) {
-          try {
-            while (true) {
-              byte[] rowPayload = decoder.readPacket();
-              int firstByte = rowPayload[0] & 0xFF;
-              if (firstByte == EOF_PACKET && rowPayload.length < PACKET_PAYLOAD_LIMIT) {
-                break;
+          },
+          () -> {
+            if (!exhausted.get()) {
+              try {
+                while (true) {
+                  byte[] rowPayload = decoder.readPacket();
+                  int firstByte = rowPayload[0] & 0xFF;
+                  if (firstByte == EOF_PACKET && rowPayload.length < PACKET_PAYLOAD_LIMIT) {
+                    break;
+                  }
+                  if (firstByte == ERR_PACKET) {
+                    break;
+                  }
+                }
+              } catch (IOException e) {
+                // best effort drain
               }
-              if (firstByte == ERR_PACKET) {
-                break;
-              }
+              exhausted.set(true);
             }
-          } catch (IOException e) {
-            // best effort drain
-          }
-          exhausted.set(true);
-        }
-        // Close the prepared statement
-        try {
-          encoder.resetSequenceId();
-          encoder.writeComStmtClose(stmtId);
-          encoder.flush(out);
-        } catch (IOException e) {
-          // best effort
-        }
-      }
-      );
+            // Close the prepared statement
+            try {
+              encoder.resetSequenceId();
+              encoder.writeComStmtClose(stmtId);
+              encoder.flush(out);
+            } catch (IOException e) {
+              // best effort
+            }
+          });
     } catch (IOException e) {
       throw new DbConnectionException("I/O error setting up MySQL streaming", e);
     }
@@ -1477,14 +1451,7 @@ public final class MysqlConnection extends BaseConnection {
     // Step 2: Send handshake response
     encoder.setSequenceId(decoder.lastSequenceId() + 1);
     encoder.writeHandshakeResponse(
-        clientFlags,
-        user,
-        authResponse,
-        database,
-        authPlugin,
-        handshake.charset(),
-        null
-    );
+        clientFlags, user, authResponse, database, authPlugin, handshake.charset(), null);
     encoder.flush(out);
 
     // Step 3: Read auth result
@@ -1495,31 +1462,26 @@ public final class MysqlConnection extends BaseConnection {
     try {
       SSLContext ctx = SSLContext.getInstance("TLS");
       ctx.init(
-          null, new TrustManager[]{new X509TrustManager() {
-            public void checkClientTrusted(
-                java.security.cert.X509Certificate[] certs,
-                String authType
-            ) {
-            }
+          null,
+          new TrustManager[] {
+            new X509TrustManager() {
+              public void checkClientTrusted(
+                  java.security.cert.X509Certificate[] certs, String authType) {}
 
-            public void checkServerTrusted(
-                java.security.cert.X509Certificate[] certs,
-                String authType
-            ) {
-            }
+              public void checkServerTrusted(
+                  java.security.cert.X509Certificate[] certs, String authType) {}
 
-            public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-              return new java.security.cert.X509Certificate[0];
+              public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                return new java.security.cert.X509Certificate[0];
+              }
             }
-          }}, null
-      );
+          },
+          null);
       SSLSocketFactory factory = ctx.getSocketFactory();
-      SSLSocket sslSocket = (SSLSocket) factory.createSocket(
-          socket,
-          socket.getInetAddress().getHostAddress(),
-          socket.getPort(),
-          true
-      );
+      SSLSocket sslSocket =
+          (SSLSocket)
+              factory.createSocket(
+                  socket, socket.getInetAddress().getHostAddress(), socket.getPort(), true);
       sslSocket.setUseClientMode(true);
       sslSocket.startHandshake();
 
@@ -1552,8 +1514,9 @@ public final class MysqlConnection extends BaseConnection {
       }
       case AUTH_SWITCH_REQUEST -> handleAuthSwitch(password, payload);
       case AUTH_MORE_DATA -> handleAuthMoreData(password, payload);
-      default -> throw new DbConnectionException(
-          "Unexpected auth response header: 0x" + Integer.toHexString(header));
+      default ->
+          throw new DbConnectionException(
+              "Unexpected auth response header: 0x" + Integer.toHexString(header));
     }
   }
 
@@ -1582,9 +1545,11 @@ public final class MysqlConnection extends BaseConnection {
   }
 
   private void sendRsaEncryptedPassword(String password) throws IOException {
+    if (authPluginData == null) throw new IllegalStateException("No auth plugin 'nonce' data");
+
     // Step 1: Request the server's RSA public key
     encoder.setSequenceId(decoder.lastSequenceId() + 1);
-    encoder.writeAuthResponse(new byte[]{PUBLIC_KEY_REQUEST});
+    encoder.writeAuthResponse(new byte[] {PUBLIC_KEY_REQUEST});
     encoder.flush(out);
 
     // Step 2: Read the server's RSA public key (AUTH_MORE_DATA with key PEM)
@@ -1596,15 +1561,11 @@ public final class MysqlConnection extends BaseConnection {
     // Skip the 0x01 header byte, rest is the PEM-encoded RSA public key
     String rsaPublicKey = new String(keyPayload, 1, keyPayload.length - 1, StandardCharsets.UTF_8);
 
-    // Step 3: Encrypt the NULL-terminated password XOR'd with the nonce
+    // Step 3: Encrypt the NULL-terminated password XOR'ed with the nonce
     byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
     byte[] passwordWithNull = new byte[passwordBytes.length + 1];
     System.arraycopy(passwordBytes, 0, passwordWithNull, 0, passwordBytes.length);
-    byte[] encrypted = RsaPublicKeyEncryptor.encrypt(
-        passwordWithNull,
-        authPluginData,
-        rsaPublicKey
-    );
+    byte[] encrypted = RsaPublicKeyEncryptor.encrypt(passwordWithNull, authPluginData, rsaPublicKey);
 
     // Step 4: Send the encrypted password
     encoder.setSequenceId(decoder.lastSequenceId() + 1);

@@ -4,8 +4,8 @@ import io.djb.mysql.MysqlConnection;
 
 /**
  * Basic MySQL usage: connect, create a table, insert, query.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.MysqlBasicExample Requires: MySQL
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.MysqlBasicExample Requires: MySQL
  * running on localhost:3306 with database "test"
  */
 public class MysqlBasicExample {
@@ -29,8 +29,7 @@ public class MysqlBasicExample {
       for (var row : rs) {
         System.out.printf(
             "  id=%d name=%-10s price=$%s%n",
-            row.getInteger("id"), row.getString("name"), row.getBigDecimal("price")
-        );
+            row.getInteger("id"), row.getString("name"), row.getBigDecimal("price"));
       }
 
       // Filtered query

@@ -8,6 +8,7 @@ import io.djb.pg.impl.codec.BackendMessage.AuthenticationSaslFinal;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Decodes Postgres backend (server → client) protocol messages from an InputStream. Blocking: each
@@ -17,14 +18,12 @@ public final class PgDecoder {
 
   private final InputStream in;
 
-  public PgDecoder(InputStream in) {
+  public PgDecoder(@NonNull InputStream in) {
     this.in = in;
   }
 
-  /**
-   * Read one complete backend message. Blocks until available.
-   */
-  public BackendMessage readMessage() throws IOException {
+  /** Read one complete backend message. Blocks until available. */
+  public @NonNull BackendMessage readMessage() throws IOException {
     int type = readByte();
     if (type == -1) {
       throw new IOException("Connection closed by server");
@@ -35,9 +34,7 @@ public final class PgDecoder {
     return decode((byte) type, buf);
   }
 
-  /**
-   * Read a single byte response (used for SSL negotiation).
-   */
+  /** Read a single byte response (used for SSL negotiation). */
   public int readSingleByte() throws IOException {
     return readByte();
   }
@@ -61,9 +58,13 @@ public final class PgDecoder {
       case PgProtocolConstants.PORTAL_SUSPENDED -> new BackendMessage.PortalSuspended();
       case PgProtocolConstants.PARAMETER_DESCRIPTION -> decodeParameterDescription(buf);
       case PgProtocolConstants.NOTIFICATION_RESPONSE -> decodeNotificationResponse(buf);
-      default -> throw new UnsupportedOperationException(
-          "Unknown backend message type: " + (char) type + " (0x" + Integer.toHexString(type)
-              + ")");
+      default ->
+          throw new UnsupportedOperationException(
+              "Unknown backend message type: "
+                  + (char) type
+                  + " (0x"
+                  + Integer.toHexString(type)
+                  + ")");
     };
   }
 
@@ -105,8 +106,9 @@ public final class PgDecoder {
         buf.readBytes(data);
         yield new AuthenticationSaslFinal(data);
       }
-      default -> throw new UnsupportedOperationException(
-          "Authentication type " + authType + " is not supported");
+      default ->
+          throw new UnsupportedOperationException(
+              "Authentication type " + authType + " is not supported");
     };
   }
 
@@ -133,14 +135,7 @@ public final class PgDecoder {
       short typeSize = buf.readShort();
       int typeMod = buf.readInt();
       buf.skipBytes(2); // format code (always binary — we request it in Bind)
-      columns[i] = new ColumnDescriptor(
-          name,
-          tableOID,
-          colAttr,
-          typeOID,
-          typeSize,
-          typeMod
-      );
+      columns[i] = new ColumnDescriptor(name, tableOID, colAttr, typeOID, typeSize, typeMod);
     }
     return new BackendMessage.RowDescription(columns);
   }
@@ -212,14 +207,25 @@ public final class PgDecoder {
         case PgProtocolConstants.FIELD_COLUMN -> column = value;
         case PgProtocolConstants.FIELD_DATA_TYPE -> dataType = value;
         case PgProtocolConstants.FIELD_CONSTRAINT -> constraint = value;
-        default -> {
-        } // skip unknown fields
+        default -> {} // skip unknown fields
       }
     }
     return new BackendMessage.ErrorResponse(
-        severity, code, message, detail, hint,
-        position, where, file, line, routine, schema, table, column, dataType, constraint
-    );
+        severity,
+        code,
+        message,
+        detail,
+        hint,
+        position,
+        where,
+        file,
+        line,
+        routine,
+        schema,
+        table,
+        column,
+        dataType,
+        constraint);
   }
 
   private BackendMessage decodeNoticeResponse(ByteBuffer buf) {
@@ -233,8 +239,7 @@ public final class PgDecoder {
         case PgProtocolConstants.FIELD_MESSAGE -> message = value;
         case PgProtocolConstants.FIELD_DETAIL -> detail = value;
         case PgProtocolConstants.FIELD_HINT -> hint = value;
-        default -> {
-        } // skip
+        default -> {} // skip
       }
     }
     return new BackendMessage.NoticeResponse(severity, code, message, detail, hint);

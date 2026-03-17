@@ -1,14 +1,11 @@
 package io.djb.pg.data;
 
-
 import org.jspecify.annotations.NonNull;
 
-/**
- * A Postgres box: (upper-right),(lower-left).
- */
-public record Box(Point upperRightCorner, Point lowerLeftCorner) {
+/** A Postgres box: (upper-right),(lower-left). */
+public record Box(@NonNull Point upperRightCorner, @NonNull Point lowerLeftCorner) {
 
-  public static Box parse(String s) {
+  public static @NonNull Box parse(@NonNull String s) {
     s = s.trim();
     int mid = s.indexOf("),(");
     String s1 = s.substring(0, mid + 1);

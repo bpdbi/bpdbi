@@ -39,9 +39,9 @@ class ParserHelpers {
       if (slash >= 0) {
         InetAddress addr = InetAddress.getByName(s.substring(0, slash));
         int mask = Integer.parseInt(s.substring(slash + 1));
-        return new Object[]{addr, mask};
+        return new Object[] {addr, mask};
       } else {
-        return new Object[]{InetAddress.getByName(s), null};
+        return new Object[] {InetAddress.getByName(s), null};
       }
     } catch (UnknownHostException e) {
       throw new IllegalArgumentException("Invalid " + typeName + " address: " + s, e);

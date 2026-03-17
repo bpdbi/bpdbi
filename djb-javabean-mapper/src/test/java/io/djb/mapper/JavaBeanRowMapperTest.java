@@ -32,8 +32,7 @@ class JavaBeanRowMapperTest {
     private String name;
     private String email;
 
-    public SimpleUser() {
-    }
+    public SimpleUser() {}
 
     public Integer getId() {
       return id;
@@ -69,8 +68,7 @@ class JavaBeanRowMapperTest {
     private double d;
     private boolean b;
 
-    public PrimitiveBean() {
-    }
+    public PrimitiveBean() {}
 
     public int getI() {
       return i;
@@ -132,8 +130,7 @@ class JavaBeanRowMapperTest {
     private LocalTime time;
     private LocalDateTime dateTime;
 
-    public AllTypesBean() {
-    }
+    public AllTypesBean() {}
 
     public String getS() {
       return s;
@@ -218,8 +215,7 @@ class JavaBeanRowMapperTest {
 
     private Object bad;
 
-    public UnsupportedTypeBean() {
-    }
+    public UnsupportedTypeBean() {}
 
     public Object getBad() {
       return bad;
@@ -254,8 +250,7 @@ class JavaBeanRowMapperTest {
     private String street;
     private String city;
 
-    public Address() {
-    }
+    public Address() {}
 
     public String getStreet() {
       return street;
@@ -280,8 +275,7 @@ class JavaBeanRowMapperTest {
     private String name;
     private Address address;
 
-    public UserWithAddress() {
-    }
+    public UserWithAddress() {}
 
     public int getId() {
       return id;
@@ -313,8 +307,7 @@ class JavaBeanRowMapperTest {
     private double lat;
     private double lng;
 
-    public Coordinate() {
-    }
+    public Coordinate() {}
 
     public double getLat() {
       return lat;
@@ -338,8 +331,7 @@ class JavaBeanRowMapperTest {
     private String name;
     private Coordinate coord;
 
-    public Location() {
-    }
+    public Location() {}
 
     public String getName() {
       return name;
@@ -364,8 +356,7 @@ class JavaBeanRowMapperTest {
     private Location origin;
     private Location destination;
 
-    public Trip() {
-    }
+    public Trip() {}
 
     public int getId() {
       return id;
@@ -397,8 +388,7 @@ class JavaBeanRowMapperTest {
     private int id;
     private List<String> tags;
 
-    public WithUnsupportedList() {
-    }
+    public WithUnsupportedList() {}
 
     public int getId() {
       return id;
@@ -424,8 +414,7 @@ class JavaBeanRowMapperTest {
     private Double d;
     private Boolean b;
 
-    public BoxedNumericBean() {
-    }
+    public BoxedNumericBean() {}
 
     public Short getSh() {
       return sh;
@@ -465,8 +454,7 @@ class JavaBeanRowMapperTest {
     private String name;
     private byte[] data;
 
-    public BytesBean() {
-    }
+    public BytesBean() {}
 
     public String getName() {
       return name;
@@ -490,8 +478,7 @@ class JavaBeanRowMapperTest {
     private String name;
     private OffsetDateTime created;
 
-    public OffsetDateTimeBean() {
-    }
+    public OffsetDateTimeBean() {}
 
     public String getName() {
       return name;
@@ -510,15 +497,17 @@ class JavaBeanRowMapperTest {
     }
   }
 
-  public enum Status {ACTIVE, INACTIVE}
+  public enum Status {
+    ACTIVE,
+    INACTIVE
+  }
 
   public static class OrderBean {
 
     private int id;
     private Status status;
 
-    public OrderBean() {
-    }
+    public OrderBean() {}
 
     public int getId() {
       return id;
@@ -544,8 +533,7 @@ class JavaBeanRowMapperTest {
     private String name;
     private Long count;
 
-    public MixedNullBean() {
-    }
+    public MixedNullBean() {}
 
     public int getId() {
       return id;
@@ -585,10 +573,10 @@ class JavaBeanRowMapperTest {
   @Test
   void mapsSimpleBean() {
     RowMapper<SimpleUser> mapper = JavaBeanRowMapper.of(SimpleUser.class);
-    Row r = row(
-        new String[]{"id", "name", "email"},
-        new String[]{"42", "Alice", "alice@example.com"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "email"},
+            new String[] {"42", "Alice", "alice@example.com"});
 
     SimpleUser user = mapper.map(r);
 
@@ -600,10 +588,10 @@ class JavaBeanRowMapperTest {
   @Test
   void primitiveDefaultsToZeroOnNull() {
     RowMapper<PrimitiveBean> mapper = JavaBeanRowMapper.of(PrimitiveBean.class);
-    Row r = row(
-        new String[]{"i", "l", "s", "f", "d", "b"},
-        new String[]{null, null, null, null, null, null}
-    );
+    Row r =
+        row(
+            new String[] {"i", "l", "s", "f", "d", "b"},
+            new String[] {null, null, null, null, null, null});
 
     PrimitiveBean bean = mapper.map(r);
 
@@ -618,7 +606,7 @@ class JavaBeanRowMapperTest {
   @Test
   void boxedTypesReturnNullOnNull() {
     RowMapper<SimpleUser> mapper = JavaBeanRowMapper.of(SimpleUser.class);
-    Row r = row(new String[]{"id", "name", "email"}, new String[]{null, null, null});
+    Row r = row(new String[] {"id", "name", "email"}, new String[] {null, null, null});
 
     SimpleUser user = mapper.map(r);
 
@@ -631,11 +619,19 @@ class JavaBeanRowMapperTest {
   void mapsAllSupportedTypes() {
     UUID testUuid = UUID.randomUUID();
     RowMapper<AllTypesBean> mapper = JavaBeanRowMapper.of(AllTypesBean.class);
-    Row r = row(
-        new String[]{"s", "i", "l", "bd", "uuid", "date", "time", "dateTime"},
-        new String[]{"hello", "1", "2", "99.99", testUuid.toString(),
-            "2024-06-15", "14:30:00", "2024-06-15T14:30:00"}
-    );
+    Row r =
+        row(
+            new String[] {"s", "i", "l", "bd", "uuid", "date", "time", "dateTime"},
+            new String[] {
+              "hello",
+              "1",
+              "2",
+              "99.99",
+              testUuid.toString(),
+              "2024-06-15",
+              "14:30:00",
+              "2024-06-15T14:30:00"
+            });
 
     AllTypesBean bean = mapper.map(r);
 
@@ -652,7 +648,7 @@ class JavaBeanRowMapperTest {
   @Test
   void skipsPropertiesWithoutSetter() {
     RowMapper<ReadOnlyBean> mapper = JavaBeanRowMapper.of(ReadOnlyBean.class);
-    Row r = row(new String[]{"value"}, new String[]{"test"});
+    Row r = row(new String[] {"value"}, new String[] {"test"});
 
     ReadOnlyBean bean = mapper.map(r);
     assertNull(bean.getValue());
@@ -662,14 +658,10 @@ class JavaBeanRowMapperTest {
   void reuseMapperAcrossMultipleRows() {
     RowMapper<SimpleUser> mapper = JavaBeanRowMapper.of(SimpleUser.class);
 
-    SimpleUser u1 = mapper.map(row(
-        new String[]{"id", "name", "email"},
-        new String[]{"1", "A", "a@x"}
-    ));
-    SimpleUser u2 = mapper.map(row(
-        new String[]{"id", "name", "email"},
-        new String[]{"2", "B", "b@x"}
-    ));
+    SimpleUser u1 =
+        mapper.map(row(new String[] {"id", "name", "email"}, new String[] {"1", "A", "a@x"}));
+    SimpleUser u2 =
+        mapper.map(row(new String[] {"id", "name", "email"}, new String[] {"2", "B", "b@x"}));
 
     assertEquals(1, u1.getId());
     assertEquals("A", u1.getName());
@@ -679,10 +671,9 @@ class JavaBeanRowMapperTest {
 
   @Test
   void rejectsUnsupportedPropertyType() {
-    IllegalArgumentException ex = assertThrows(
-        IllegalArgumentException.class, () ->
-            JavaBeanRowMapper.of(UnsupportedTypeBean.class)
-    );
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class, () -> JavaBeanRowMapper.of(UnsupportedTypeBean.class));
     assertTrue(ex.getMessage().contains("Unsupported type"));
     assertTrue(ex.getMessage().contains("bad"));
   }
@@ -690,9 +681,7 @@ class JavaBeanRowMapperTest {
   @Test
   void rejectsNoDefaultConstructor() {
     assertThrows(
-        IllegalArgumentException.class, () ->
-            JavaBeanRowMapper.of(NoDefaultConstructor.class)
-    );
+        IllegalArgumentException.class, () -> JavaBeanRowMapper.of(NoDefaultConstructor.class));
   }
 
   // --- Nested bean tests ---
@@ -701,10 +690,10 @@ class JavaBeanRowMapperTest {
   void nestedBeanConsumesFlatColumns() {
     // Columns: id, name, street, city
     RowMapper<UserWithAddress> mapper = JavaBeanRowMapper.of(UserWithAddress.class);
-    Row r = row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{"1", "Alice", "123 Main St", "Springfield"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "street", "city"},
+            new String[] {"1", "Alice", "123 Main St", "Springfield"});
 
     UserWithAddress user = mapper.map(r);
 
@@ -719,10 +708,10 @@ class JavaBeanRowMapperTest {
   void deeplyNestedThreeLevels() {
     // Trip(id, origin: Location(name, coord: Coordinate(lat, lng)), destination: Location(...))
     RowMapper<Trip> mapper = JavaBeanRowMapper.of(Trip.class);
-    Row r = row(
-        new String[]{"id", "name", "lat", "lng", "name", "lat", "lng"},
-        new String[]{"1", "Home", "52.37", "4.89", "Office", "52.35", "4.91"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "lat", "lng", "name", "lat", "lng"},
+            new String[] {"1", "Home", "52.37", "4.89", "Office", "52.35", "4.91"});
 
     Trip trip = mapper.map(r);
 
@@ -738,10 +727,8 @@ class JavaBeanRowMapperTest {
   @Test
   void nestedBeanWithNullScalarFields() {
     RowMapper<UserWithAddress> mapper = JavaBeanRowMapper.of(UserWithAddress.class);
-    Row r = row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{"1", "Alice", null, null}
-    );
+    Row r =
+        row(new String[] {"id", "name", "street", "city"}, new String[] {"1", "Alice", null, null});
 
     UserWithAddress user = mapper.map(r);
 
@@ -756,14 +743,16 @@ class JavaBeanRowMapperTest {
   void reuseMapperWithNestedBeans() {
     RowMapper<UserWithAddress> mapper = JavaBeanRowMapper.of(UserWithAddress.class);
 
-    UserWithAddress u1 = mapper.map(row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{"1", "Alice", "Main St", "CityA"}
-    ));
-    UserWithAddress u2 = mapper.map(row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{"2", "Bob", "Oak Ave", "CityB"}
-    ));
+    UserWithAddress u1 =
+        mapper.map(
+            row(
+                new String[] {"id", "name", "street", "city"},
+                new String[] {"1", "Alice", "Main St", "CityA"}));
+    UserWithAddress u2 =
+        mapper.map(
+            row(
+                new String[] {"id", "name", "street", "city"},
+                new String[] {"2", "Bob", "Oak Ave", "CityB"}));
 
     assertEquals("Main St", u1.getAddress().getStreet());
     assertEquals("Oak Ave", u2.getAddress().getStreet());
@@ -771,10 +760,9 @@ class JavaBeanRowMapperTest {
 
   @Test
   void listPropertyIsStillRejected() {
-    IllegalArgumentException ex = assertThrows(
-        IllegalArgumentException.class, () ->
-            JavaBeanRowMapper.of(WithUnsupportedList.class)
-    );
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class, () -> JavaBeanRowMapper.of(WithUnsupportedList.class));
     assertTrue(ex.getMessage().contains("Unsupported type"));
   }
 
@@ -783,10 +771,7 @@ class JavaBeanRowMapperTest {
   @Test
   void mapsBoxedShortFloatDoubleBoolean() {
     RowMapper<BoxedNumericBean> mapper = JavaBeanRowMapper.of(BoxedNumericBean.class);
-    Row r = row(
-        new String[]{"sh", "f", "d", "b"},
-        new String[]{"3", "1.5", "2.5", "true"}
-    );
+    Row r = row(new String[] {"sh", "f", "d", "b"}, new String[] {"3", "1.5", "2.5", "true"});
 
     BoxedNumericBean bean = mapper.map(r);
 
@@ -799,10 +784,7 @@ class JavaBeanRowMapperTest {
   @Test
   void boxedNumericTypesReturnNullOnNull() {
     RowMapper<BoxedNumericBean> mapper = JavaBeanRowMapper.of(BoxedNumericBean.class);
-    Row r = row(
-        new String[]{"sh", "f", "d", "b"},
-        new String[]{null, null, null, null}
-    );
+    Row r = row(new String[] {"sh", "f", "d", "b"}, new String[] {null, null, null, null});
 
     BoxedNumericBean bean = mapper.map(r);
 
@@ -815,7 +797,7 @@ class JavaBeanRowMapperTest {
   @Test
   void mapsByteArray() {
     RowMapper<BytesBean> mapper = JavaBeanRowMapper.of(BytesBean.class);
-    Row r = row(new String[]{"name", "data"}, new String[]{"file.bin", "rawbytes"});
+    Row r = row(new String[] {"name", "data"}, new String[] {"file.bin", "rawbytes"});
 
     BytesBean bean = mapper.map(r);
 
@@ -826,27 +808,23 @@ class JavaBeanRowMapperTest {
   @Test
   void mapsOffsetDateTime() {
     RowMapper<OffsetDateTimeBean> mapper = JavaBeanRowMapper.of(OffsetDateTimeBean.class);
-    Row r = row(
-        new String[]{"name", "created"},
-        new String[]{"event", "2024-06-15T14:30:00+02:00"}
-    );
+    Row r =
+        row(new String[] {"name", "created"}, new String[] {"event", "2024-06-15T14:30:00+02:00"});
 
     OffsetDateTimeBean bean = mapper.map(r);
 
     assertEquals("event", bean.getName());
     assertEquals(
-        OffsetDateTime.of(2024, 6, 15, 14, 30, 0, 0, ZoneOffset.ofHours(2)),
-        bean.getCreated()
-    );
+        OffsetDateTime.of(2024, 6, 15, 14, 30, 0, 0, ZoneOffset.ofHours(2)), bean.getCreated());
   }
 
   @Test
   void mixedPrimitiveAndBoxedNulls() {
     RowMapper<MixedNullBean> mapper = JavaBeanRowMapper.of(MixedNullBean.class);
-    Row r = row(
-        new String[]{"id", "nullableId", "name", "count"},
-        new String[]{null, null, "Alice", null}
-    );
+    Row r =
+        row(
+            new String[] {"id", "nullableId", "name", "count"},
+            new String[] {null, null, "Alice", null});
 
     MixedNullBean bean = mapper.map(r);
 
@@ -862,7 +840,7 @@ class JavaBeanRowMapperTest {
   @Test
   void mapsEnumField() {
     RowMapper<OrderBean> mapper = JavaBeanRowMapper.of(OrderBean.class);
-    Row r = row(new String[]{"id", "status"}, new String[]{"1", "ACTIVE"});
+    Row r = row(new String[] {"id", "status"}, new String[] {"1", "ACTIVE"});
 
     OrderBean order = mapper.map(r);
 
@@ -873,7 +851,7 @@ class JavaBeanRowMapperTest {
   @Test
   void nullEnumFieldReturnsNull() {
     RowMapper<OrderBean> mapper = JavaBeanRowMapper.of(OrderBean.class);
-    Row r = row(new String[]{"id", "status"}, new String[]{"1", null});
+    Row r = row(new String[] {"id", "status"}, new String[] {"1", null});
 
     OrderBean order = mapper.map(r);
 
@@ -884,10 +862,7 @@ class JavaBeanRowMapperTest {
   @Test
   void distinguishesEmptyStringFromNull() {
     RowMapper<SimpleUser> mapper = JavaBeanRowMapper.of(SimpleUser.class);
-    Row r = row(
-        new String[]{"id", "name", "email"},
-        new String[]{"1", "", null}
-    );
+    Row r = row(new String[] {"id", "name", "email"}, new String[] {"1", "", null});
 
     SimpleUser user = mapper.map(r);
 
@@ -899,7 +874,7 @@ class JavaBeanRowMapperTest {
   @Test
   void throwsWhenRowHasFewerColumnsThanProperties() {
     RowMapper<SimpleUser> mapper = JavaBeanRowMapper.of(SimpleUser.class);
-    Row r = row(new String[]{"id", "name"}, new String[]{"1", "Alice"});
+    Row r = row(new String[] {"id", "name"}, new String[] {"1", "Alice"});
 
     // Bean has 3 settable properties but row only has 2 columns;
     // the ArrayIndexOutOfBoundsException is wrapped in IllegalStateException
@@ -919,8 +894,7 @@ class JavaBeanRowMapperTest {
     private BigDecimal bd;
     private UUID uuid;
 
-    public AllNullableBean() {
-    }
+    public AllNullableBean() {}
 
     public Integer getI() {
       return i;
@@ -990,10 +964,10 @@ class JavaBeanRowMapperTest {
   @Test
   void allBoxedTypesReturnNullIndependently() {
     RowMapper<AllNullableBean> mapper = JavaBeanRowMapper.of(AllNullableBean.class);
-    Row r = row(
-        new String[]{"i", "l", "s", "f", "d", "b", "bd", "uuid"},
-        new String[]{null, null, null, null, null, null, null, null}
-    );
+    Row r =
+        row(
+            new String[] {"i", "l", "s", "f", "d", "b", "bd", "uuid"},
+            new String[] {null, null, null, null, null, null, null, null});
 
     AllNullableBean bean = mapper.map(r);
 
@@ -1012,10 +986,8 @@ class JavaBeanRowMapperTest {
   @Test
   void nestedBeanAllNullFieldsStillConstructsObject() {
     RowMapper<UserWithAddress> mapper = JavaBeanRowMapper.of(UserWithAddress.class);
-    Row r = row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{null, null, null, null}
-    );
+    Row r =
+        row(new String[] {"id", "name", "street", "city"}, new String[] {null, null, null, null});
 
     UserWithAddress user = mapper.map(r);
 
@@ -1029,10 +1001,10 @@ class JavaBeanRowMapperTest {
   @Test
   void nestedWithMixedNullAndNonNull() {
     RowMapper<UserWithAddress> mapper = JavaBeanRowMapper.of(UserWithAddress.class);
-    Row r = row(
-        new String[]{"id", "name", "street", "city"},
-        new String[]{"1", "Alice", null, "Springfield"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "street", "city"},
+            new String[] {"1", "Alice", null, "Springfield"});
 
     UserWithAddress user = mapper.map(r);
 
@@ -1048,15 +1020,19 @@ class JavaBeanRowMapperTest {
   @Test
   void extremeIntegerValues() {
     RowMapper<AllNullableBean> mapper = JavaBeanRowMapper.of(AllNullableBean.class);
-    Row r = row(
-        new String[]{"i", "l", "s", "f", "d", "b", "bd", "uuid"},
-        new String[]{
-            String.valueOf(Integer.MAX_VALUE),
-            String.valueOf(Long.MAX_VALUE),
-            String.valueOf(Short.MAX_VALUE),
-            "0", "0", "false", "0", "00000000-0000-0000-0000-000000000000"
-        }
-    );
+    Row r =
+        row(
+            new String[] {"i", "l", "s", "f", "d", "b", "bd", "uuid"},
+            new String[] {
+              String.valueOf(Integer.MAX_VALUE),
+              String.valueOf(Long.MAX_VALUE),
+              String.valueOf(Short.MAX_VALUE),
+              "0",
+              "0",
+              "false",
+              "0",
+              "00000000-0000-0000-0000-000000000000"
+            });
 
     AllNullableBean bean = mapper.map(r);
 
@@ -1064,15 +1040,19 @@ class JavaBeanRowMapperTest {
     assertEquals(Long.MAX_VALUE, bean.getL());
     assertEquals(Short.MAX_VALUE, bean.getS());
 
-    Row r2 = row(
-        new String[]{"i", "l", "s", "f", "d", "b", "bd", "uuid"},
-        new String[]{
-            String.valueOf(Integer.MIN_VALUE),
-            String.valueOf(Long.MIN_VALUE),
-            String.valueOf(Short.MIN_VALUE),
-            "0", "0", "false", "0", "00000000-0000-0000-0000-000000000000"
-        }
-    );
+    Row r2 =
+        row(
+            new String[] {"i", "l", "s", "f", "d", "b", "bd", "uuid"},
+            new String[] {
+              String.valueOf(Integer.MIN_VALUE),
+              String.valueOf(Long.MIN_VALUE),
+              String.valueOf(Short.MIN_VALUE),
+              "0",
+              "0",
+              "false",
+              "0",
+              "00000000-0000-0000-0000-000000000000"
+            });
 
     AllNullableBean bean2 = mapper.map(r2);
 
@@ -1090,8 +1070,7 @@ class JavaBeanRowMapperTest {
     private double d;
     private BigDecimal bd;
 
-    public AllNumericBean() {
-    }
+    public AllNumericBean() {}
 
     public int getI() {
       return i;
@@ -1145,10 +1124,10 @@ class JavaBeanRowMapperTest {
   @Test
   void negativeNumbers() {
     RowMapper<AllNumericBean> mapper = JavaBeanRowMapper.of(AllNumericBean.class);
-    Row r = row(
-        new String[]{"i", "l", "s", "f", "d", "bd"},
-        new String[]{"-1", "-100", "-5", "-1.5", "-2.5", "-99.99"}
-    );
+    Row r =
+        row(
+            new String[] {"i", "l", "s", "f", "d", "bd"},
+            new String[] {"-1", "-100", "-5", "-1.5", "-2.5", "-99.99"});
 
     AllNumericBean bean = mapper.map(r);
 
@@ -1165,10 +1144,10 @@ class JavaBeanRowMapperTest {
   @Test
   void unicodeInStrings() {
     RowMapper<SimpleUser> mapper = JavaBeanRowMapper.of(SimpleUser.class);
-    Row r = row(
-        new String[]{"id", "name", "email"},
-        new String[]{"1", "\uD83D\uDE00\u4F60\u597D\u00E9", "user@example.com"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "email"},
+            new String[] {"1", "\uD83D\uDE00\u4F60\u597D\u00E9", "user@example.com"});
 
     SimpleUser user = mapper.map(r);
 
@@ -1180,10 +1159,10 @@ class JavaBeanRowMapperTest {
   @Test
   void specialSqlCharacters() {
     RowMapper<SimpleUser> mapper = JavaBeanRowMapper.of(SimpleUser.class);
-    Row r = row(
-        new String[]{"id", "name", "email"},
-        new String[]{"1", "O'Reilly\\; DROP TABLE--", "user@example.com"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "email"},
+            new String[] {"1", "O'Reilly\\; DROP TABLE--", "user@example.com"});
 
     SimpleUser user = mapper.map(r);
 
@@ -1201,8 +1180,7 @@ class JavaBeanRowMapperTest {
     private String state;
     private String zip;
 
-    public FullAddress() {
-    }
+    public FullAddress() {}
 
     public String getStreet() {
       return street;
@@ -1244,8 +1222,7 @@ class JavaBeanRowMapperTest {
     private FullAddress address;
     private String phone;
 
-    public UserWithFullAddress() {
-    }
+    public UserWithFullAddress() {}
 
     public int getId() {
       return id;
@@ -1283,10 +1260,10 @@ class JavaBeanRowMapperTest {
   @Test
   void nestedBeanColumnPositionTracking() {
     RowMapper<UserWithFullAddress> mapper = JavaBeanRowMapper.of(UserWithFullAddress.class);
-    Row r = row(
-        new String[]{"id", "name", "street", "city", "state", "zip", "phone"},
-        new String[]{"42", "Alice", "123 Main St", "Springfield", "IL", "62704", "555-1234"}
-    );
+    Row r =
+        row(
+            new String[] {"id", "name", "street", "city", "state", "zip", "phone"},
+            new String[] {"42", "Alice", "123 Main St", "Springfield", "IL", "62704", "555-1234"});
 
     UserWithFullAddress user = mapper.map(r);
 

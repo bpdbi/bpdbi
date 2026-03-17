@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,9 +25,7 @@ import org.junit.jupiter.api.Test;
  */
 class BaseConnectionTest {
 
-  /**
-   * Minimal concrete BaseConnection that records what was sent and returns canned responses.
-   */
+  /** Minimal concrete BaseConnection that records what was sent and returns canned responses. */
   static class FakeConnection extends BaseConnection {
 
     final List<ExtendedQuery> extendedQueries = new ArrayList<>();
@@ -47,11 +46,10 @@ class BaseConnectionTest {
     }
 
     @Override
-    protected void flushToNetwork() {
-    }
+    protected void flushToNetwork() {}
 
     @Override
-    protected RowSet executeExtendedQuery(String sql, String[] params) {
+    protected @NonNull RowSet executeExtendedQuery(@NonNull String sql, String[] params) {
       extendedQueries.add(new ExtendedQuery(sql, params));
       return extendedResponses.isEmpty()
           ? new RowSet(List.of(), List.of(), 0)
@@ -69,47 +67,38 @@ class BaseConnectionTest {
     }
 
     @Override
-    protected String placeholderPrefix() {
+    protected @NonNull String placeholderPrefix() {
       return "$";
     }
 
     @Override
-    protected void closeCachedStatement(PreparedStatementCache.CachedStatement stmt) {
-    }
+    protected void closeCachedStatement(PreparedStatementCache.CachedStatement stmt) {}
 
     @Override
-    public PreparedStatement prepare(String sql) {
+    public @NonNull PreparedStatement prepare(@NonNull String sql) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Cursor cursor(String sql, Object... params) {
+    public @NonNull Cursor cursor(@NonNull String sql, Object... params) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public void ping() {
-    }
+    public void ping() {}
 
     @Override
-    public Map<String, String> parameters() {
+    public @NonNull Map<String, String> parameters() {
       return Map.of();
     }
 
     @Override
     protected void executeExtendedQueryStreaming(
-        String sql,
-        String[] params,
-        Consumer<Row> consumer
-    ) {
-    }
+        @NonNull String sql, String[] params, @NonNull Consumer<Row> consumer) {}
 
     @Override
-    protected RowStream createExtendedQueryRowStream(String sql, String[] params) {
-      return new RowStream(
-          () -> null, () -> {
-      }
-      );
+    protected @NonNull RowStream createExtendedQueryRowStream(@NonNull String sql, String[] params) {
+      return new RowStream(() -> null, () -> {});
     }
   }
 
@@ -156,7 +145,7 @@ class BaseConnectionTest {
     assertEquals(1, results.size());
     assertEquals(1, conn.extendedQueries.size());
     assertEquals("SELECT $1", conn.extendedQueries.getFirst().sql);
-    assertArrayEquals(new String[]{"42"}, conn.extendedQueries.getFirst().params);
+    assertArrayEquals(new String[] {"42"}, conn.extendedQueries.getFirst().params);
   }
 
   @Test
@@ -240,10 +229,10 @@ class BaseConnectionTest {
   @Test
   void executeManyEnqueuesAll() {
     var conn = new FakeConnection();
-    var results = conn.executeMany(
-        "INSERT INTO t VALUES ($1)",
-        List.of(new Object[]{"a"}, new Object[]{"b"}, new Object[]{"c"})
-    );
+    var results =
+        conn.executeMany(
+            "INSERT INTO t VALUES ($1)",
+            List.of(new Object[] {"a"}, new Object[] {"b"}, new Object[] {"c"}));
     assertEquals(3, results.size());
     assertEquals(3, conn.extendedQueries.size());
   }
@@ -315,10 +304,7 @@ class BaseConnectionTest {
     var uuid = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
     conn.enqueue("INSERT INTO t VALUES ($1)", uuid);
     conn.flush();
-    assertEquals(
-        "550E8400-E29B-41D4-A716-446655440000",
-        conn.extendedQueries.getFirst().params[0]
-    );
+    assertEquals("550E8400-E29B-41D4-A716-446655440000", conn.extendedQueries.getFirst().params[0]);
   }
 
   @Test

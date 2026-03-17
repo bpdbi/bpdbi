@@ -4,11 +4,14 @@ import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Database connection configuration with a fluent builder API.
  *
  * <p>Supports both programmatic construction and URI parsing:
+ *
  * <pre>{@code
  * // Programmatic
  * var config = new ConnectionConfig("localhost", 5432, "mydb", "user", "pass")
@@ -20,9 +23,8 @@ import javax.net.ssl.SSLContext;
  * var config = ConnectionConfig.fromUri("postgresql://user:pass@host:5432/db?sslmode=require");
  * }</pre>
  *
- * <p>URI parsing supports {@code postgresql://}, {@code postgres://}, and {@code mysql://}
- * schemes, with optional query parameters for SSL mode, certificates, and application-specific
- * properties.
+ * <p>URI parsing supports {@code postgresql://}, {@code postgres://}, and {@code mysql://} schemes,
+ * with optional query parameters for SSL mode, certificates, and application-specific properties.
  *
  * @see SslMode
  */
@@ -42,25 +44,21 @@ public final class ConnectionConfig {
   private boolean hostnameVerification = false;
   private int socketTimeoutMillis = 0; // 0 = no timeout
   private boolean cachePreparedStatements = false;
-  /**
-   * Max cached prepared statements. 256 balances memory vs hit-rate for typical web apps.
-   */
+
+  /** Max cached prepared statements. 256 balances memory vs hit-rate for typical web apps. */
   private int preparedStatementCacheMaxSize = 256;
-  /**
-   * SQL strings longer than this are not cached (likely one-off dynamic queries).
-   */
+
+  /** SQL strings longer than this are not cached (likely one-off dynamic queries). */
   private int preparedStatementCacheSqlLimit = 2048;
 
-  public ConnectionConfig() {
-  }
+  public ConnectionConfig() {}
 
   public ConnectionConfig(
-      String host,
+      @NonNull String host,
       int port,
-      String database,
-      String username,
-      String password
-  ) {
+      @Nullable String database,
+      @Nullable String username,
+      @Nullable String password) {
     this.host = host;
     this.port = port;
     this.database = database;
@@ -73,7 +71,7 @@ public final class ConnectionConfig {
    * postgresql://user:password@host:port/database?param=value
    * mysql://user:password@host:port/database
    */
-  public static ConnectionConfig fromUri(String uri) {
+  public static @NonNull ConnectionConfig fromUri(@NonNull String uri) {
     var config = new ConnectionConfig();
     var parsed = URI.create(uri);
 
@@ -110,13 +108,14 @@ public final class ConnectionConfig {
     // Extract `sslMode` from properties if present
     if (config.properties != null && config.properties.containsKey("sslmode")) {
       String sslMode = config.properties.remove("sslmode");
-      config.sslMode = switch (sslMode) {
-        case "prefer" -> SslMode.PREFER;
-        case "require" -> SslMode.REQUIRE;
-        case "verify-ca" -> SslMode.VERIFY_CA;
-        case "verify-full" -> SslMode.VERIFY_FULL;
-        default -> SslMode.DISABLE;
-      };
+      config.sslMode =
+          switch (sslMode) {
+            case "prefer" -> SslMode.PREFER;
+            case "require" -> SslMode.REQUIRE;
+            case "verify-ca" -> SslMode.VERIFY_CA;
+            case "verify-full" -> SslMode.VERIFY_FULL;
+            default -> SslMode.DISABLE;
+          };
       if (config.properties.isEmpty()) {
         config.properties = null;
       }
@@ -143,22 +142,23 @@ public final class ConnectionConfig {
     if (config.port == -1) {
       String scheme = parsed.getScheme();
       if (scheme != null) {
-        config.port = switch (scheme) {
-          case "postgresql", "postgres" -> 5432;
-          case "mysql" -> 3306;
-          default -> -1;
-        };
+        config.port =
+            switch (scheme) {
+              case "postgresql", "postgres" -> 5432;
+              case "mysql" -> 3306;
+              default -> -1;
+            };
       }
     }
 
     return config;
   }
 
-  public String host() {
+  public @NonNull String host() {
     return host;
   }
 
-  public ConnectionConfig host(String host) {
+  public @NonNull ConnectionConfig host(@NonNull String host) {
     this.host = host;
     return this;
   }
@@ -167,79 +167,79 @@ public final class ConnectionConfig {
     return port;
   }
 
-  public ConnectionConfig port(int port) {
+  public @NonNull ConnectionConfig port(int port) {
     this.port = port;
     return this;
   }
 
-  public String database() {
+  public @Nullable String database() {
     return database;
   }
 
-  public ConnectionConfig database(String database) {
+  public @NonNull ConnectionConfig database(@Nullable String database) {
     this.database = database;
     return this;
   }
 
-  public String username() {
+  public @Nullable String username() {
     return username;
   }
 
-  public ConnectionConfig username(String username) {
+  public @NonNull ConnectionConfig username(@Nullable String username) {
     this.username = username;
     return this;
   }
 
-  public String password() {
+  public @Nullable String password() {
     return password;
   }
 
-  public ConnectionConfig password(String password) {
+  public @NonNull ConnectionConfig password(@Nullable String password) {
     this.password = password;
     return this;
   }
 
-  public SslMode sslMode() {
+  public @NonNull SslMode sslMode() {
     return sslMode;
   }
 
-  public ConnectionConfig sslMode(SslMode sslMode) {
+  public @NonNull ConnectionConfig sslMode(@NonNull SslMode sslMode) {
     this.sslMode = sslMode;
     return this;
   }
 
-  public SSLContext sslContext() {
+  public @Nullable SSLContext sslContext() {
     return sslContext;
   }
 
-  public ConnectionConfig sslContext(SSLContext sslContext) {
+  public @NonNull ConnectionConfig sslContext(@Nullable SSLContext sslContext) {
     this.sslContext = sslContext;
     return this;
   }
 
-  public String pemCertPath() {
+  public @Nullable String pemCertPath() {
     return pemCertPath;
   }
 
-  public ConnectionConfig pemCertPath(String pemCertPath) {
+  public @NonNull ConnectionConfig pemCertPath(@Nullable String pemCertPath) {
     this.pemCertPath = pemCertPath;
     return this;
   }
 
-  public String trustStorePath() {
+  public @Nullable String trustStorePath() {
     return trustStorePath;
   }
 
-  public ConnectionConfig trustStorePath(String trustStorePath) {
+  public @NonNull ConnectionConfig trustStorePath(@Nullable String trustStorePath) {
     this.trustStorePath = trustStorePath;
     return this;
   }
 
-  public String trustStorePassword() {
+  public @Nullable String trustStorePassword() {
     return trustStorePassword;
   }
 
-  public ConnectionConfig trustStorePassword(String trustStorePassword) {
+  public @NonNull ConnectionConfig trustStorePassword(@Nullable String trustStorePassword) {
     this.trustStorePassword = trustStorePassword;
     return this;
   }
@@ -248,21 +248,21 @@ public final class ConnectionConfig {
     return hostnameVerification;
   }
 
-  public ConnectionConfig hostnameVerification(boolean hostnameVerification) {
+  public @NonNull ConnectionConfig hostnameVerification(boolean hostnameVerification) {
     this.hostnameVerification = hostnameVerification;
     return this;
   }
 
   /**
-   * Socket read timeout in milliseconds. When a read on the socket exceeds this duration, a
-   * {@link java.net.SocketTimeoutException} is thrown (wrapped as {@link DbConnectionException}).
-   * {@code 0} means no timeout (infinite wait). Default: 0.
+   * Socket read timeout in milliseconds. When a read on the socket exceeds this duration, a {@link
+   * java.net.SocketTimeoutException} is thrown (wrapped as {@link DbConnectionException}). {@code
+   * 0} means no timeout (infinite wait). Default: 0.
    */
   public int socketTimeoutMillis() {
     return socketTimeoutMillis;
   }
 
-  public ConnectionConfig socketTimeoutMillis(int socketTimeoutMillis) {
+  public @NonNull ConnectionConfig socketTimeoutMillis(int socketTimeoutMillis) {
     if (socketTimeoutMillis < 0) {
       throw new IllegalArgumentException("socketTimeoutMillis must be >= 0");
     }
@@ -270,11 +270,11 @@ public final class ConnectionConfig {
     return this;
   }
 
-  public Map<String, String> properties() {
+  public @Nullable Map<String, String> properties() {
     return properties;
   }
 
-  public ConnectionConfig properties(Map<String, String> properties) {
+  public @NonNull ConnectionConfig properties(@Nullable Map<String, String> properties) {
     this.properties = properties;
     return this;
   }
@@ -283,7 +283,7 @@ public final class ConnectionConfig {
     return cachePreparedStatements;
   }
 
-  public ConnectionConfig cachePreparedStatements(boolean cachePreparedStatements) {
+  public @NonNull ConnectionConfig cachePreparedStatements(boolean cachePreparedStatements) {
     this.cachePreparedStatements = cachePreparedStatements;
     return this;
   }
@@ -292,7 +292,8 @@ public final class ConnectionConfig {
     return preparedStatementCacheMaxSize;
   }
 
-  public ConnectionConfig preparedStatementCacheMaxSize(int preparedStatementCacheMaxSize) {
+  public @NonNull ConnectionConfig preparedStatementCacheMaxSize(
+      int preparedStatementCacheMaxSize) {
     this.preparedStatementCacheMaxSize = preparedStatementCacheMaxSize;
     return this;
   }
@@ -301,7 +302,8 @@ public final class ConnectionConfig {
     return preparedStatementCacheSqlLimit;
   }
 
-  public ConnectionConfig preparedStatementCacheSqlLimit(int preparedStatementCacheSqlLimit) {
+  public @NonNull ConnectionConfig preparedStatementCacheSqlLimit(
+      int preparedStatementCacheSqlLimit) {
     this.preparedStatementCacheSqlLimit = preparedStatementCacheSqlLimit;
     return this;
   }

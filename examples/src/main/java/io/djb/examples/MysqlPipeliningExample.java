@@ -4,8 +4,8 @@ import io.djb.mysql.MysqlConnection;
 
 /**
  * MySQL pipelining: queue statements and send them in a single roundtrip.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.MysqlPipeliningExample
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.MysqlPipeliningExample
  */
 public class MysqlPipeliningExample {
 

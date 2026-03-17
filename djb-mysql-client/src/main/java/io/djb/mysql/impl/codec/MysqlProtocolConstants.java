@@ -1,12 +1,9 @@
 package io.djb.mysql.impl.codec;
 
-/**
- * MySQL wire protocol constants.
- */
+/** MySQL wire protocol constants. */
 public final class MysqlProtocolConstants {
 
-  private MysqlProtocolConstants() {
-  }
+  private MysqlProtocolConstants() {}
 
   // Packet headers
   public static final int OK_PACKET = 0x00;
@@ -44,17 +41,18 @@ public final class MysqlProtocolConstants {
   public static final int CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA = 0x00200000;
   public static final int CLIENT_DEPRECATE_EOF = 0x01000000;
 
-  public static final int CLIENT_SUPPORTED_FLAGS = CLIENT_PLUGIN_AUTH
-      | CLIENT_LONG_PASSWORD
-      | CLIENT_LONG_FLAG
-      | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
-      | CLIENT_SECURE_CONNECTION
-      | CLIENT_PROTOCOL_41
-      | CLIENT_TRANSACTIONS
-      | CLIENT_MULTI_STATEMENTS
-      | CLIENT_MULTI_RESULTS
-      | CLIENT_PS_MULTI_RESULTS
-      | CLIENT_LOCAL_FILES;
+  public static final int CLIENT_SUPPORTED_FLAGS =
+      CLIENT_PLUGIN_AUTH
+          | CLIENT_LONG_PASSWORD
+          | CLIENT_LONG_FLAG
+          | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
+          | CLIENT_SECURE_CONNECTION
+          | CLIENT_PROTOCOL_41
+          | CLIENT_TRANSACTIONS
+          | CLIENT_MULTI_STATEMENTS
+          | CLIENT_MULTI_RESULTS
+          | CLIENT_PS_MULTI_RESULTS
+          | CLIENT_LOCAL_FILES;
 
   // Server status flags
   public static final int SERVER_MORE_RESULTS_EXISTS = 0x0008;

@@ -6,6 +6,8 @@ import io.djb.impl.ByteBuffer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Encodes Postgres frontend (client → server) protocol messages into a ByteBuffer. Messages are
@@ -17,7 +19,8 @@ public final class PgEncoder {
 
   // --- Startup / Auth messages (no type byte prefix) ---
 
-  public void writeStartupMessage(String user, String database, Map<String, String> properties) {
+  public void writeStartupMessage(
+      @NonNull String user, @NonNull String database, @Nullable Map<String, String> properties) {
     int pos = buf.writerIndex();
     buf.writeInt(0); // length placeholder
     buf.writeShort(3); // protocol major
@@ -43,7 +46,7 @@ public final class PgEncoder {
 
   // --- Frontend messages with type byte ---
 
-  public void writePasswordMessage(String password) {
+  public void writePasswordMessage(@NonNull String password) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.PASSWORD);
     buf.writeInt(0); // length placeholder
@@ -51,7 +54,8 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
-  public void writeScramInitialMessage(String mechanism, String clientFirstMessage) {
+  public void writeScramInitialMessage(
+      @NonNull String mechanism, @NonNull String clientFirstMessage) {
     buf.writeByte(PgProtocolConstants.PASSWORD);
     int totalPos = buf.writerIndex();
     buf.writeInt(0); // total length placeholder
@@ -65,7 +69,7 @@ public final class PgEncoder {
     buf.setInt(totalPos, buf.writerIndex() - totalPos);
   }
 
-  public void writeScramFinalMessage(String clientFinalMessage) {
+  public void writeScramFinalMessage(@NonNull String clientFinalMessage) {
     buf.writeByte(PgProtocolConstants.PASSWORD);
     int pos = buf.writerIndex();
     buf.writeInt(0); // length placeholder
@@ -73,7 +77,7 @@ public final class PgEncoder {
     buf.setInt(pos, buf.writerIndex() - pos);
   }
 
-  public void writeQuery(String sql) {
+  public void writeQuery(@NonNull String sql) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.QUERY);
     buf.writeInt(0); // length placeholder
@@ -81,11 +85,12 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
-  public void writeParse(String sql, int[] paramTypeOIDs) {
+  public void writeParse(@NonNull String sql, int @Nullable [] paramTypeOIDs) {
     writeParse("", sql, paramTypeOIDs);
   }
 
-  public void writeParse(String statementName, String sql, int[] paramTypeOIDs) {
+  public void writeParse(
+      @NonNull String statementName, @NonNull String sql, int @Nullable [] paramTypeOIDs) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.PARSE);
     buf.writeInt(0); // length placeholder
@@ -102,14 +107,15 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
-  /**
-   * Write Bind message with text parameters and binary results.
-   */
-  public void writeBind(String[] paramValues) {
+  /** Write Bind message with text parameters and binary results. */
+  public void writeBind(@Nullable String @Nullable [] paramValues) {
     writeBind("", "", paramValues);
   }
 
-  public void writeBind(String portal, String statementName, String[] paramValues) {
+  public void writeBind(
+      @NonNull String portal,
+      @NonNull String statementName,
+      @Nullable String @Nullable [] paramValues) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.BIND);
     buf.writeInt(0); // length placeholder
@@ -139,7 +145,7 @@ public final class PgEncoder {
     writeDescribePortal("");
   }
 
-  public void writeDescribePortal(String portalName) {
+  public void writeDescribePortal(@NonNull String portalName) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.DESCRIBE);
     buf.writeInt(0);
@@ -152,7 +158,7 @@ public final class PgEncoder {
     writeExecute("", 0);
   }
 
-  public void writeExecute(String portal, int maxRows) {
+  public void writeExecute(@NonNull String portal, int maxRows) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.EXECUTE);
     buf.writeInt(0);
@@ -161,7 +167,7 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
-  public void writeCloseStatement(String statementName) {
+  public void writeCloseStatement(@NonNull String statementName) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.CLOSE);
     buf.writeInt(0);
@@ -170,7 +176,7 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
-  public void writeClosePortal(String portalName) {
+  public void writeClosePortal(@NonNull String portalName) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.CLOSE);
     buf.writeInt(0);
@@ -179,7 +185,7 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
-  public void writeDescribeStatement(String statementName) {
+  public void writeDescribeStatement(@NonNull String statementName) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.DESCRIBE);
     buf.writeInt(0);
@@ -208,7 +214,7 @@ public final class PgEncoder {
   /**
    * Flush all accumulated messages to the output stream as a single write, then clear the buffer.
    */
-  public void flush(OutputStream out) throws IOException {
+  public void flush(@NonNull OutputStream out) throws IOException {
     if (buf.writerIndex() > 0) {
       out.write(buf.array(), 0, buf.writerIndex());
       out.flush();

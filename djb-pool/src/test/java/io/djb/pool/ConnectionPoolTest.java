@@ -31,13 +31,12 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 class ConnectionPoolTest {
 
-  /**
-   * Minimal stub connection for testing pool mechanics (no real database).
-   */
+  /** Minimal stub connection for testing pool mechanics (no real database). */
   static class StubConnection implements Connection {
 
     boolean closed = false;
@@ -48,105 +47,93 @@ class ConnectionPoolTest {
     }
 
     @Override
-    public RowSet query(String sql) {
+    public @NonNull RowSet query(@NonNull String sql) {
       return null;
     }
 
     @Override
-    public RowSet query(String sql, Object... params) {
+    public @NonNull RowSet query(@NonNull String sql, Object... params) {
       return null;
     }
 
     @Override
-    public int enqueue(String sql) {
+    public int enqueue(@NonNull String sql) {
       return 0;
     }
 
     @Override
-    public int enqueue(String sql, Object... params) {
+    public int enqueue(@NonNull String sql, Object... params) {
       return 0;
     }
 
     @Override
-    public RowSet query(String sql, Map<String, Object> params) {
+    public @NonNull RowSet query(@NonNull String sql, @NonNull Map<String, Object> params) {
       return null;
     }
 
     @Override
-    public int enqueue(String sql, Map<String, Object> params) {
+    public int enqueue(@NonNull String sql, @NonNull Map<String, Object> params) {
       return 0;
     }
 
     @Override
-    public List<RowSet> flush() {
+    public @NonNull List<RowSet> flush() {
       return List.of();
     }
 
     @Override
-    public List<RowSet> executeMany(String sql, List<Object[]> paramSets) {
+    public @NonNull List<RowSet> executeMany(@NonNull String sql, @NonNull List<Object[]> paramSets) {
       return List.of();
     }
 
     @Override
-    public PreparedStatement prepare(String sql) {
+    public @NonNull PreparedStatement prepare(@NonNull String sql) {
       return null;
     }
 
     @Override
-    public Cursor cursor(String sql, Object... params) {
+    public @NonNull Cursor cursor(@NonNull String sql, Object... params) {
       return null;
     }
 
     @Override
-    public void ping() {
-    }
+    public void ping() {}
 
     @Override
-    public void queryStream(String sql, java.util.function.Consumer<Row> consumer) {
-    }
+    public void queryStream(@NonNull String sql, java.util.function.@NonNull Consumer<Row> consumer) {}
 
     @Override
     public void queryStream(
-        String sql,
-        java.util.function.Consumer<Row> consumer,
-        Object... params
-    ) {
+        @NonNull String sql, java.util.function.@NonNull Consumer<Row> consumer, Object... params) {}
+
+    @Override
+    public @NonNull RowStream stream(@NonNull String sql, Object... params) {
+      return new RowStream(() -> null, () -> {});
     }
 
     @Override
-    public RowStream stream(String sql, Object... params) {
-      return new RowStream(
-          () -> null, () -> {
-      }
-      );
-    }
-
-    @Override
-    public Map<String, String> parameters() {
+    public @NonNull Map<String, String> parameters() {
       return Map.of();
     }
 
     @Override
-    public void setBinderRegistry(BinderRegistry registry) {
-    }
+    public void setBinderRegistry(@NonNull BinderRegistry registry) {}
 
     @Override
-    public BinderRegistry binderRegistry() {
+    public @NonNull BinderRegistry binderRegistry() {
       return BinderRegistry.defaults();
     }
 
     @Override
-    public void setColumnMapperRegistry(ColumnMapperRegistry registry) {
-    }
+    public void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry) {}
 
     @Override
-    public ColumnMapperRegistry mapperRegistry() {
+    public @NonNull ColumnMapperRegistry mapperRegistry() {
       return ColumnMapperRegistry.defaults();
     }
 
     @Override
-    public void setJsonMapper(JsonMapper mapper) {
-    }
+    public void setJsonMapper(JsonMapper mapper) {}
 
     @Override
     public JsonMapper jsonMapper() {
@@ -159,9 +146,7 @@ class ConnectionPoolTest {
     }
   }
 
-  /**
-   * Unwrap a PooledConnection to get the underlying StubConnection.
-   */
+  /** Unwrap a PooledConnection to get the underlying StubConnection. */
   private static StubConnection unwrap(Connection conn) {
     return (StubConnection) ((PooledConnection) conn).delegate();
   }
@@ -169,10 +154,9 @@ class ConnectionPoolTest {
   @Test
   void acquireAndRelease() {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(3));
 
     var c1 = pool.acquire();
     assertNotNull(c1);
@@ -194,10 +178,9 @@ class ConnectionPoolTest {
   @Test
   void createsUpToMaxSize() {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(3));
 
     var c1 = pool.acquire();
     var c2 = pool.acquire();
@@ -213,10 +196,9 @@ class ConnectionPoolTest {
   @Test
   void withConnectionAutoRelease() {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(2)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(2));
 
     pool.withConnection((ConnectionPool.ConnectionAction) conn -> assertNotNull(conn));
     assertEquals(1, pool.idleCount());
@@ -255,10 +237,9 @@ class ConnectionPoolTest {
 
   @Test
   void timeoutWhenPoolExhausted() {
-    var pool = new ConnectionPool(
-        () -> new StubConnection(0),
-        new PoolConfig().maxSize(1).connectionTimeoutMillis(100)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(0), new PoolConfig().maxSize(1).connectionTimeoutMillis(100));
 
     var c1 = pool.acquire();
     // Pool is full, acquire should timeout with specific exception
@@ -272,30 +253,31 @@ class ConnectionPoolTest {
   @Test
   void concurrentAccess() throws Exception {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(5)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(5));
 
     int threadCount = 20;
     var latch = new CountDownLatch(threadCount);
     var errors = new AtomicInteger();
 
     for (int i = 0; i < threadCount; i++) {
-      Thread.startVirtualThread(() -> {
-        try {
-          for (int j = 0; j < 10; j++) {
-            pool.withConnection(conn -> {
-              assertNotNull(conn);
-              Thread.yield();
-            });
-          }
-        } catch (Exception e) {
-          errors.incrementAndGet();
-        } finally {
-          latch.countDown();
-        }
-      });
+      Thread.startVirtualThread(
+          () -> {
+            try {
+              for (int j = 0; j < 10; j++) {
+                pool.withConnection(
+                    conn -> {
+                      assertNotNull(conn);
+                      Thread.yield();
+                    });
+              }
+            } catch (Exception e) {
+              errors.incrementAndGet();
+            } finally {
+              latch.countDown();
+            }
+          });
     }
 
     assertTrue(latch.await(10, TimeUnit.SECONDS));
@@ -308,10 +290,10 @@ class ConnectionPoolTest {
   @Test
   void evictsIdleConnections() {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3).maxIdleTimeMillis(1)
-    ); // 1ms idle timeout
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()),
+            new PoolConfig().maxSize(3).maxIdleTimeMillis(1)); // 1ms idle timeout
 
     var c1 = pool.acquire();
     var stub1 = unwrap(c1);
@@ -336,10 +318,10 @@ class ConnectionPoolTest {
   @Test
   void maxLifetimeEvictsOldConnections() throws Exception {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3).maxLifetimeMillis(50).maxIdleTimeMillis(0)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()),
+            new PoolConfig().maxSize(3).maxLifetimeMillis(50).maxIdleTimeMillis(0));
 
     var c1 = pool.acquire();
     var stub1 = unwrap(c1);
@@ -365,10 +347,10 @@ class ConnectionPoolTest {
   @Test
   void backgroundEvictionRemovesExpiredConnections() throws Exception {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3).maxIdleTimeMillis(50).poolCleanerPeriodMillis(25)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()),
+            new PoolConfig().maxSize(3).maxIdleTimeMillis(50).poolCleanerPeriodMillis(25));
 
     var c1 = pool.acquire();
     var c2 = pool.acquire();
@@ -390,10 +372,10 @@ class ConnectionPoolTest {
 
   @Test
   void maxWaitQueueSizeRejects() {
-    var pool = new ConnectionPool(
-        () -> new StubConnection(0),
-        new PoolConfig().maxSize(1).maxWaitQueueSize(0).connectionTimeoutMillis(100)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(0),
+            new PoolConfig().maxSize(1).maxWaitQueueSize(0).connectionTimeoutMillis(100));
 
     var c1 = pool.acquire();
     // Wait queue is full (max 0), should reject immediately with specific exception
@@ -407,10 +389,9 @@ class ConnectionPoolTest {
   @Test
   void closeOnConnectionReturnsToPool() {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(1)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(1));
 
     var c1 = pool.acquire();
     var stub = unwrap(c1);
@@ -433,10 +414,9 @@ class ConnectionPoolTest {
   @Test
   void activeCountTracking() {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(3));
 
     assertEquals(0, pool.activeCount());
 
@@ -458,32 +438,32 @@ class ConnectionPoolTest {
   @Test
   void leakDetectionLogsWarning() throws Exception {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3)
-            .leakDetectionThresholdMillis(50)
-            .poolCleanerPeriodMillis(25)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()),
+            new PoolConfig()
+                .maxSize(3)
+                .leakDetectionThresholdMillis(50)
+                .poolCleanerPeriodMillis(25));
 
     // Capture log output
-    var logHandler = new Handler() {
-      final List<String> warnings = new CopyOnWriteArrayList<>();
+    var logHandler =
+        new Handler() {
+          final List<String> warnings = new CopyOnWriteArrayList<>();
 
-      @Override
-      public void publish(LogRecord record) {
-        if (record.getLevel() == Level.WARNING) {
-          warnings.add(record.getMessage());
-        }
-      }
+          @Override
+          public void publish(LogRecord record) {
+            if (record.getLevel() == Level.WARNING) {
+              warnings.add(record.getMessage());
+            }
+          }
 
-      @Override
-      public void flush() {
-      }
+          @Override
+          public void flush() {}
 
-      @Override
-      public void close() {
-      }
-    };
+          @Override
+          public void close() {}
+        };
     var logger = Logger.getLogger(ConnectionPool.class.getName());
     logger.addHandler(logHandler);
 
@@ -507,10 +487,10 @@ class ConnectionPoolTest {
     int maxSize = 3;
     var created = new AtomicInteger();
     var peakTotal = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(created.incrementAndGet()),
-        new PoolConfig().maxSize(maxSize).connectionTimeoutMillis(5000)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(created.incrementAndGet()),
+            new PoolConfig().maxSize(maxSize).connectionTimeoutMillis(5000));
 
     int threadCount = 50;
     var barrier = new CyclicBarrier(threadCount);
@@ -518,30 +498,30 @@ class ConnectionPoolTest {
     var errors = new AtomicInteger();
 
     for (int i = 0; i < threadCount; i++) {
-      Thread.startVirtualThread(() -> {
-        try {
-          barrier.await(); // all threads start at once
-          for (int j = 0; j < 20; j++) {
-            Connection conn = pool.acquire();
-            // Record peak totalCount while holding the connection
-            peakTotal.accumulateAndGet(pool.totalCount(), Math::max);
-            Thread.yield();
-            conn.close();
-          }
-        } catch (Exception e) {
-          errors.incrementAndGet();
-        } finally {
-          latch.countDown();
-        }
-      });
+      Thread.startVirtualThread(
+          () -> {
+            try {
+              barrier.await(); // all threads start at once
+              for (int j = 0; j < 20; j++) {
+                Connection conn = pool.acquire();
+                // Record peak totalCount while holding the connection
+                peakTotal.accumulateAndGet(pool.totalCount(), Math::max);
+                Thread.yield();
+                conn.close();
+              }
+            } catch (Exception e) {
+              errors.incrementAndGet();
+            } finally {
+              latch.countDown();
+            }
+          });
     }
 
     assertTrue(latch.await(30, TimeUnit.SECONDS));
     assertEquals(0, errors.get());
     assertTrue(
         peakTotal.get() <= maxSize,
-        "totalCount peaked at " + peakTotal.get() + " but maxSize is " + maxSize
-    );
+        "totalCount peaked at " + peakTotal.get() + " but maxSize is " + maxSize);
 
     pool.close();
   }
@@ -553,14 +533,10 @@ class ConnectionPoolTest {
     assertThrows(IllegalArgumentException.class, () -> new PoolConfig().maxIdleTimeMillis(-1));
     assertThrows(IllegalArgumentException.class, () -> new PoolConfig().maxLifetimeMillis(-1));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new PoolConfig().connectionTimeoutMillis(-1)
-    );
+        IllegalArgumentException.class, () -> new PoolConfig().connectionTimeoutMillis(-1));
     assertThrows(IllegalArgumentException.class, () -> new PoolConfig().maxWaitQueueSize(-2));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new PoolConfig().leakDetectionThresholdMillis(-1)
-    );
+        IllegalArgumentException.class, () -> new PoolConfig().leakDetectionThresholdMillis(-1));
 
     // These should be fine
     new PoolConfig().maxIdleTimeMillis(0);
@@ -572,9 +548,7 @@ class ConnectionPoolTest {
 
   // --- Edge case tests ---
 
-  /**
-   * StubConnection whose ping() throws on the first N calls, then succeeds.
-   */
+  /** StubConnection whose ping() throws on the first N calls, then succeeds. */
   static class FlakeyPingConnection extends StubConnection {
 
     private final AtomicInteger pingFailsRemaining;
@@ -596,10 +570,10 @@ class ConnectionPoolTest {
   void validateOnBorrowRetryAfterFailure() {
     var counter = new AtomicInteger();
     // Factory always creates a normal StubConnection
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(3).validateOnBorrow(true).maxIdleTimeMillis(0)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()),
+            new PoolConfig().maxSize(3).validateOnBorrow(true).maxIdleTimeMillis(0));
 
     // Acquire and return a connection
     var c1 = pool.acquire();
@@ -617,14 +591,15 @@ class ConnectionPoolTest {
     var counter2 = new AtomicInteger();
     var badConn = new FlakeyPingConnection(0, 1); // ping fails once
     var created = new AtomicBoolean(false);
-    var pool2 = new ConnectionPool(
-        () -> {
-          if (!created.getAndSet(true)) {
-            return badConn;
-          }
-          return new StubConnection(counter2.incrementAndGet());
-        }, new PoolConfig().maxSize(3).validateOnBorrow(true).maxIdleTimeMillis(0)
-    );
+    var pool2 =
+        new ConnectionPool(
+            () -> {
+              if (!created.getAndSet(true)) {
+                return badConn;
+              }
+              return new StubConnection(counter2.incrementAndGet());
+            },
+            new PoolConfig().maxSize(3).validateOnBorrow(true).maxIdleTimeMillis(0));
 
     // Acquire the flakey connection (fresh create — no validation on fresh connections)
     var first = pool2.acquire();
@@ -645,13 +620,14 @@ class ConnectionPoolTest {
   @Test
   void factoryThrowsIntermittently() {
     var callCount = new AtomicInteger();
-    ConnectionFactory flakeyFactory = () -> {
-      int n = callCount.incrementAndGet();
-      if (n % 2 == 0) {
-        throw new RuntimeException("Factory failed on call #" + n);
-      }
-      return new StubConnection(n);
-    };
+    ConnectionFactory flakeyFactory =
+        () -> {
+          int n = callCount.incrementAndGet();
+          if (n % 2 == 0) {
+            throw new RuntimeException("Factory failed on call #" + n);
+          }
+          return new StubConnection(n);
+        };
 
     var pool = new ConnectionPool(flakeyFactory, new PoolConfig().maxSize(3));
 
@@ -687,10 +663,10 @@ class ConnectionPoolTest {
   @Test
   void concurrentCloseAndAcquire() throws Exception {
     var counter = new AtomicInteger();
-    var pool = new ConnectionPool(
-        () -> new StubConnection(counter.incrementAndGet()),
-        new PoolConfig().maxSize(5).connectionTimeoutMillis(1000)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()),
+            new PoolConfig().maxSize(5).connectionTimeoutMillis(1000));
 
     // Pre-populate the pool
     var conns = new ArrayList<Connection>();
@@ -708,26 +684,27 @@ class ConnectionPoolTest {
 
     for (int i = 0; i < threadCount; i++) {
       final int ti = i;
-      Thread.startVirtualThread(() -> {
-        try {
-          barrier.await(5, TimeUnit.SECONDS);
-          for (int j = 0; j < 50; j++) {
+      Thread.startVirtualThread(
+          () -> {
             try {
-              var conn = pool.acquire();
-              Thread.yield();
-              conn.close();
-            } catch (IllegalStateException e) {
-              // Expected if pool was closed by another thread
-            } catch (PoolTimeoutException | PoolExhaustedException e) {
-              // Also acceptable under contention
+              barrier.await(5, TimeUnit.SECONDS);
+              for (int j = 0; j < 50; j++) {
+                try {
+                  var conn = pool.acquire();
+                  Thread.yield();
+                  conn.close();
+                } catch (IllegalStateException e) {
+                  // Expected if pool was closed by another thread
+                } catch (PoolTimeoutException | PoolExhaustedException e) {
+                  // Also acceptable under contention
+                }
+              }
+            } catch (Exception e) {
+              errors.add(e);
+            } finally {
+              latch.countDown();
             }
-          }
-        } catch (Exception e) {
-          errors.add(e);
-        } finally {
-          latch.countDown();
-        }
-      });
+          });
     }
 
     // Close the pool from main thread while others are working
@@ -735,35 +712,36 @@ class ConnectionPoolTest {
     pool.close();
 
     assertTrue(latch.await(10, TimeUnit.SECONDS), "Threads should complete without deadlock");
-    // Filter out expected BrokenBarrierExceptions (threads that didn't reach barrier before pool closed)
-    var unexpectedErrors = errors.stream()
-        .filter(e -> !(e instanceof java.util.concurrent.BrokenBarrierException))
-        .toList();
-    assertTrue(
-        unexpectedErrors.isEmpty(),
-        "Unexpected errors: " + unexpectedErrors
-    );
+    // Filter out expected BrokenBarrierExceptions (threads that didn't reach barrier before pool
+    // closed)
+    var unexpectedErrors =
+        errors.stream()
+            .filter(e -> !(e instanceof java.util.concurrent.BrokenBarrierException))
+            .toList();
+    assertTrue(unexpectedErrors.isEmpty(), "Unexpected errors: " + unexpectedErrors);
   }
 
   @Test
   void validateOnBorrowDiscardsBadConnection() {
-    var badConn = new StubConnection(1) {
-      @Override
-      public void ping() {
-        throw new RuntimeException("connection is dead");
-      }
-    };
+    var badConn =
+        new StubConnection(1) {
+          @Override
+          public void ping() {
+            throw new RuntimeException("connection is dead");
+          }
+        };
     var counter = new AtomicInteger(1);
     var created = new AtomicBoolean(false);
 
-    var pool = new ConnectionPool(
-        () -> {
-          if (!created.getAndSet(true)) {
-            return badConn;
-          }
-          return new StubConnection(counter.incrementAndGet());
-        }, new PoolConfig().maxSize(3).validateOnBorrow(true).maxIdleTimeMillis(0)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> {
+              if (!created.getAndSet(true)) {
+                return badConn;
+              }
+              return new StubConnection(counter.incrementAndGet());
+            },
+            new PoolConfig().maxSize(3).validateOnBorrow(true).maxIdleTimeMillis(0));
 
     // Acquire the bad connection (fresh — no validation on create)
     var c1 = pool.acquire();
@@ -783,10 +761,9 @@ class ConnectionPoolTest {
 
   @Test
   void acquireAfterPoolCloseFromDifferentThread() throws Exception {
-    var pool = new ConnectionPool(
-        () -> new StubConnection(0),
-        new PoolConfig().maxSize(1).connectionTimeoutMillis(5000)
-    );
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(0), new PoolConfig().maxSize(1).connectionTimeoutMillis(5000));
 
     // Exhaust the pool so a second acquire will block
     var held = pool.acquire();
@@ -794,14 +771,16 @@ class ConnectionPoolTest {
     var acquireStarted = new CountDownLatch(1);
     var result = new AtomicReference<Throwable>();
 
-    var waiter = Thread.startVirtualThread(() -> {
-      acquireStarted.countDown();
-      try {
-        pool.acquire(); // will block waiting for a connection
-      } catch (Throwable t) {
-        result.set(t);
-      }
-    });
+    var waiter =
+        Thread.startVirtualThread(
+            () -> {
+              acquireStarted.countDown();
+              try {
+                pool.acquire(); // will block waiting for a connection
+              } catch (Throwable t) {
+                result.set(t);
+              }
+            });
 
     // Wait for the waiter thread to start
     assertTrue(acquireStarted.await(2, TimeUnit.SECONDS));
@@ -817,15 +796,11 @@ class ConnectionPoolTest {
     assertFalse(waiter.isAlive(), "Waiter thread should have finished");
 
     // The waiter should have gotten an exception (timeout, ISE, or similar)
-    assertNotNull(
-        result.get(),
-        "Blocked acquire should fail after pool is closed"
-    );
+    assertNotNull(result.get(), "Blocked acquire should fail after pool is closed");
     assertTrue(
         result.get() instanceof IllegalStateException
             || result.get() instanceof PoolTimeoutException,
-        "Expected IllegalStateException or PoolTimeoutException but got: " + result.get().getClass()
-            .getName()
-    );
+        "Expected IllegalStateException or PoolTimeoutException but got: "
+            + result.get().getClass().getName());
   }
 }

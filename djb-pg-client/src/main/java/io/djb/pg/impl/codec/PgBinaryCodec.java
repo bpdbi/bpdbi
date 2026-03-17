@@ -32,9 +32,7 @@ import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.NonNull;
 
-/**
- * Postgres binary format decoder. All values are big-endian. Ported from Vert.x DataTypeCodec.
- */
+/** Postgres binary format decoder. All values are big-endian. Ported from Vert.x DataTypeCodec. */
 public final class PgBinaryCodec implements BinaryCodec {
 
   public static final PgBinaryCodec INSTANCE = new PgBinaryCodec();
@@ -50,25 +48,24 @@ public final class PgBinaryCodec implements BinaryCodec {
   private static final int NUMERIC_NEG = 0x4000;
   private static final int NUMERIC_NAN = 0xC000;
 
-  private PgBinaryCodec() {
-  }
+  private PgBinaryCodec() {}
 
   // =====================================================================
   // BinaryCodec interface — core scalar types
   // =====================================================================
 
   @Override
-  public boolean decodeBool(byte[] value) {
+  public boolean decodeBool(byte @NonNull [] value) {
     return value[0] != 0;
   }
 
   @Override
-  public short decodeInt2(byte[] value) {
+  public short decodeInt2(byte @NonNull [] value) {
     return (short) ((value[0] & 0xFF) << 8 | (value[1] & 0xFF));
   }
 
   @Override
-  public int decodeInt4(byte[] value) {
+  public int decodeInt4(byte @NonNull [] value) {
     return (value[0] & 0xFF) << 24
         | (value[1] & 0xFF) << 16
         | (value[2] & 0xFF) << 8
@@ -76,7 +73,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public long decodeInt8(byte[] value) {
+  public long decodeInt8(byte @NonNull [] value) {
     return ((long) (value[0] & 0xFF) << 56)
         | ((long) (value[1] & 0xFF) << 48)
         | ((long) (value[2] & 0xFF) << 40)
@@ -88,29 +85,29 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public float decodeFloat4(byte[] value) {
+  public float decodeFloat4(byte @NonNull [] value) {
     return Float.intBitsToFloat(decodeInt4(value));
   }
 
   @Override
-  public double decodeFloat8(byte[] value) {
+  public double decodeFloat8(byte @NonNull [] value) {
     return Double.longBitsToDouble(decodeInt8(value));
   }
 
   @Override
-  public String decodeString(byte[] value) {
+  public @NonNull String decodeString(byte @NonNull [] value) {
     return new String(value, StandardCharsets.UTF_8);
   }
 
   @Override
-  public UUID decodeUuid(byte[] value) {
+  public @NonNull UUID decodeUuid(byte @NonNull [] value) {
     long msb = decodeInt8At(value, 0);
     long lsb = decodeInt8At(value, 8);
     return new UUID(msb, lsb);
   }
 
   @Override
-  public LocalDate decodeDate(byte[] value) {
+  public @NonNull LocalDate decodeDate(byte @NonNull [] value) {
     int days = decodeInt4(value);
     if (days == Integer.MAX_VALUE) {
       return LocalDate.MAX;
@@ -122,13 +119,13 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public LocalTime decodeTime(byte[] value) {
+  public @NonNull LocalTime decodeTime(byte @NonNull [] value) {
     long micros = decodeInt8(value);
     return LocalTime.ofNanoOfDay(micros * 1000);
   }
 
   @Override
-  public LocalDateTime decodeTimestamp(byte[] value) {
+  public @NonNull LocalDateTime decodeTimestamp(byte @NonNull [] value) {
     long micros = decodeInt8(value);
     if (micros == Long.MAX_VALUE) {
       return LocalDateTime.MAX;
@@ -140,7 +137,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public OffsetDateTime decodeTimestamptz(byte[] value) {
+  public @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] value) {
     LocalDateTime ldt = decodeTimestamp(value);
     if (ldt == LocalDateTime.MAX) {
       return OffsetDateTime.MAX;
@@ -152,12 +149,12 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public byte[] decodeBytes(byte[] value) {
+  public byte @NonNull [] decodeBytes(byte @NonNull [] value) {
     return value; // Binary bytea is raw bytes
   }
 
   @Override
-  public BigDecimal decodeNumeric(byte[] value) {
+  public @NonNull BigDecimal decodeNumeric(byte @NonNull [] value) {
     // Postgres binary NUMERIC format: base-10000 BCD
     // Header: nDigits(2) weight(2) sign(2) dScale(2)
     // Followed by nDigits base-10000 digit groups (each 2 bytes)
@@ -226,7 +223,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public String decodeJson(byte[] value, int typeOID) {
+  public @NonNull String decodeJson(byte @NonNull [] value, int typeOID) {
     if (typeOID == OID_JSONB && value.length > 0) {
       // JSONB has a 1-byte version prefix (always 1)
       return new String(value, 1, value.length - 1, StandardCharsets.UTF_8);
@@ -238,17 +235,15 @@ public final class PgBinaryCodec implements BinaryCodec {
   // TIMETZ (OffsetTime) — PG-specific
   // =====================================================================
 
-  public OffsetTime decodeTimetz(byte[] value) {
+  public @NonNull OffsetTime decodeTimetz(byte @NonNull [] value) {
     long micros = decodeInt8At(value, 0);
     // Zone offset in seconds (negated in PG wire format)
     int offsetSeconds = -decodeInt4At(value, 8);
     return OffsetTime.of(
-        LocalTime.ofNanoOfDay(micros * 1000),
-        ZoneOffset.ofTotalSeconds(offsetSeconds)
-    );
+        LocalTime.ofNanoOfDay(micros * 1000), ZoneOffset.ofTotalSeconds(offsetSeconds));
   }
 
-  public static byte[] encodeTimetz(OffsetTime value) {
+  public static byte @NonNull [] encodeTimetz(@NonNull OffsetTime value) {
     byte[] result = new byte[12];
     long micros = value.toLocalTime().getLong(ChronoField.MICRO_OF_DAY);
     putInt8(result, 0, micros);
@@ -260,27 +255,27 @@ public final class PgBinaryCodec implements BinaryCodec {
   // Geometric types — ported from Vert.x DataTypeCodec
   // =====================================================================
 
-  public Point decodePoint(byte[] value) {
+  public @NonNull Point decodePoint(byte @NonNull [] value) {
     double x = decodeFloat8At(value, 0);
     double y = decodeFloat8At(value, 8);
     return new Point(x, y);
   }
 
-  public static byte[] encodePoint(Point point) {
+  public static byte @NonNull [] encodePoint(@NonNull Point point) {
     byte[] result = new byte[16];
     putFloat8(result, 0, point.x());
     putFloat8(result, 8, point.y());
     return result;
   }
 
-  public Line decodeLine(byte[] value) {
+  public @NonNull Line decodeLine(byte @NonNull [] value) {
     double a = decodeFloat8At(value, 0);
     double b = decodeFloat8At(value, 8);
     double c = decodeFloat8At(value, 16);
     return new Line(a, b, c);
   }
 
-  public static byte[] encodeLine(Line line) {
+  public static byte @NonNull [] encodeLine(@NonNull Line line) {
     byte[] result = new byte[24];
     putFloat8(result, 0, line.a());
     putFloat8(result, 8, line.b());
@@ -288,13 +283,13 @@ public final class PgBinaryCodec implements BinaryCodec {
     return result;
   }
 
-  public LineSegment decodeLseg(byte[] value) {
+  public @NonNull LineSegment decodeLseg(byte @NonNull [] value) {
     Point p1 = new Point(decodeFloat8At(value, 0), decodeFloat8At(value, 8));
     Point p2 = new Point(decodeFloat8At(value, 16), decodeFloat8At(value, 24));
     return new LineSegment(p1, p2);
   }
 
-  public static byte[] encodeLseg(LineSegment lseg) {
+  public static byte @NonNull [] encodeLseg(@NonNull LineSegment lseg) {
     byte[] result = new byte[32];
     putFloat8(result, 0, lseg.p1().x());
     putFloat8(result, 8, lseg.p1().y());
@@ -303,13 +298,13 @@ public final class PgBinaryCodec implements BinaryCodec {
     return result;
   }
 
-  public Box decodeBox(byte[] value) {
+  public @NonNull Box decodeBox(byte @NonNull [] value) {
     Point upperRightCorner = new Point(decodeFloat8At(value, 0), decodeFloat8At(value, 8));
     Point lowerLeftCorner = new Point(decodeFloat8At(value, 16), decodeFloat8At(value, 24));
     return new Box(upperRightCorner, lowerLeftCorner);
   }
 
-  public static byte[] encodeBox(Box box) {
+  public static byte @NonNull [] encodeBox(@NonNull Box box) {
     byte[] result = new byte[32];
     putFloat8(result, 0, box.upperRightCorner().x());
     putFloat8(result, 8, box.upperRightCorner().y());
@@ -318,7 +313,7 @@ public final class PgBinaryCodec implements BinaryCodec {
     return result;
   }
 
-  public Path decodePath(byte[] value) {
+  public @NonNull Path decodePath(byte @NonNull [] value) {
     byte first = value[0];
     boolean isOpen;
     if (first == 0) {
@@ -341,7 +336,7 @@ public final class PgBinaryCodec implements BinaryCodec {
     return new Path(isOpen, points);
   }
 
-  public static byte[] encodePath(Path path) {
+  public static byte @NonNull [] encodePath(@NonNull Path path) {
     List<Point> points = path.points();
     byte[] result = new byte[1 + 4 + points.size() * 16];
     result[0] = (byte) (path.isOpen() ? 0 : 1);
@@ -355,7 +350,7 @@ public final class PgBinaryCodec implements BinaryCodec {
     return result;
   }
 
-  public Polygon decodePolygon(byte[] value) {
+  public @NonNull Polygon decodePolygon(byte @NonNull [] value) {
     int idx = 0;
     int numberOfPoints = decodeInt4At(value, idx);
     idx += 4;
@@ -369,7 +364,7 @@ public final class PgBinaryCodec implements BinaryCodec {
     return new Polygon(points);
   }
 
-  public static byte[] encodePolygon(Polygon polygon) {
+  public static byte @NonNull [] encodePolygon(@NonNull Polygon polygon) {
     List<Point> points = polygon.points();
     byte[] result = new byte[4 + points.size() * 16];
     putInt4(result, 0, points.size());
@@ -382,13 +377,13 @@ public final class PgBinaryCodec implements BinaryCodec {
     return result;
   }
 
-  public Circle decodeCircle(byte[] value) {
+  public @NonNull Circle decodeCircle(byte @NonNull [] value) {
     Point center = new Point(decodeFloat8At(value, 0), decodeFloat8At(value, 8));
     double radius = decodeFloat8At(value, 16);
     return new Circle(center, radius);
   }
 
-  public static byte[] encodeCircle(Circle circle) {
+  public static byte @NonNull [] encodeCircle(@NonNull Circle circle) {
     byte[] result = new byte[24];
     putFloat8(result, 0, circle.centerPoint().x());
     putFloat8(result, 8, circle.centerPoint().y());
@@ -400,7 +395,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   // Interval — ported from Vert.x DataTypeCodec
   // =====================================================================
 
-  public Interval decodeInterval(byte[] value) {
+  public @NonNull Interval decodeInterval(byte @NonNull [] value) {
     // Wire format: INT8 microseconds + INT4 days + INT4 months
     long micros = decodeInt8At(value, 0);
     long seconds = micros / 1000000;
@@ -418,19 +413,24 @@ public final class PgBinaryCodec implements BinaryCodec {
     long years = months / 12;
     months -= years * 12;
     return new Interval(
-        (int) years, (int) months, (int) days,
-        (int) hours, (int) minutes, (int) seconds, (int) micros
-    );
+        (int) years,
+        (int) months,
+        (int) days,
+        (int) hours,
+        (int) minutes,
+        (int) seconds,
+        (int) micros);
   }
 
-  public static byte[] encodeInterval(Interval interval) {
+  public static byte @NonNull [] encodeInterval(@NonNull Interval interval) {
     byte[] result = new byte[16];
     int monthsPart = Math.addExact(Math.multiplyExact(interval.years(), 12), interval.months());
-    long secondsPart = interval.days() * 24 * 3600L
-        + interval.hours() * 3600L
-        + interval.minutes() * 60L
-        + interval.seconds()
-        + interval.microseconds() / 1000000;
+    long secondsPart =
+        interval.days() * 24 * 3600L
+            + interval.hours() * 3600L
+            + interval.minutes() * 60L
+            + interval.seconds()
+            + interval.microseconds() / 1000000;
     int microsPart = interval.microseconds() % 1000000;
 
     int months = Math.addExact(monthsPart, Math.toIntExact(secondsPart / 2592000));
@@ -447,12 +447,12 @@ public final class PgBinaryCodec implements BinaryCodec {
   // Money — ported from Vert.x DataTypeCodec
   // =====================================================================
 
-  public Money decodeMoney(byte[] value) {
+  public @NonNull Money decodeMoney(byte @NonNull [] value) {
     long cents = decodeInt8(value);
     return new Money(BigDecimal.valueOf(cents, 2));
   }
 
-  public static byte[] encodeMoney(Money money) {
+  public static byte @NonNull [] encodeMoney(@NonNull Money money) {
     return encodeInt8(money.bigDecimalValue().movePointRight(2).longValue());
   }
 
@@ -460,7 +460,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   // Inet / Cidr — ported from Vert.x DataTypeCodec
   // =====================================================================
 
-  public Inet decodeInet(byte[] value) {
+  public @NonNull Inet decodeInet(byte @NonNull [] value) {
     byte family = value[0];
     byte netmask = value[1];
     // value[2] = is_cidr flag (0 for inet)
@@ -474,21 +474,22 @@ public final class PgBinaryCodec implements BinaryCodec {
     } catch (UnknownHostException e) {
       throw new IllegalArgumentException("Invalid inet address", e);
     }
-    mask = switch (family) {
-      // IPv4
-      case 2 -> (netmask & 0xFF) == 32 ? null : Byte.toUnsignedInt(netmask);
-      // IPv6
-      case 3 -> (netmask & 0xFF) == 128 ? null : Byte.toUnsignedInt(netmask);
-      default -> throw new IllegalArgumentException("Invalid ip family: " + family);
-    };
+    mask =
+        switch (family) {
+          // IPv4
+          case 2 -> (netmask & 0xFF) == 32 ? null : Byte.toUnsignedInt(netmask);
+          // IPv6
+          case 3 -> (netmask & 0xFF) == 128 ? null : Byte.toUnsignedInt(netmask);
+          default -> throw new IllegalArgumentException("Invalid ip family: " + family);
+        };
     return new Inet(address, mask);
   }
 
-  public static byte[] encodeInet(Inet value) {
+  public static byte @NonNull [] encodeInet(@NonNull Inet value) {
     return encodeInetOrCidrToBytes(value.address(), value.netmask(), InetOrCidr.Inet);
   }
 
-  public Cidr decodeCidr(byte[] value) {
+  public @NonNull Cidr decodeCidr(byte @NonNull [] value) {
     byte family = value[0];
     byte netmask = value[1];
     int size = value[3] & 0xFF;
@@ -509,19 +510,17 @@ public final class PgBinaryCodec implements BinaryCodec {
     return new Cidr(address, Byte.toUnsignedInt(netmask));
   }
 
-  public static byte[] encodeCidr(Cidr value) {
+  public static byte @NonNull [] encodeCidr(@NonNull Cidr value) {
     return encodeInetOrCidrToBytes(value.address(), value.netmask(), InetOrCidr.Cidr);
   }
 
   enum InetOrCidr {
-    Inet, Cidr
+    Inet,
+    Cidr
   }
 
   private static byte @NonNull [] encodeInetOrCidrToBytes(
-      InetAddress address,
-      Integer value1,
-      InetOrCidr inetOrCidr
-  ) {
+      InetAddress address, Integer value1, InetOrCidr inetOrCidr) {
     byte family;
     byte[] data;
     int netmask;
@@ -549,39 +548,39 @@ public final class PgBinaryCodec implements BinaryCodec {
   // Binary encode methods (for parameters)
   // =====================================================================
 
-  public static byte[] encodeBool(boolean value) {
-    return new byte[]{(byte) (value ? 1 : 0)};
+  public static byte @NonNull [] encodeBool(boolean value) {
+    return new byte[] {(byte) (value ? 1 : 0)};
   }
 
-  public static byte[] encodeInt2(short value) {
-    return new byte[]{(byte) (value >> 8), (byte) value};
+  public static byte @NonNull [] encodeInt2(short value) {
+    return new byte[] {(byte) (value >> 8), (byte) value};
   }
 
-  public static byte[] encodeInt4(int value) {
-    return new byte[]{
-        (byte) (value >> 24), (byte) (value >> 16),
-        (byte) (value >> 8), (byte) value
+  public static byte @NonNull [] encodeInt4(int value) {
+    return new byte[] {
+      (byte) (value >> 24), (byte) (value >> 16),
+      (byte) (value >> 8), (byte) value
     };
   }
 
-  public static byte[] encodeInt8(long value) {
-    return new byte[]{
-        (byte) (value >> 56), (byte) (value >> 48),
-        (byte) (value >> 40), (byte) (value >> 32),
-        (byte) (value >> 24), (byte) (value >> 16),
-        (byte) (value >> 8), (byte) value
+  public static byte @NonNull [] encodeInt8(long value) {
+    return new byte[] {
+      (byte) (value >> 56), (byte) (value >> 48),
+      (byte) (value >> 40), (byte) (value >> 32),
+      (byte) (value >> 24), (byte) (value >> 16),
+      (byte) (value >> 8), (byte) value
     };
   }
 
-  public static byte[] encodeFloat4(float value) {
+  public static byte @NonNull [] encodeFloat4(float value) {
     return encodeInt4(Float.floatToIntBits(value));
   }
 
-  public static byte[] encodeFloat8(double value) {
+  public static byte @NonNull [] encodeFloat8(double value) {
     return encodeInt8(Double.doubleToLongBits(value));
   }
 
-  public static byte[] encodeUuid(UUID uuid) {
+  public static byte @NonNull [] encodeUuid(@NonNull UUID uuid) {
     byte[] bytes = new byte[16];
     long msb = uuid.getMostSignificantBits();
     long lsb = uuid.getLeastSignificantBits();
@@ -592,7 +591,7 @@ public final class PgBinaryCodec implements BinaryCodec {
     return bytes;
   }
 
-  public static byte[] encodeDate(LocalDate date) {
+  public static byte @NonNull [] encodeDate(@NonNull LocalDate date) {
     if (date == LocalDate.MAX) {
       return encodeInt4(Integer.MAX_VALUE);
     }
@@ -602,23 +601,24 @@ public final class PgBinaryCodec implements BinaryCodec {
     return encodeInt4((int) ChronoUnit.DAYS.between(PG_EPOCH_DATE, date));
   }
 
-  public static byte[] encodeTime(LocalTime time) {
+  public static byte @NonNull [] encodeTime(@NonNull LocalTime time) {
     return encodeInt8(time.getLong(ChronoField.MICRO_OF_DAY));
   }
 
-  public static byte[] encodeTimestamp(LocalDateTime ts) {
+  public static byte @NonNull [] encodeTimestamp(@NonNull LocalDateTime ts) {
     long micros = ChronoUnit.MICROS.between(PG_EPOCH_DATETIME, ts);
     return encodeInt8(micros);
   }
 
-  public static byte[] encodeTimestamptz(OffsetDateTime ts) {
-    LocalDateTime utc = ts.getOffset().equals(ZoneOffset.UTC)
-        ? ts.toLocalDateTime()
-        : ts.toInstant().atOffset(ZoneOffset.UTC).toLocalDateTime();
+  public static byte @NonNull [] encodeTimestamptz(@NonNull OffsetDateTime ts) {
+    LocalDateTime utc =
+        ts.getOffset().equals(ZoneOffset.UTC)
+            ? ts.toLocalDateTime()
+            : ts.toInstant().atOffset(ZoneOffset.UTC).toLocalDateTime();
     return encodeTimestamp(utc);
   }
 
-  public static byte[] encodeString(String value) {
+  public static byte @NonNull [] encodeString(@NonNull String value) {
     return value.getBytes(StandardCharsets.UTF_8);
   }
 

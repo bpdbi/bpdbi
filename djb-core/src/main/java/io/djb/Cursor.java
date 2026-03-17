@@ -1,5 +1,6 @@
 package io.djb;
 
+import org.jspecify.annotations.NonNull;
 
 /**
  * A cursor for progressively reading rows from a large result set. Must be used within a
@@ -18,20 +19,13 @@ package io.djb;
  */
 public interface Cursor extends AutoCloseable {
 
-  /**
-   * Fetch the next batch of rows.
-   */
+  /** Fetch the next batch of rows. */
+  @NonNull RowSet read(int count);
 
-  RowSet read(int count);
-
-  /**
-   * Whether there are more rows to read.
-   */
+  /** Whether there are more rows to read. */
   boolean hasMore();
 
-  /**
-   * Close the cursor and release server resources.
-   */
+  /** Close the cursor and release server resources. */
   @Override
   void close();
 }

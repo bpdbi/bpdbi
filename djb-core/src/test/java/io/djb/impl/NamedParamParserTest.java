@@ -20,77 +20,74 @@ class NamedParamParserTest {
 
   @Test
   void singleParam() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM users WHERE id = :id",
-        Map.of("id", 42), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM users WHERE id = :id", Map.of("id", 42), "$", registry);
     assertEquals("SELECT * FROM users WHERE id = $1", result.sql());
-    assertArrayEquals(new String[]{"42"}, result.params());
+    assertArrayEquals(new String[] {"42"}, result.params());
   }
 
   @Test
   void multipleParams() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM users WHERE name = :name AND age > :age",
-        Map.of("name", "Alice", "age", 21), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM users WHERE name = :name AND age > :age",
+            Map.of("name", "Alice", "age", 21),
+            "$",
+            registry);
     assertEquals("SELECT * FROM users WHERE name = $1 AND age > $2", result.sql());
     assertEquals(2, result.params().length);
   }
 
   @Test
   void mysqlPlaceholders() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM users WHERE id = :id",
-        Map.of("id", 42), "?", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM users WHERE id = :id", Map.of("id", 42), "?", registry);
     assertEquals("SELECT * FROM users WHERE id = ?", result.sql());
-    assertArrayEquals(new String[]{"42"}, result.params());
+    assertArrayEquals(new String[] {"42"}, result.params());
   }
 
   @Test
   void paramInsideQuotesNotReplaced() {
-    var result = NamedParamParser.parse(
-        "SELECT ':not_a_param' AS val WHERE id = :id",
-        Map.of("id", 1), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT ':not_a_param' AS val WHERE id = :id", Map.of("id", 1), "$", registry);
     assertEquals("SELECT ':not_a_param' AS val WHERE id = $1", result.sql());
     assertEquals(1, result.params().length);
   }
 
   @Test
   void paramInsideDoubleQuotesNotReplaced() {
-    var result = NamedParamParser.parse(
-        "SELECT \":not_a_param\" AS val WHERE id = :id",
-        Map.of("id", 1), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT \":not_a_param\" AS val WHERE id = :id", Map.of("id", 1), "$", registry);
     assertEquals("SELECT \":not_a_param\" AS val WHERE id = $1", result.sql());
   }
 
   @Test
   void nullParam() {
-    var result = NamedParamParser.parse(
-        "INSERT INTO t VALUES (:val)",
-        Map.of("val", "test"), "$", registry
-    );
+    var result =
+        NamedParamParser.parse("INSERT INTO t VALUES (:val)", Map.of("val", "test"), "$", registry);
     assertEquals("INSERT INTO t VALUES ($1)", result.sql());
   }
 
   @Test
   void underscoreInParamName() {
-    var result = NamedParamParser.parse(
-        "SELECT :first_name, :last_name",
-        Map.of("first_name", "Alice", "last_name", "Smith"), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT :first_name, :last_name",
+            Map.of("first_name", "Alice", "last_name", "Smith"),
+            "$",
+            registry);
     assertEquals("SELECT $1, $2", result.sql());
   }
 
   @Test
   void missingParamThrows() {
     assertThrows(
-        IllegalArgumentException.class, () ->
-            NamedParamParser.parse("SELECT :missing", Map.of(), "$", registry)
-    );
+        IllegalArgumentException.class,
+        () -> NamedParamParser.parse("SELECT :missing", Map.of(), "$", registry));
   }
 
   @Test
@@ -103,102 +100,108 @@ class NamedParamParserTest {
   @Test
   void colonInCast() {
     // ::type is a PG cast, not a named param — should be preserved
-    var result = NamedParamParser.parse(
-        "SELECT :val::int",
-        Map.of("val", 42), "$", registry
-    );
+    var result = NamedParamParser.parse("SELECT :val::int", Map.of("val", 42), "$", registry);
     assertEquals("SELECT $1::int", result.sql());
-    assertArrayEquals(new String[]{"42"}, result.params());
+    assertArrayEquals(new String[] {"42"}, result.params());
   }
 
   // --- Collection/array expansion tests ---
 
   @Test
   void listExpansionPg() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM users WHERE id IN (:ids)",
-        Map.of("ids", List.of(1, 2, 3)), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM users WHERE id IN (:ids)",
+            Map.of("ids", List.of(1, 2, 3)),
+            "$",
+            registry);
     assertEquals("SELECT * FROM users WHERE id IN ($1, $2, $3)", result.sql());
-    assertArrayEquals(new String[]{"1", "2", "3"}, result.params());
+    assertArrayEquals(new String[] {"1", "2", "3"}, result.params());
   }
 
   @Test
   void listExpansionMysql() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM users WHERE id IN (:ids)",
-        Map.of("ids", List.of(1, 2, 3)), "?", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM users WHERE id IN (:ids)",
+            Map.of("ids", List.of(1, 2, 3)),
+            "?",
+            registry);
     assertEquals("SELECT * FROM users WHERE id IN (?, ?, ?)", result.sql());
-    assertArrayEquals(new String[]{"1", "2", "3"}, result.params());
+    assertArrayEquals(new String[] {"1", "2", "3"}, result.params());
   }
 
   @Test
   void listExpansionSingleElement() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM t WHERE id IN (:ids)",
-        Map.of("ids", List.of(42)), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE id IN (:ids)", Map.of("ids", List.of(42)), "$", registry);
     assertEquals("SELECT * FROM t WHERE id IN ($1)", result.sql());
-    assertArrayEquals(new String[]{"42"}, result.params());
+    assertArrayEquals(new String[] {"42"}, result.params());
   }
 
   @Test
   void listExpansionEmpty() {
     var params = new HashMap<String, Object>();
     params.put("ids", List.of());
-    var result = NamedParamParser.parse(
-        "SELECT * FROM t WHERE id IN (:ids)",
-        params, "$", registry
-    );
+    var result =
+        NamedParamParser.parse("SELECT * FROM t WHERE id IN (:ids)", params, "$", registry);
     assertEquals("SELECT * FROM t WHERE id IN (NULL)", result.sql());
     assertEquals(0, result.params().length);
   }
 
   @Test
   void listExpansionMixedWithScalar() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM t WHERE status = :status AND id IN (:ids)",
-        Map.of("status", "active", "ids", List.of(1, 2)), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE status = :status AND id IN (:ids)",
+            Map.of("status", "active", "ids", List.of(1, 2)),
+            "$",
+            registry);
     assertEquals("SELECT * FROM t WHERE status = $1 AND id IN ($2, $3)", result.sql());
-    assertArrayEquals(new String[]{"active", "1", "2"}, result.params());
+    assertArrayEquals(new String[] {"active", "1", "2"}, result.params());
   }
 
   @Test
   void arrayExpansion() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM t WHERE id IN (:ids)",
-        Map.of("ids", new int[]{10, 20, 30}), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE id IN (:ids)",
+            Map.of("ids", new int[] {10, 20, 30}),
+            "$",
+            registry);
     assertEquals("SELECT * FROM t WHERE id IN ($1, $2, $3)", result.sql());
-    assertArrayEquals(new String[]{"10", "20", "30"}, result.params());
+    assertArrayEquals(new String[] {"10", "20", "30"}, result.params());
   }
 
   @Test
   void stringListExpansion() {
-    var result = NamedParamParser.parse(
-        "SELECT * FROM t WHERE name IN (:names)",
-        Map.of("names", List.of("Alice", "Bob")), "$", registry
-    );
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE name IN (:names)",
+            Map.of("names", List.of("Alice", "Bob")),
+            "$",
+            registry);
     assertEquals("SELECT * FROM t WHERE name IN ($1, $2)", result.sql());
-    assertArrayEquals(new String[]{"Alice", "Bob"}, result.params());
+    assertArrayEquals(new String[] {"Alice", "Bob"}, result.params());
   }
 
   // --- parseTemplate tests ---
 
   @Test
   void parseTemplatePg() {
-    var template = NamedParamParser.parseTemplate(
-        "SELECT * FROM users WHERE name = :name AND age = :age", "$");
+    var template =
+        NamedParamParser.parseTemplate(
+            "SELECT * FROM users WHERE name = :name AND age = :age", "$");
     assertEquals("SELECT * FROM users WHERE name = $1 AND age = $2", template.sql());
     assertEquals(List.of("name", "age"), template.parameterNames());
   }
 
   @Test
   void parseTemplateMysql() {
-    var template = NamedParamParser.parseTemplate(
-        "SELECT * FROM users WHERE name = :name AND age = :age", "?");
+    var template =
+        NamedParamParser.parseTemplate(
+            "SELECT * FROM users WHERE name = :name AND age = :age", "?");
     assertEquals("SELECT * FROM users WHERE name = ? AND age = ?", template.sql());
     assertEquals(List.of("name", "age"), template.parameterNames());
   }
@@ -212,8 +215,8 @@ class NamedParamParserTest {
 
   @Test
   void parseTemplateSkipsQuotedAndComments() {
-    var template = NamedParamParser.parseTemplate(
-        "SELECT ':skip' -- :comment\nWHERE id = :id", "$");
+    var template =
+        NamedParamParser.parseTemplate("SELECT ':skip' -- :comment\nWHERE id = :id", "$");
     assertEquals("SELECT ':skip' -- :comment\nWHERE id = $1", template.sql());
     assertEquals(List.of("id"), template.parameterNames());
   }
@@ -246,32 +249,29 @@ class NamedParamParserTest {
 
   @Test
   void resolveParamsBasic() {
-    var result = NamedParamParser.resolveParams(
-        List.of("name", "age"), Map.of("name", "Alice", "age", 30));
-    assertArrayEquals(new Object[]{"Alice", 30}, result);
+    var result =
+        NamedParamParser.resolveParams(List.of("name", "age"), Map.of("name", "Alice", "age", 30));
+    assertArrayEquals(new Object[] {"Alice", 30}, result);
   }
 
   @Test
   void resolveParamsMissing() {
     assertThrows(
-        IllegalArgumentException.class, () ->
-            NamedParamParser.resolveParams(List.of("name"), Map.of())
-    );
+        IllegalArgumentException.class,
+        () -> NamedParamParser.resolveParams(List.of("name"), Map.of()));
   }
 
   @Test
   void resolveParamsPassesThroughCollection() {
     var ids = List.of(1, 2, 3);
-    var result = NamedParamParser.resolveParams(
-        List.of("ids"), Map.of("ids", ids));
+    var result = NamedParamParser.resolveParams(List.of("ids"), Map.of("ids", ids));
     assertSame(ids, result[0]);
   }
 
   @Test
   void resolveParamsPassesThroughArray() {
-    var ids = new int[]{1, 2};
-    var result = NamedParamParser.resolveParams(
-        List.of("ids"), Map.of("ids", ids));
+    var ids = new int[] {1, 2};
+    var result = NamedParamParser.resolveParams(List.of("ids"), Map.of("ids", ids));
     assertSame(ids, result[0]);
   }
 

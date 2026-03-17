@@ -58,7 +58,7 @@ class MysqlDecoderTest {
   @Test
   void readPacketUnexpectedEndOfStream() {
     // Only 2 bytes when 4 are needed for header
-    var decoder = new MysqlDecoder(new ByteArrayInputStream(new byte[]{0x01, 0x00}));
+    var decoder = new MysqlDecoder(new ByteArrayInputStream(new byte[] {0x01, 0x00}));
     assertThrows(IOException.class, decoder::readPacket);
   }
 
@@ -70,10 +70,10 @@ class MysqlDecoderTest {
   void readOkPacket() {
     var buf = new ByteBuffer(32);
     buf.writeByte(0x00); // header
-    buf.writeByte(3);    // affectedRows (length-encoded int)
-    buf.writeByte(42);   // lastInsertId
+    buf.writeByte(3); // affectedRows (length-encoded int)
+    buf.writeByte(42); // lastInsertId
     writeShortLE(buf, 0x0002); // serverStatus
-    writeShortLE(buf, 1);      // warnings
+    writeShortLE(buf, 1); // warnings
 
     var decoder = new MysqlDecoder(new ByteArrayInputStream(new byte[0]));
     var ok = decoder.readOkPacket(buf.toByteArray());
@@ -130,14 +130,14 @@ class MysqlDecoderTest {
   @Test
   void readColumnCount() {
     var decoder = new MysqlDecoder(new ByteArrayInputStream(new byte[0]));
-    assertEquals(5, decoder.readColumnCount(new byte[]{5}));
+    assertEquals(5, decoder.readColumnCount(new byte[] {5}));
   }
 
   @Test
   void readColumnCountTwoBytes() {
     // 0xFC prefix → 2-byte length-encoded int
     var decoder = new MysqlDecoder(new ByteArrayInputStream(new byte[0]));
-    assertEquals(300, decoder.readColumnCount(new byte[]{(byte) 0xFC, 0x2C, 0x01}));
+    assertEquals(300, decoder.readColumnCount(new byte[] {(byte) 0xFC, 0x2C, 0x01}));
   }
 
   // =====================================================================
@@ -176,7 +176,7 @@ class MysqlDecoderTest {
     writeIntLE(buf, 42); // statementId
     writeShortLE(buf, 3); // numColumns
     writeShortLE(buf, 2); // numParams
-    buf.writeByte(0);    // filler
+    buf.writeByte(0); // filler
     writeShortLE(buf, 0); // numWarnings
 
     var decoder = new MysqlDecoder(new ByteArrayInputStream(new byte[0]));
@@ -211,39 +211,39 @@ class MysqlDecoderTest {
 
   @Test
   void readLengthEncodedIntSingleByte() {
-    var buf = ByteBuffer.wrap(new byte[]{42});
+    var buf = ByteBuffer.wrap(new byte[] {42});
     assertEquals(42, MysqlDecoder.readLengthEncodedInt(buf));
   }
 
   @Test
   void readLengthEncodedIntNull() {
-    var buf = ByteBuffer.wrap(new byte[]{(byte) 0xFB});
+    var buf = ByteBuffer.wrap(new byte[] {(byte) 0xFB});
     assertEquals(-1, MysqlDecoder.readLengthEncodedInt(buf));
   }
 
   @Test
   void readLengthEncodedIntTwoBytes() {
     // 0xFC + 2 bytes LE
-    var buf = ByteBuffer.wrap(new byte[]{(byte) 0xFC, 0x2C, 0x01}); // 300
+    var buf = ByteBuffer.wrap(new byte[] {(byte) 0xFC, 0x2C, 0x01}); // 300
     assertEquals(300, MysqlDecoder.readLengthEncodedInt(buf));
   }
 
   @Test
   void readLengthEncodedIntThreeBytes() {
     // 0xFD + 3 bytes LE
-    var buf = ByteBuffer.wrap(new byte[]{(byte) 0xFD, 0x01, 0x00, 0x01}); // 65537
+    var buf = ByteBuffer.wrap(new byte[] {(byte) 0xFD, 0x01, 0x00, 0x01}); // 65537
     assertEquals(65537, MysqlDecoder.readLengthEncodedInt(buf));
   }
 
   @Test
   void readShortLE() {
-    var buf = ByteBuffer.wrap(new byte[]{0x39, 0x05}); // 1337
+    var buf = ByteBuffer.wrap(new byte[] {0x39, 0x05}); // 1337
     assertEquals(1337, MysqlDecoder.readShortLE(buf));
   }
 
   @Test
   void readIntLE() {
-    var buf = ByteBuffer.wrap(new byte[]{0x01, 0x00, 0x00, 0x00});
+    var buf = ByteBuffer.wrap(new byte[] {0x01, 0x00, 0x00, 0x00});
     assertEquals(1, MysqlDecoder.readIntLE(buf));
   }
 
@@ -257,13 +257,13 @@ class MysqlDecoderTest {
 
   @Test
   void readLengthEncodedString() {
-    var buf = ByteBuffer.wrap(new byte[]{5, 'h', 'e', 'l', 'l', 'o'});
+    var buf = ByteBuffer.wrap(new byte[] {5, 'h', 'e', 'l', 'l', 'o'});
     assertEquals("hello", MysqlDecoder.readLengthEncodedString(buf));
   }
 
   @Test
   void readLengthEncodedStringNull() {
-    var buf = ByteBuffer.wrap(new byte[]{(byte) 0xFB});
+    var buf = ByteBuffer.wrap(new byte[] {(byte) 0xFB});
     assertNull(MysqlDecoder.readLengthEncodedString(buf));
   }
 

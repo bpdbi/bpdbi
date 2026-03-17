@@ -1,8 +1,10 @@
 package io.djb;
 
+import org.jspecify.annotations.NonNull;
+
 /**
- * Converts a Java object to a SQL parameter string for binding. Register with
- * {@link BinderRegistry} for use with parameterized queries.
+ * Converts a Java object to a SQL parameter string for binding. Register with {@link
+ * BinderRegistry} for use with parameterized queries.
  *
  * <pre>{@code
  * registry.register(Money.class, m -> m.amount().toPlainString());
@@ -18,5 +20,5 @@ public interface Binder<T> {
    * @param value the Java value (never null — null is handled before this is called)
    * @return the string representation for the SQL parameter
    */
-  String bind(T value);
+  @NonNull String bind(@NonNull T value);
 }

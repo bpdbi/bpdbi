@@ -14,13 +14,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import org.jspecify.annotations.NonNull;
 
 /**
  * A {@link RowMapper} that maps rows to JavaBeans (POJOs with a no-arg constructor and setter
  * methods) by consuming columns in field declaration order.
  *
- * <p>Nested beans are flattened: their fields consume consecutive columns from the row,
- * just like the record and Kotlin mappers.
+ * <p>Nested beans are flattened: their fields consume consecutive columns from the row, just like
+ * the record and Kotlin mappers.
  *
  * <pre>{@code
  * public class Address {
@@ -54,35 +55,27 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
     this.slots = buildSlots(beanType);
   }
 
-  /**
-   * Create a mapper for the given JavaBean type.
-   */
-  public static <T> JavaBeanRowMapper<T> of(Class<T> beanType) {
+  /** Create a mapper for the given JavaBean type. */
+  public static <T> @NonNull JavaBeanRowMapper<T> of(@NonNull Class<T> beanType) {
     return new JavaBeanRowMapper<>(beanType);
   }
 
   @Override
-  public T map(Row row) {
+  public @NonNull T map(@NonNull Row row) {
     int[] cursor = {0};
     return populate(beanType, slots, row, cursor);
   }
 
   // --- Internal: slot tree for nested beans ---
 
-  private sealed interface Slot {
+  private sealed interface Slot {}
 
-  }
-
-  private record ScalarSlot(Method setter,
-                            BiFunction<Row, Integer, Object> extractor) implements Slot {
-
-  }
+  private record ScalarSlot(Method setter, BiFunction<Row, Integer, Object> extractor)
+      implements Slot {}
 
   @SuppressWarnings("ArrayRecordComponent")
   // internal record; array represents an ordered tree of children
-  private record NestedSlot(Method setter, Class<?> nestedType, Slot[] children) implements Slot {
-
-  }
+  private record NestedSlot(Method setter, Class<?> nestedType, Slot[] children) implements Slot {}
 
   private static Slot[] buildSlots(Class<?> beanType) {
     requireNoArgConstructor(beanType);
@@ -108,8 +101,14 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
         slots.add(new NestedSlot(setter, type, buildSlots(type)));
       } else {
         throw new IllegalArgumentException(
-            "Unsupported type " + type.getName() + " for property '" + pd.getName() + "'. "
-                + "Supported: " + RowExtractors.SUPPORTED_TYPES_MESSAGE + ", and nested beans");
+            "Unsupported type "
+                + type.getName()
+                + " for property '"
+                + pd.getName()
+                + "'. "
+                + "Supported: "
+                + RowExtractors.SUPPORTED_TYPES_MESSAGE
+                + ", and nested beans");
       }
     }
     return slots.toArray(Slot[]::new);
@@ -133,8 +132,7 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
           }
         }
       } catch (Exception e) {
-        throw new IllegalStateException(
-            "Failed to set property on " + beanType.getName(), e);
+        throw new IllegalStateException("Failed to set property on " + beanType.getName(), e);
       }
     }
     return instance;

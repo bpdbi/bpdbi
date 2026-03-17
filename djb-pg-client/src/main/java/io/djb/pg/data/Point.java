@@ -1,17 +1,12 @@
 package io.djb.pg.data;
 
-
 import org.jspecify.annotations.NonNull;
 
-/**
- * A Postgres point: (x, y).
- */
+/** A Postgres point: (x, y). */
 public record Point(double x, double y) {
 
-  /**
-   * Parse from PG text format: "(x,y)"
-   */
-  public static Point parse(String s) {
+  /** Parse from PG text format: "(x,y)" */
+  public static @NonNull Point parse(@NonNull String s) {
     s = s.trim();
     if (s.startsWith("(") && s.endsWith(")")) {
       s = s.substring(1, s.length() - 1);

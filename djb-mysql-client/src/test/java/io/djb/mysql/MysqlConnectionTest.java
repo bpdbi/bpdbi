@@ -46,8 +46,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
         mysql.getMappedPort(3306),
         mysql.getDatabaseName(),
         mysql.getUsername(),
-        mysql.getPassword()
-    );
+        mysql.getPassword());
   }
 
   @Override
@@ -69,12 +68,14 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   @Test
   void connectWithWrongPassword() {
     assertThrows(
-        MysqlException.class, () ->
+        MysqlException.class,
+        () ->
             MysqlConnection.connect(
-                mysql.getHost(), mysql.getMappedPort(3306),
-                mysql.getDatabaseName(), mysql.getUsername(), "wrongpassword"
-            )
-    );
+                mysql.getHost(),
+                mysql.getMappedPort(3306),
+                mysql.getDatabaseName(),
+                mysql.getUsername(),
+                "wrongpassword"));
   }
 
   @Test
@@ -196,20 +197,21 @@ class MysqlConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       assertThrows(
           DbException.class,
-          () -> conn.query("SELECT * FROM nonexistent_table_xyz WHERE id = ?", 1)
-      );
+          () -> conn.query("SELECT * FROM nonexistent_table_xyz WHERE id = ?", 1));
       var rs = conn.query("SELECT 'recovered'");
       assertEquals("recovered", rs.first().getString(0));
     }
   }
 
-  // ===== Additional data type tests (ported from TextDataTypeDecodeTestBase + MySQL codec tests) =====
+  // ===== Additional data type tests (ported from TextDataTypeDecodeTestBase + MySQL codec tests)
+  // =====
 
   @Test
   void dataTypeInt() {
     try (var conn = connect()) {
-      var rs = conn.query(
-          "SELECT CAST(32767 AS SIGNED) AS s, CAST(2147483647 AS SIGNED) AS i, CAST(9223372036854775807 AS SIGNED) AS l");
+      var rs =
+          conn.query(
+              "SELECT CAST(32767 AS SIGNED) AS s, CAST(2147483647 AS SIGNED) AS i, CAST(9223372036854775807 AS SIGNED) AS l");
       var row = rs.first();
       assertEquals(32767, row.getInteger("s"));
       assertEquals(2147483647, row.getInteger("i"));
@@ -548,20 +550,14 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   @Test
   void prepareErrorInvalidSql() {
     try (var conn = connect()) {
-      assertThrows(
-          MysqlException.class,
-          () -> conn.query("SELECT FROM WHERE INVALID", 1)
-      );
+      assertThrows(MysqlException.class, () -> conn.query("SELECT FROM WHERE INVALID", 1));
     }
   }
 
   @Test
   void connectionUsableAfterPrepareError() {
     try (var conn = connect()) {
-      assertThrows(
-          MysqlException.class,
-          () -> conn.query("SELECT FROM WHERE INVALID", 1)
-      );
+      assertThrows(MysqlException.class, () -> conn.query("SELECT FROM WHERE INVALID", 1));
       var rs = conn.query("SELECT 1");
       assertEquals(1, rs.first().getInteger(0));
     }
@@ -572,12 +568,14 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   @Test
   void connectWithInvalidUsername() {
     assertThrows(
-        MysqlException.class, () ->
+        MysqlException.class,
+        () ->
             MysqlConnection.connect(
-                mysql.getHost(), mysql.getMappedPort(3306),
-                mysql.getDatabaseName(), "nonexistent_user_xyz", "password"
-            )
-    );
+                mysql.getHost(),
+                mysql.getMappedPort(3306),
+                mysql.getDatabaseName(),
+                "nonexistent_user_xyz",
+                "password"));
   }
 
   // ===== Transaction abort test (ported from TransactionTestBase) =====
@@ -718,20 +716,27 @@ class MysqlConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       try (var stmt = conn.prepare("SELECT :ids + 1")) {
         assertThrows(
-            IllegalArgumentException.class, () ->
-                stmt.query(Map.of("ids", List.of(1, 2, 3)))
-        );
+            IllegalArgumentException.class, () -> stmt.query(Map.of("ids", List.of(1, 2, 3))));
       }
     }
   }
 
   @Test
   void preparedStatementNamedParamsCachedPath() {
-    try (var conn = MysqlConnection.connect(
-        ConnectionConfig.fromUri("mysql://" + mysql.getUsername() + ":" + mysql.getPassword()
-                                     + "@" + mysql.getHost() + ":" + mysql.getMappedPort(3306) + "/"
-                                     + mysql.getDatabaseName())
-            .cachePreparedStatements(true))) {
+    try (var conn =
+        MysqlConnection.connect(
+            ConnectionConfig.fromUri(
+                    "mysql://"
+                        + mysql.getUsername()
+                        + ":"
+                        + mysql.getPassword()
+                        + "@"
+                        + mysql.getHost()
+                        + ":"
+                        + mysql.getMappedPort(3306)
+                        + "/"
+                        + mysql.getDatabaseName())
+                .cachePreparedStatements(true))) {
       conn.query("CREATE TEMPORARY TABLE np_cache (n INT)");
       String sql = "INSERT INTO np_cache VALUES (:n)";
 
@@ -820,9 +825,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
         tx.commit();
       }
       assertEquals(
-          2L,
-          conn.query("SELECT count(*) AS cnt FROM nested_test").first().getLong("cnt")
-      );
+          2L, conn.query("SELECT count(*) AS cnt FROM nested_test").first().getLong("cnt"));
     }
   }
 
@@ -877,9 +880,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
         tx.rollback();
       }
       assertEquals(
-          0L,
-          conn.query("SELECT count(*) AS cnt FROM nested_outer_rb").first().getLong("cnt")
-      );
+          0L, conn.query("SELECT count(*) AS cnt FROM nested_outer_rb").first().getLong("cnt"));
     }
   }
 
@@ -904,9 +905,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
         tx.commit();
       }
       assertEquals(
-          3L,
-          conn.query("SELECT count(*) AS cnt FROM double_nested").first().getLong("cnt")
-      );
+          3L, conn.query("SELECT count(*) AS cnt FROM double_nested").first().getLong("cnt"));
     }
   }
 
@@ -916,11 +915,12 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   void withTransactionCommitsOnSuccess() {
     try (var conn = connect()) {
       conn.query("CREATE TEMPORARY TABLE wt_test (id INT)");
-      conn.withTransaction(tx -> {
-        tx.query("INSERT INTO wt_test VALUES (1)");
-        tx.query("INSERT INTO wt_test VALUES (2)");
-        return null;
-      });
+      conn.withTransaction(
+          tx -> {
+            tx.query("INSERT INTO wt_test VALUES (1)");
+            tx.query("INSERT INTO wt_test VALUES (2)");
+            return null;
+          });
       assertEquals(2L, conn.query("SELECT count(*) AS cnt FROM wt_test").first().getLong("cnt"));
     }
   }
@@ -930,13 +930,14 @@ class MysqlConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMPORARY TABLE wt_rb (id INT)");
       try {
-        conn.withTransaction(tx -> {
-          tx.query("INSERT INTO wt_rb VALUES (1)");
-          if (true) {
-            throw new RuntimeException("simulated failure");
-          }
-          return null;
-        });
+        conn.withTransaction(
+            tx -> {
+              tx.query("INSERT INTO wt_rb VALUES (1)");
+              if (true) {
+                throw new RuntimeException("simulated failure");
+              }
+              return null;
+            });
       } catch (RuntimeException e) {
         assertEquals("simulated failure", e.getMessage());
       }
@@ -947,10 +948,12 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   @Test
   void withTransactionReturnsValue() {
     try (var conn = connect()) {
-      int result = conn.withTransaction(tx -> {
-        tx.query("SELECT 42 AS n");
-        return 42;
-      });
+      int result =
+          conn.withTransaction(
+              tx -> {
+                tx.query("SELECT 42 AS n");
+                return 42;
+              });
       assertEquals(42, result);
     }
   }
@@ -959,14 +962,16 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   void withTransactionNested() {
     try (var conn = connect()) {
       conn.query("CREATE TEMPORARY TABLE wt_nested (id INT)");
-      conn.withTransaction(tx -> {
-        tx.query("INSERT INTO wt_nested VALUES (1)");
-        tx.withTransaction(nested -> {
-          nested.query("INSERT INTO wt_nested VALUES (2)");
-          return null;
-        });
-        return null;
-      });
+      conn.withTransaction(
+          tx -> {
+            tx.query("INSERT INTO wt_nested VALUES (1)");
+            tx.withTransaction(
+                nested -> {
+                  nested.query("INSERT INTO wt_nested VALUES (2)");
+                  return null;
+                });
+            return null;
+          });
       assertEquals(2L, conn.query("SELECT count(*) AS cnt FROM wt_nested").first().getLong("cnt"));
     }
   }
@@ -1004,10 +1009,18 @@ class MysqlConnectionTest extends AbstractConnectionTest {
 
   @Test
   void connectWithUri() {
-    var config = ConnectionConfig.fromUri(
-        "mysql://" + mysql.getUsername() + ":" + mysql.getPassword()
-            + "@" + mysql.getHost() + ":" + mysql.getMappedPort(3306) + "/"
-            + mysql.getDatabaseName());
+    var config =
+        ConnectionConfig.fromUri(
+            "mysql://"
+                + mysql.getUsername()
+                + ":"
+                + mysql.getPassword()
+                + "@"
+                + mysql.getHost()
+                + ":"
+                + mysql.getMappedPort(3306)
+                + "/"
+                + mysql.getDatabaseName());
     try (var conn = MysqlConnection.connect(config)) {
       var rs = conn.query("SELECT 1");
       assertEquals(1, rs.first().getInteger(0));
@@ -1028,9 +1041,8 @@ class MysqlConnectionTest extends AbstractConnectionTest {
 
   @Test
   void rowMapperMapTo() {
-    record User(int id, String name) {
+    record User(int id, String name) {}
 
-    }
     RowMapper<User> mapper = row -> new User(row.getInteger("id"), row.getString("name"));
     try (var conn = connect()) {
       conn.query("CREATE TEMPORARY TABLE rm_test (id INT, name VARCHAR(255))");
@@ -1064,9 +1076,8 @@ class MysqlConnectionTest extends AbstractConnectionTest {
 
   @Test
   void columnMapperCustomType() {
-    record Tag(String value) {
+    record Tag(String value) {}
 
-    }
     try (var conn = connect()) {
       conn.mapperRegistry().register(Tag.class, (v, c) -> new Tag(v));
       var rs = conn.query("SELECT 'important' AS tag");
@@ -1080,10 +1091,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   @Test
   void namedParamSelect() {
     try (var conn = connect()) {
-      var rs = conn.query(
-          "SELECT :val AS val",
-          java.util.Map.of("val", "hello")
-      );
+      var rs = conn.query("SELECT :val AS val", java.util.Map.of("val", "hello"));
       assertEquals("hello", rs.first().getString("val"));
     }
   }
@@ -1093,14 +1101,9 @@ class MysqlConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMPORARY TABLE np_test (id INT, name VARCHAR(255))");
       conn.query(
-          "INSERT INTO np_test VALUES (:id, :name)",
-          java.util.Map.of("id", 1, "name", "Alice")
-      );
+          "INSERT INTO np_test VALUES (:id, :name)", java.util.Map.of("id", 1, "name", "Alice"));
 
-      var rs = conn.query(
-          "SELECT name FROM np_test WHERE id = :id",
-          java.util.Map.of("id", 1)
-      );
+      var rs = conn.query("SELECT name FROM np_test WHERE id = :id", java.util.Map.of("id", 1));
       assertEquals("Alice", rs.first().getString("name"));
     }
   }
@@ -1110,13 +1113,9 @@ class MysqlConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMPORARY TABLE np_pipe (id INT, val VARCHAR(255))");
       conn.enqueue(
-          "INSERT INTO np_pipe VALUES (:id, :val)",
-          java.util.Map.of("id", 1, "val", "one")
-      );
+          "INSERT INTO np_pipe VALUES (:id, :val)", java.util.Map.of("id", 1, "val", "one"));
       conn.enqueue(
-          "INSERT INTO np_pipe VALUES (:id, :val)",
-          java.util.Map.of("id", 2, "val", "two")
-      );
+          "INSERT INTO np_pipe VALUES (:id, :val)", java.util.Map.of("id", 2, "val", "two"));
       conn.flush();
 
       var rs = conn.query("SELECT count(*) AS cnt FROM np_pipe");
@@ -1132,10 +1131,10 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMPORARY TABLE inlist_test (id INT, name VARCHAR(50))");
       conn.query("INSERT INTO inlist_test VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Carol')");
 
-      var rs = conn.query(
-          "SELECT name FROM inlist_test WHERE id IN (:ids) ORDER BY id",
-          Map.of("ids", List.of(1, 3))
-      );
+      var rs =
+          conn.query(
+              "SELECT name FROM inlist_test WHERE id IN (:ids) ORDER BY id",
+              Map.of("ids", List.of(1, 3)));
       var names = new ArrayList<String>();
       for (var row : rs) {
         names.add(row.getString("name"));
@@ -1150,10 +1149,9 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMPORARY TABLE inlist_single (id INT, name VARCHAR(50))");
       conn.query("INSERT INTO inlist_single VALUES (1, 'Alice'), (2, 'Bob')");
 
-      var rs = conn.query(
-          "SELECT name FROM inlist_single WHERE id IN (:ids)",
-          Map.of("ids", List.of(2))
-      );
+      var rs =
+          conn.query(
+              "SELECT name FROM inlist_single WHERE id IN (:ids)", Map.of("ids", List.of(2)));
       assertEquals("Bob", rs.first().getString("name"));
     }
   }
@@ -1165,10 +1163,10 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       conn.query(
           "INSERT INTO inlist_mix VALUES (1, 'active'), (2, 'inactive'), (3, 'active'), (4, 'inactive')");
 
-      var rs = conn.query(
-          "SELECT id FROM inlist_mix WHERE status = :status AND id IN (:ids) ORDER BY id",
-          Map.of("status", "active", "ids", List.of(1, 2, 3))
-      );
+      var rs =
+          conn.query(
+              "SELECT id FROM inlist_mix WHERE status = :status AND id IN (:ids) ORDER BY id",
+              Map.of("status", "active", "ids", List.of(1, 2, 3)));
       var ids = new ArrayList<Integer>();
       for (var row : rs) {
         ids.add(row.getInteger("id"));
@@ -1185,12 +1183,9 @@ class MysqlConnectionTest extends AbstractConnectionTest {
 
       conn.enqueue(
           "SELECT name FROM inlist_enq WHERE id IN (:ids) ORDER BY id",
-          Map.of("ids", List.of(1, 2))
-      );
+          Map.of("ids", List.of(1, 2)));
       conn.enqueue(
-          "SELECT name FROM inlist_enq WHERE id IN (:ids) ORDER BY id",
-          Map.of("ids", List.of(3))
-      );
+          "SELECT name FROM inlist_enq WHERE id IN (:ids) ORDER BY id", Map.of("ids", List.of(3)));
       var results = conn.flush();
 
       assertEquals(2, results.get(0).size());
@@ -1205,10 +1200,10 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMPORARY TABLE inlist_arr (id INT)");
       conn.query("INSERT INTO inlist_arr VALUES (10), (20), (30)");
 
-      var rs = conn.query(
-          "SELECT id FROM inlist_arr WHERE id IN (:ids) ORDER BY id",
-          Map.of("ids", new int[]{10, 30})
-      );
+      var rs =
+          conn.query(
+              "SELECT id FROM inlist_arr WHERE id IN (:ids) ORDER BY id",
+              Map.of("ids", new int[] {10, 30}));
       var ids = new ArrayList<Integer>();
       for (var row : rs) {
         ids.add(row.getInteger("id"));
@@ -1221,9 +1216,8 @@ class MysqlConnectionTest extends AbstractConnectionTest {
 
   @Test
   void customBinder() {
-    record Currency(String code) {
+    record Currency(String code) {}
 
-    }
     try (var conn = connect()) {
       conn.binderRegistry().register(Currency.class, c -> c.code());
       conn.query("CREATE TEMPORARY TABLE tb_test (id INT, currency VARCHAR(10))");
@@ -1397,8 +1391,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       assertThrows(
           IllegalArgumentException.class,
-          () -> conn.query("SELECT :missing AS val", java.util.Map.of())
-      );
+          () -> conn.query("SELECT :missing AS val", java.util.Map.of()));
     }
   }
 
@@ -1415,10 +1408,8 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       conn.enqueue("COMMIT");
       conn.flush();
 
-      try (var cursor = conn.cursor(
-          "SELECT n, label FROM cursor_param WHERE n > ? ORDER BY n",
-          10
-      )) {
+      try (var cursor =
+          conn.cursor("SELECT n, label FROM cursor_param WHERE n > ? ORDER BY n", 10)) {
         var batch1 = cursor.read(10);
         assertEquals(10, batch1.size());
         assertEquals(11, batch1.first().getInteger("n"));
@@ -1537,7 +1528,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       assertEquals(3, results.size());
       assertFalse(results.get(0).getError() != null); // BEGIN ok
       assertFalse(results.get(1).getError() != null); // first insert ok
-      assertTrue(results.get(2).getError() != null);  // duplicate error
+      assertTrue(results.get(2).getError() != null); // duplicate error
 
       conn.query("ROLLBACK");
 
@@ -1549,11 +1540,20 @@ class MysqlConnectionTest extends AbstractConnectionTest {
 
   @Test
   void preparedStatementCacheHit() {
-    try (var conn = MysqlConnection.connect(
-        ConnectionConfig.fromUri("mysql://" + mysql.getUsername() + ":" + mysql.getPassword()
-                                     + "@" + mysql.getHost() + ":" + mysql.getMappedPort(3306) + "/"
-                                     + mysql.getDatabaseName())
-            .cachePreparedStatements(true))) {
+    try (var conn =
+        MysqlConnection.connect(
+            ConnectionConfig.fromUri(
+                    "mysql://"
+                        + mysql.getUsername()
+                        + ":"
+                        + mysql.getPassword()
+                        + "@"
+                        + mysql.getHost()
+                        + ":"
+                        + mysql.getMappedPort(3306)
+                        + "/"
+                        + mysql.getDatabaseName())
+                .cachePreparedStatements(true))) {
       // First call: cache miss
       var rs1 = conn.query("SELECT ? + 0 AS n", 1);
       assertEquals(1, rs1.first().getInteger("n"));
@@ -1571,12 +1571,14 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   @Test
   void connectWithWrongDatabase() {
     assertThrows(
-        Exception.class, () ->
+        Exception.class,
+        () ->
             MysqlConnection.connect(
-                mysql.getHost(), mysql.getMappedPort(3306),
-                "nonexistent_database_xyz", mysql.getUsername(), mysql.getPassword()
-            )
-    );
+                mysql.getHost(),
+                mysql.getMappedPort(3306),
+                "nonexistent_database_xyz",
+                mysql.getUsername(),
+                mysql.getPassword()));
   }
 
   // ===== Batch execution =====
@@ -1586,14 +1588,11 @@ class MysqlConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMPORARY TABLE batch_test (id INT, name VARCHAR(255))");
 
-      var results = conn.executeMany(
-          "INSERT INTO batch_test (id, name) VALUES (?, ?)",
-          List.of(
-              new Object[]{1, "Alice"},
-              new Object[]{2, "Bob"},
-              new Object[]{3, "Carol"}
-          )
-      );
+      var results =
+          conn.executeMany(
+              "INSERT INTO batch_test (id, name) VALUES (?, ?)",
+              List.of(
+                  new Object[] {1, "Alice"}, new Object[] {2, "Bob"}, new Object[] {3, "Carol"}));
 
       assertEquals(3, results.size());
       for (var rs : results) {
@@ -1628,9 +1627,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
 
       var nums = new ArrayList<Integer>();
       conn.queryStream(
-          "SELECT n FROM stream_simple ORDER BY n", row ->
-              nums.add(row.getInteger("n"))
-      );
+          "SELECT n FROM stream_simple ORDER BY n", row -> nums.add(row.getInteger("n")));
       assertEquals(100, nums.size());
       assertEquals(1, nums.getFirst());
       assertEquals(100, nums.getLast());
@@ -1646,8 +1643,8 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       var names = new ArrayList<String>();
       conn.queryStream(
           "SELECT name FROM stream_param WHERE id > ? ORDER BY id",
-          row -> names.add(row.getString("name")), 1
-      );
+          row -> names.add(row.getString("name")),
+          1);
       assertEquals(List.of("Bob", "Carol"), names);
     }
   }
@@ -1655,7 +1652,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   @Test
   void queryStreamNoRows() {
     try (var conn = connect()) {
-      var count = new int[]{0};
+      var count = new int[] {0};
       conn.queryStream("SELECT 1 FROM DUAL WHERE 1 = 0", row -> count[0]++);
       assertEquals(0, count[0]);
     }
@@ -1665,12 +1662,8 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   void queryStreamError() {
     try (var conn = connect()) {
       assertThrows(
-          MysqlException.class, () ->
-              conn.queryStream(
-                  "SELECT * FROM nonexistent_streaming_table", row -> {
-                  }
-              )
-      );
+          MysqlException.class,
+          () -> conn.queryStream("SELECT * FROM nonexistent_streaming_table", row -> {}));
       // Connection should still be usable
       var rs = conn.query("SELECT 1 AS n");
       assertEquals(1, rs.first().getInteger("n"));
@@ -1736,8 +1729,7 @@ class MysqlConnectionTest extends AbstractConnectionTest {
   void streamConnectionUsableAfter() {
     try (var conn = connect()) {
       try (var rows = conn.stream("SELECT 1 AS n FROM DUAL")) {
-        rows.forEach(row -> {
-        });
+        rows.forEach(row -> {});
       }
       var rs = conn.query("SELECT 'ok' AS status");
       assertEquals("ok", rs.first().getString("status"));

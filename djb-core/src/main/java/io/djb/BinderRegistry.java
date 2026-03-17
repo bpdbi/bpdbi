@@ -14,23 +14,26 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Registry of {@link Binder}s for converting Java objects to SQL parameter strings.
  *
- * <p>Used internally by the connection when encoding query parameters. The default registry
- * (from {@link #defaults()}) handles common types: {@code String}, {@code Integer}, {@code Long},
- * {@code Boolean}, {@code BigDecimal}, {@code UUID}, {@code LocalDate}, {@code LocalDateTime},
- * {@code OffsetDateTime}, {@code byte[]}, and more.
+ * <p>Used internally by the connection when encoding query parameters. The default registry (from
+ * {@link #defaults()}) handles common types: {@code String}, {@code Integer}, {@code Long}, {@code
+ * Boolean}, {@code BigDecimal}, {@code UUID}, {@code LocalDate}, {@code LocalDateTime}, {@code
+ * OffsetDateTime}, {@code byte[]}, and more.
  *
  * <p>Register custom binders for domain types:
+ *
  * <pre>{@code
  * conn.binderRegistry().register(Money.class, m -> m.amount().toPlainString());
  * conn.query("INSERT INTO prices VALUES ($1)", new Money(new BigDecimal("9.99")));
  * }</pre>
  *
- * <p>Types can also be registered as JSON via {@link #registerAsJson(Class)}, causing
- * values of that type to be serialized via the connection's {@link JsonMapper}.
+ * <p>Types can also be registered as JSON via {@link #registerAsJson(Class)}, causing values of
+ * that type to be serialized via the connection's {@link JsonMapper}.
  *
  * @see Binder
  * @see ColumnMapperRegistry
@@ -40,7 +43,7 @@ public final class BinderRegistry {
   private final Map<Class<?>, Binder<?>> binders = new LinkedHashMap<>();
   private final Set<Class<?>> jsonTypes = new LinkedHashSet<>();
 
-  public <T> BinderRegistry register(Class<T> type, Binder<T> binder) {
+  public <T> @NonNull BinderRegistry register(@NonNull Class<T> type, @NonNull Binder<T> binder) {
     binders.put(type, binder);
     return this;
   }
@@ -51,16 +54,16 @@ public final class BinderRegistry {
    * mapped to this type will be deserialized as JSON even if the column is not a JSON/JSONB type in
    * the database.
    */
-  public BinderRegistry registerAsJson(Class<?> type) {
+  public @NonNull BinderRegistry registerAsJson(@NonNull Class<?> type) {
     jsonTypes.add(type);
     return this;
   }
 
-  public Set<Class<?>> jsonTypes() {
+  public @NonNull Set<Class<?>> jsonTypes() {
     return Collections.unmodifiableSet(jsonTypes);
   }
 
-  public boolean isJsonType(Class<?> type) {
+  public boolean isJsonType(@NonNull Class<?> type) {
     return jsonTypes.contains(type);
   }
 
@@ -69,7 +72,7 @@ public final class BinderRegistry {
    * the value is null.
    */
   @SuppressWarnings("unchecked")
-  public String bind(Object value) {
+  public @Nullable String bind(@Nullable Object value) {
     if (value == null) {
       return null;
     }
@@ -88,10 +91,8 @@ public final class BinderRegistry {
     return value.toString();
   }
 
-  /**
-   * Create a registry with built-in binders for common types.
-   */
-  public static BinderRegistry defaults() {
+  /** Create a registry with built-in binders for common types. */
+  public static @NonNull BinderRegistry defaults() {
     var reg = new BinderRegistry();
     reg.register(String.class, v -> v);
     reg.register(Integer.class, Object::toString);
@@ -107,16 +108,14 @@ public final class BinderRegistry {
     reg.register(LocalDateTime.class, Object::toString);
     reg.register(OffsetDateTime.class, Object::toString);
     reg.register(
-        Instant.class, i ->
-            LocalDateTime.ofInstant(i, ZoneOffset.UTC)
-                .toString().replace('T', ' ')
-    );
+        Instant.class,
+        i -> LocalDateTime.ofInstant(i, ZoneOffset.UTC).toString().replace('T', ' '));
     reg.register(OffsetTime.class, Object::toString);
     reg.register(byte[].class, BinderRegistry::hexEncode);
     return reg;
   }
 
-  static String hexEncode(byte[] bytes) {
+  static @NonNull String hexEncode(byte @NonNull [] bytes) {
     var sb = new StringBuilder(2 + bytes.length * 2);
     sb.append("\\x");
     for (byte b : bytes) {

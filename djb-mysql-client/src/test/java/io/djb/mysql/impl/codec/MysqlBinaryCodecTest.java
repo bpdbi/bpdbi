@@ -29,12 +29,12 @@ class MysqlBinaryCodecTest {
 
   @Test
   void decodeBoolTrue() {
-    assertTrue(codec.decodeBool(new byte[]{1}));
+    assertTrue(codec.decodeBool(new byte[] {1}));
   }
 
   @Test
   void decodeBoolFalse() {
-    assertFalse(codec.decodeBool(new byte[]{0}));
+    assertFalse(codec.decodeBool(new byte[] {0}));
   }
 
   // =====================================================================
@@ -44,12 +44,12 @@ class MysqlBinaryCodecTest {
   @Test
   void decodeInt2() {
     // 0x0100 LE = 1 in big-endian at offset 0 → 0x00 | (0x01 << 8) = 256
-    assertEquals((short) 256, codec.decodeInt2(new byte[]{0x00, 0x01}));
+    assertEquals((short) 256, codec.decodeInt2(new byte[] {0x00, 0x01}));
   }
 
   @Test
   void decodeInt2Negative() {
-    assertEquals((short) -1, codec.decodeInt2(new byte[]{(byte) 0xFF, (byte) 0xFF}));
+    assertEquals((short) -1, codec.decodeInt2(new byte[] {(byte) 0xFF, (byte) 0xFF}));
   }
 
   @Test
@@ -65,15 +65,13 @@ class MysqlBinaryCodecTest {
   @Test
   void decodeInt4() {
     // 1 in LE = {0x01, 0x00, 0x00, 0x00}
-    assertEquals(1, codec.decodeInt4(new byte[]{0x01, 0x00, 0x00, 0x00}));
+    assertEquals(1, codec.decodeInt4(new byte[] {0x01, 0x00, 0x00, 0x00}));
   }
 
   @Test
   void decodeInt4Negative() {
     assertEquals(
-        -1,
-        codec.decodeInt4(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF})
-    );
+        -1, codec.decodeInt4(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
   }
 
   @Test
@@ -151,12 +149,12 @@ class MysqlBinaryCodecTest {
 
   @Test
   void decodeDateEmpty() {
-    assertNull(codec.decodeDate(new byte[0]));
+    assertEquals(LocalDate.EPOCH, codec.decodeDate(new byte[0]));
   }
 
   @Test
   void decodeDateZeroLength() {
-    assertNull(codec.decodeDate(new byte[]{0}));
+    assertEquals(LocalDate.EPOCH, codec.decodeDate(new byte[] {0}));
   }
 
   @Test
@@ -176,7 +174,7 @@ class MysqlBinaryCodecTest {
 
   @Test
   void decodeTimeZeroLength() {
-    assertEquals(LocalTime.MIDNIGHT, codec.decodeTime(new byte[]{0}));
+    assertEquals(LocalTime.MIDNIGHT, codec.decodeTime(new byte[] {0}));
   }
 
   @Test
@@ -190,8 +188,21 @@ class MysqlBinaryCodecTest {
   void decodeTimeWithMicros() {
     // length=12, is_negative=0, days=0, hour=12, min=30, sec=45, micro=123456 (LE)
     int micro = 123456;
-    byte[] data = {12, 0, 0, 0, 0, 0, 12, 30, 45,
-        (byte) micro, (byte) (micro >> 8), (byte) (micro >> 16), (byte) (micro >> 24)};
+    byte[] data = {
+      12,
+      0,
+      0,
+      0,
+      0,
+      0,
+      12,
+      30,
+      45,
+      (byte) micro,
+      (byte) (micro >> 8),
+      (byte) (micro >> 16),
+      (byte) (micro >> 24)
+    };
     LocalTime expected = LocalTime.of(12, 30, 45, 123456000);
     assertEquals(expected, codec.decodeTime(data));
   }
@@ -220,12 +231,12 @@ class MysqlBinaryCodecTest {
 
   @Test
   void decodeTimestampEmpty() {
-    assertNull(codec.decodeTimestamp(new byte[0]));
+    assertEquals(LocalDate.EPOCH.atStartOfDay(), codec.decodeTimestamp(new byte[0]));
   }
 
   @Test
   void decodeTimestampZeroLength() {
-    assertNull(codec.decodeTimestamp(new byte[]{0}));
+    assertEquals(LocalDate.EPOCH.atStartOfDay(), codec.decodeTimestamp(new byte[] {0}));
   }
 
   @Test
@@ -246,8 +257,20 @@ class MysqlBinaryCodecTest {
   void decodeTimestampWithMicros() {
     // length=11
     int micro = 500000;
-    byte[] data = {11, (byte) 0xE9, 0x07, 6, 15, 12, 30, 45,
-        (byte) micro, (byte) (micro >> 8), (byte) (micro >> 16), (byte) (micro >> 24)};
+    byte[] data = {
+      11,
+      (byte) 0xE9,
+      0x07,
+      6,
+      15,
+      12,
+      30,
+      45,
+      (byte) micro,
+      (byte) (micro >> 8),
+      (byte) (micro >> 16),
+      (byte) (micro >> 24)
+    };
     assertEquals(LocalDateTime.of(2025, 6, 15, 12, 30, 45, 500000000), codec.decodeTimestamp(data));
   }
 
@@ -274,8 +297,10 @@ class MysqlBinaryCodecTest {
   // =====================================================================
 
   @Test
-  void decodeTimestamptzNull() {
-    assertNull(codec.decodeTimestamptz(new byte[0]));
+  void decodeTimestamptzZeroDate() {
+    assertEquals(
+        LocalDate.EPOCH.atStartOfDay().atOffset(java.time.ZoneOffset.UTC),
+        codec.decodeTimestamptz(new byte[0]));
   }
 
   @Test
@@ -325,7 +350,7 @@ class MysqlBinaryCodecTest {
 
   @Test
   void decodeDurationZeroLength() {
-    assertEquals(Duration.ZERO, codec.decodeDuration(new byte[]{0}));
+    assertEquals(Duration.ZERO, codec.decodeDuration(new byte[] {0}));
   }
 
   @Test
@@ -356,8 +381,21 @@ class MysqlBinaryCodecTest {
   void decodeDurationWithMicros() {
     // length=12, not_negative, days=0, hour=0, minute=0, second=1, micro=500000
     int micro = 500000;
-    byte[] data = {12, 0, 0, 0, 0, 0, 0, 0, 1,
-        (byte) micro, (byte) (micro >> 8), (byte) (micro >> 16), (byte) (micro >> 24)};
+    byte[] data = {
+      12,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      (byte) micro,
+      (byte) (micro >> 8),
+      (byte) (micro >> 16),
+      (byte) (micro >> 24)
+    };
     Duration expected = Duration.ofSeconds(1).plusNanos(500000000);
     assertEquals(expected, codec.decodeDuration(data));
   }
@@ -393,37 +431,35 @@ class MysqlBinaryCodecTest {
 
   @Test
   void decodeUnsignedInt1() {
-    assertEquals((short) 200, codec.decodeUnsignedInt1(new byte[]{(byte) 200}));
+    assertEquals((short) 200, codec.decodeUnsignedInt1(new byte[] {(byte) 200}));
   }
 
   @Test
   void decodeUnsignedInt1Zero() {
-    assertEquals((short) 0, codec.decodeUnsignedInt1(new byte[]{0}));
+    assertEquals((short) 0, codec.decodeUnsignedInt1(new byte[] {0}));
   }
 
   @Test
   void decodeUnsignedInt1Max() {
-    assertEquals((short) 255, codec.decodeUnsignedInt1(new byte[]{(byte) 0xFF}));
+    assertEquals((short) 255, codec.decodeUnsignedInt1(new byte[] {(byte) 0xFF}));
   }
 
   @Test
   void decodeUnsignedInt2() {
     // 1000 in LE = {0xE8, 0x03}
-    assertEquals(1000, codec.decodeUnsignedInt2(new byte[]{(byte) 0xE8, 0x03}));
+    assertEquals(1000, codec.decodeUnsignedInt2(new byte[] {(byte) 0xE8, 0x03}));
   }
 
   @Test
   void decodeUnsignedInt2Max() {
-    assertEquals(65535, codec.decodeUnsignedInt2(new byte[]{(byte) 0xFF, (byte) 0xFF}));
+    assertEquals(65535, codec.decodeUnsignedInt2(new byte[] {(byte) 0xFF, (byte) 0xFF}));
   }
 
   @Test
   void decodeUnsignedInt3() {
     // 0xFFFFFF in LE bytes (stored in 4 bytes, masked to 3)
     assertEquals(
-        0xFFFFFF,
-        codec.decodeUnsignedInt3(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0})
-    );
+        0xFFFFFF, codec.decodeUnsignedInt3(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0}));
   }
 
   @Test
@@ -431,20 +467,27 @@ class MysqlBinaryCodecTest {
     // 0xFFFFFFFF → 4294967295L
     assertEquals(
         4294967295L,
-        codec.decodeUnsignedInt4(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF})
-    );
+        codec.decodeUnsignedInt4(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
   }
 
   @Test
   void decodeUnsignedInt4Zero() {
-    assertEquals(0L, codec.decodeUnsignedInt4(new byte[]{0, 0, 0, 0}));
+    assertEquals(0L, codec.decodeUnsignedInt4(new byte[] {0, 0, 0, 0}));
   }
 
   @Test
   void decodeUnsignedInt8() {
     // Max unsigned 64-bit: 0xFFFFFFFFFFFFFFFF = 18446744073709551615
-    byte[] data = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
+    byte[] data = {
+      (byte) 0xFF,
+      (byte) 0xFF,
+      (byte) 0xFF,
+      (byte) 0xFF,
+      (byte) 0xFF,
+      (byte) 0xFF,
+      (byte) 0xFF,
+      (byte) 0xFF
+    };
     assertEquals(new BigInteger("18446744073709551615"), codec.decodeUnsignedInt8(data));
   }
 
@@ -466,18 +509,18 @@ class MysqlBinaryCodecTest {
 
   @Test
   void decodeBitSingleByte() {
-    assertEquals(0xFF, codec.decodeBit(new byte[]{(byte) 0xFF}));
+    assertEquals(0xFF, codec.decodeBit(new byte[] {(byte) 0xFF}));
   }
 
   @Test
   void decodeBitMultiByte() {
     // {0x01, 0x00} → 0x0100 = 256
-    assertEquals(256, codec.decodeBit(new byte[]{0x01, 0x00}));
+    assertEquals(256, codec.decodeBit(new byte[] {0x01, 0x00}));
   }
 
   @Test
   void decodeBitZero() {
-    assertEquals(0, codec.decodeBit(new byte[]{0}));
+    assertEquals(0, codec.decodeBit(new byte[] {0}));
   }
 
   // =====================================================================
@@ -486,6 +529,6 @@ class MysqlBinaryCodecTest {
 
   @Test
   void encodeInt1() {
-    assertArrayEquals(new byte[]{42}, MysqlBinaryCodec.encodeInt1(42));
+    assertArrayEquals(new byte[] {42}, MysqlBinaryCodec.encodeInt1(42));
   }
 }

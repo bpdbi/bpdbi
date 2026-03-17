@@ -1,5 +1,6 @@
 package io.djb;
 
+import org.jspecify.annotations.NonNull;
 
 /**
  * Maps a {@link Row} to a typed object.
@@ -16,6 +17,5 @@ package io.djb;
 @FunctionalInterface
 public interface RowMapper<T> {
 
-
-  T map(Row row);
+  @NonNull T map(@NonNull Row row);
 }

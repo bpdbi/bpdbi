@@ -4,11 +4,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A blocking database connection with first-class pipelining support.
  *
  * <p>The core API consists of three patterns:
+ *
  * <ul>
  *   <li><b>Immediate:</b> {@link #query(String)} executes a statement and returns the result.
  *   <li><b>Pipelined:</b> {@link #enqueue(String)} queues a statement, {@link #flush()} sends all
@@ -20,9 +23,9 @@ import java.util.function.Function;
  * <p>Calling {@code query()} implicitly flushes any previously enqueued statements, so pipelining
  * composes naturally with immediate queries.
  *
- * <p><b>Not thread-safe.</b> Each connection must be used by a single thread at a time.
- * Designed for one-connection-per-(virtual-)thread usage with Java 21+ virtual threads.
- * For concurrent access, use a connection pool where each thread borrows its own connection.
+ * <p><b>Not thread-safe.</b> Each connection must be used by a single thread at a time. Designed
+ * for one-connection-per-(virtual-)thread usage with Java 21+ virtual threads. For concurrent
+ * access, use a connection pool where each thread borrows its own connection.
  *
  * @see RowSet
  * @see Transaction
@@ -36,68 +39,65 @@ public interface Connection extends AutoCloseable {
    *
    * @param sql the SQL statement to execute
    * @return the result set
-   * @throws DbException           if the statement fails
+   * @throws DbException if the statement fails
    * @throws DbConnectionException if a network/transport error occurs
    */
-
-  RowSet query(String sql);
+  @NonNull RowSet query(@NonNull String sql);
 
   /**
    * Execute a parameterized SQL statement and return the result. Also flushes any previously
    * enqueued pipeline statements.
    *
-   * <p>Postgres uses {@code $1, $2, ...} placeholders; MySQL uses {@code ?}.
-   * Parameters are text-encoded via {@link BinderRegistry} before sending.
+   * <p>Postgres uses {@code $1, $2, ...} placeholders; MySQL uses {@code ?}. Parameters are
+   * text-encoded via {@link BinderRegistry} before sending.
    *
-   * @param sql    the SQL statement with positional placeholders
+   * @param sql the SQL statement with positional placeholders
    * @param params the parameter values (null elements become SQL NULL)
    * @return the result set
-   * @throws DbException           if the statement fails
+   * @throws DbException if the statement fails
    * @throws DbConnectionException if a network/transport error occurs
    */
-
-  RowSet query(String sql, Object... params);
+  @NonNull RowSet query(@NonNull String sql, @Nullable Object... params);
 
   /**
    * Enqueue a simple (non-parameterized) SQL statement for pipelining. The statement is not sent
    * until {@link #flush()} or {@link #query(String)} is called.
    *
    * @param sql the SQL statement
-   * @return the index into the results list that {@link #flush()} will return
+   * @return the index into the result list that {@link #flush()} will return
    */
-  int enqueue(String sql);
+  int enqueue(@NonNull String sql);
 
   /**
-   * Enqueue a parameterized SQL statement for pipelining. The statement is not sent until
-   * {@link #flush()} or {@link #query(String)} is called.
+   * Enqueue a parameterized SQL statement for pipelining. The statement is not sent until {@link
+   * #flush()} or {@link #query(String)} is called.
    *
-   * @param sql    the SQL statement with positional placeholders
+   * @param sql the SQL statement with positional placeholders
    * @param params the parameter values
-   * @return the index into the results list that {@link #flush()} will return
+   * @return the index into the result list that {@link #flush()} will return
    */
-  int enqueue(String sql, Object... params);
+  int enqueue(@NonNull String sql, @Nullable Object... params);
 
   /**
    * Execute a query with named parameters ({@code :name} style). Named parameters are rewritten to
    * positional placeholders before execution. Collections and arrays are automatically expanded for
    * IN-list queries.
    *
-   * @param sql    the SQL with {@code :name} placeholders
+   * @param sql the SQL with {@code :name} placeholders
    * @param params map of parameter name to value
    * @return the result set
    * @throws DbException if the statement fails
    */
-
-  RowSet query(String sql, Map<String, Object> params);
+  @NonNull RowSet query(@NonNull String sql, @NonNull Map<String, Object> params);
 
   /**
    * Enqueue a statement with named parameters for pipelining.
    *
-   * @param sql    the SQL with {@code :name} placeholders
+   * @param sql the SQL with {@code :name} placeholders
    * @param params map of parameter name to value
-   * @return the index into the results list that {@link #flush()} will return
+   * @return the index into the result list that {@link #flush()} will return
    */
-  int enqueue(String sql, Map<String, Object> params);
+  int enqueue(@NonNull String sql, @NonNull Map<String, Object> params);
 
   /**
    * Flush all enqueued statements in a single network write, then read all responses. Returns one
@@ -107,8 +107,7 @@ public interface Connection extends AutoCloseable {
    * @return a list of RowSet results, one per enqueued statement
    * @throws DbConnectionException if a network/transport error occurs
    */
-
-  List<RowSet> flush();
+  @NonNull List<RowSet> flush();
 
   /**
    * Create a server-side prepared statement. The SQL is parsed and planned once; subsequent
@@ -119,24 +118,22 @@ public interface Connection extends AutoCloseable {
    * @return the prepared statement
    * @throws DbException if preparation fails
    */
-
-  PreparedStatement prepare(String sql);
+  @NonNull PreparedStatement prepare(@NonNull String sql);
 
   /**
    * Create a cursor for progressive row reading. Must be used within a transaction (Postgres
    * requirement). Reads rows in batches via {@link Cursor#read(int)}.
    *
-   * @param sql    the query SQL
+   * @param sql the query SQL
    * @param params optional query parameters
    * @return the cursor
    * @throws DbException if cursor creation fails
    */
-
-  Cursor cursor(String sql, Object... params);
+  @NonNull Cursor cursor(@NonNull String sql, @Nullable Object... params);
 
   /**
-   * Begin a transaction. Use with try-with-resources for automatic rollback if
-   * {@link Transaction#commit()} is not called.
+   * Begin a transaction. Use with try-with-resources for automatic rollback if {@link
+   * Transaction#commit()} is not called.
    *
    * <pre>{@code
    * try (var tx = conn.begin()) {
@@ -147,7 +144,7 @@ public interface Connection extends AutoCloseable {
    *
    * @return a new transaction
    */
-  default Transaction begin() {
+  default @NonNull Transaction begin() {
     return new Transaction(this);
   }
 
@@ -166,11 +163,11 @@ public interface Connection extends AutoCloseable {
    * }</pre>
    *
    * @param function the code to execute within the transaction
-   * @param <T>      the return type
+   * @param <T> the return type
    * @return the value returned by the function
    * @throws DbException if the function throws (transaction is rolled back)
    */
-  default <T> T withTransaction(Function<Transaction, T> function) {
+  default <T> T withTransaction(@NonNull Function<Transaction, T> function) {
     try (var tx = begin()) {
       T result = function.apply(tx);
       tx.commit();
@@ -194,22 +191,18 @@ public interface Connection extends AutoCloseable {
    *     ));
    * }</pre>
    *
-   * @param sql       the SQL statement with positional parameters
+   * @param sql the SQL statement with positional parameters
    * @param paramSets list of parameter arrays, one per execution
    * @return list of RowSet results, one per parameter set
    */
-
-  List<RowSet> executeMany(
-      String sql,
-      List<Object[]> paramSets
-  );
+  @NonNull List<RowSet> executeMany(@NonNull String sql, @NonNull List<Object[]> paramSets);
 
   /**
    * Check that this connection is alive and usable.
    *
-   * <p>Postgres sends an empty query ({@code ""}), MySQL sends {@code COM_PING}.
-   * Both are lightweight server roundtrips. Throws {@link DbException} (typically
-   * {@link DbConnectionException}) if the connection is broken.
+   * <p>Postgres sends an empty query ({@code ""}), MySQL sends {@code COM_PING}. Both are
+   * lightweight server roundtrips. Throws {@link DbException} (typically {@link
+   * DbConnectionException}) if the connection is broken.
    */
   void ping();
 
@@ -220,33 +213,29 @@ public interface Connection extends AutoCloseable {
    *
    * @return an unmodifiable map of parameter name to value
    */
-
-  Map<String, String> parameters();
+  @NonNull Map<String, String> parameters();
 
   /**
    * Execute a query and process each row via the callback. Rows are not materialized in memory —
    * constant memory usage regardless of result size. The callback is invoked once per row; Row
    * objects must not be retained after the callback returns.
    *
-   * @param sql      the SQL statement
+   * @param sql the SQL statement
    * @param consumer called once per result row
    * @throws DbException if the statement fails
    */
-  void queryStream(String sql, Consumer<Row> consumer);
+  void queryStream(@NonNull String sql, @NonNull Consumer<Row> consumer);
 
   /**
    * Execute a parameterized query and process each row via the callback.
    *
-   * @param sql      the SQL with positional placeholders
+   * @param sql the SQL with positional placeholders
    * @param consumer called once per result row
-   * @param params   the parameter values
+   * @param params the parameter values
    * @throws DbException if the statement fails
    */
   void queryStream(
-      String sql,
-      Consumer<Row> consumer,
-      Object... params
-  );
+      @NonNull String sql, @NonNull Consumer<Row> consumer, @Nullable Object... params);
 
   /**
    * Return a closeable, iterable stream of rows. Must be closed after use (use try-with-resources)
@@ -261,50 +250,33 @@ public interface Connection extends AutoCloseable {
    * }
    * }</pre>
    *
-   * @param sql    the SQL statement
+   * @param sql the SQL statement
    * @param params optional positional parameters
    * @return a closeable row stream
    */
-
-  RowStream stream(String sql, Object... params);
+  @NonNull RowStream stream(@NonNull String sql, @Nullable Object... params);
 
   // --- Configuration ---
 
-  /**
-   * Return the type registry used for encoding query parameters.
-   */
-  BinderRegistry binderRegistry();
+  /** Return the type registry used for encoding query parameters. */
+  @NonNull BinderRegistry binderRegistry();
 
-  /**
-   * Set the type registry used for encoding query parameters.
-   */
-  void setBinderRegistry(BinderRegistry registry);
+  /** Set the type registry used for encoding query parameters. */
+  void setBinderRegistry(@NonNull BinderRegistry registry);
 
-  /**
-   * Return the mapper registry used for typed column access via {@link Row#get(int, Class)}.
-   */
+  /** Return the mapper registry used for typed column access via {@link Row#get(int, Class)}. */
+  @NonNull ColumnMapperRegistry mapperRegistry();
 
-  ColumnMapperRegistry mapperRegistry();
+  /** Set the mapper registry used for typed column access. */
+  void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry);
 
-  /**
-   * Set the mapper registry used for typed column access.
-   */
-  void setColumnMapperRegistry(ColumnMapperRegistry registry);
+  /** Return the JSON mapper, or null if none is configured. */
+  @Nullable JsonMapper jsonMapper();
 
-  /**
-   * Return the JSON mapper, or null if none is configured.
-   */
+  /** Set the JSON mapper for serializing/deserializing JSON columns. */
+  void setJsonMapper(@Nullable JsonMapper mapper);
 
-  JsonMapper jsonMapper();
-
-  /**
-   * Set the JSON mapper for serializing/deserializing JSON columns.
-   */
-  void setJsonMapper(JsonMapper mapper);
-
-  /**
-   * Close this connection and release all resources.
-   */
+  /** Close this connection and release all resources. */
   @Override
   void close();
 }

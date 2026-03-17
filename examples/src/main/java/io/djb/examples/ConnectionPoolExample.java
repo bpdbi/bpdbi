@@ -6,8 +6,8 @@ import io.djb.pg.PgConnection;
 /**
  * Shows how to use djb with a simple hand-rolled connection pool. For production use, consider
  * Apache Commons Pool 2 (see README.md).
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.ConnectionPoolExample
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.ConnectionPoolExample
  */
 public class ConnectionPoolExample {
 

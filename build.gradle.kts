@@ -2,6 +2,7 @@ plugins {
     `maven-publish`
     signing
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    id("com.diffplug.spotless") version "7.0.4"
 }
 
 group = "io.djb"
@@ -29,6 +30,7 @@ subprojects {
 
     if (name != "djb-bom") {
         apply(plugin = "java")
+        apply(plugin = "com.diffplug.spotless")
 
         configure<JavaPluginExtension> {
             toolchain {
@@ -38,6 +40,12 @@ subprojects {
 
         tasks.withType<JavaCompile> {
             options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+        }
+
+        configure<com.diffplug.gradle.spotless.SpotlessExtension> {
+            java {
+                googleJavaFormat()
+            }
         }
     }
 }

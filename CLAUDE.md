@@ -21,11 +21,11 @@
 ## Project Structure
 
 - `djb-core/` — Database-agnostic API: Connection, Row, RowSet, pipelining, type registries
-- `djb-pg-client/` — Postgres wire protocol driver (depends on djb-core)
-- `djb-mysql-client/` — MySQL wire protocol driver (depends on djb-core)
-- `djb-kotlin/` — Kotlin extensions via kotlinx.serialization (depends on djb-core)
-- `djb-record-mapper/` — Java record mapping via reflection
-- `djb-javabean-mapper/` — JavaBean/POJO mapping via reflection
+- `djb-pg-client/` — Postgres wire protocol driver
+- `djb-mysql-client/` — MySQL wire protocol driver
+- `djb-kotlin/` — Kotlin extensions, binders for Kotlin types and mapping of rows via `kotlinx.serialization`
+- `djb-record-mapper/` — Java record mapping of rows via reflection
+- `djb-javabean-mapper/` — JavaBean/POJO mapping of rows via reflection
 - `djb-pool/` — Simple connection pool
 - `examples/` — Runnable examples
 
@@ -33,11 +33,12 @@
 
 - **Pipelining-first**: `enqueue()` + `flush()` batches statements in one TCP write
 - **Lazy decoding**: Row stores raw `byte[][]`, decodes on getter access
-- **Binary protocol**: Parameterized queries use binary results (PG via Bind, MySQL via COM_STMT_EXECUTE). Parameterless queries use simple/text protocol for compatibility
+- **Binary protocol**: Parameterized queries use binary results (PG via Bind, MySQL via COM_STMT_EXECUTE),
+  parameterless queries use simple/text protocol for compatibility
 - **BaseConnection**: Abstract class with shared pipeline logic; PG/MySQL extend it
 - **No Netty**: Plain `java.net.Socket` + `BufferedInputStream`/`BufferedOutputStream`
-- **Java 21+**: Works especially well with virtual threads, has optional mapper for records, and
-  uses sealed types internally
+- **Java 21+**: Works especially well with virtual threads, has optional mapper for records,
+  and uses sealed types internally
 
 ## Conventions
 

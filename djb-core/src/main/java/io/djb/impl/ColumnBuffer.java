@@ -1,14 +1,15 @@
 package io.djb.impl;
 
 import io.djb.ColumnData;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Column-oriented contiguous byte storage. Holds all raw values for a single column across all rows
  * in a result set, packed into one {@code byte[]} with offset/length metadata per row.
  *
- * <p>This replaces the per-row {@code byte[][]} allocation pattern. For a result set
- * with N rows × M columns, this creates M ColumnBuffers instead of N×M individual {@code byte[]}
- * arrays — dramatically reducing GC pressure for large result sets.
+ * <p>This replaces the per-row {@code byte[][]} allocation pattern. For a result set with N rows ×
+ * M columns, this creates M ColumnBuffers instead of N×M individual {@code byte[]} arrays —
+ * dramatically reducing GC pressure for large result sets.
  *
  * <p>Not thread-safe. Designed for single-threaded append-then-read usage.
  */
@@ -31,7 +32,7 @@ public final class ColumnBuffer implements ColumnData {
    *
    * @param value the raw bytes, or null for SQL NULL
    */
-  public void append(byte[] value) {
+  public void append(byte @Nullable [] value) {
     if (rowCount == offsets.length) {
       grow();
     }
@@ -91,8 +92,7 @@ public final class ColumnBuffer implements ColumnData {
   }
 
   /**
-   * Initial metadata capacity when starting from zero. Small to avoid waste for single-row
-   * results.
+   * Initial metadata capacity when starting from zero. Small to avoid waste for single-row results.
    */
   private static final int INITIAL_ROW_CAPACITY = 16;
 

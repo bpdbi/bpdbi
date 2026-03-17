@@ -87,9 +87,8 @@ class RsaPublicKeyEncryptorTest {
     byte[] nonce = new byte[20];
 
     assertThrows(
-        RuntimeException.class, () ->
-            RsaPublicKeyEncryptor.encrypt(password, nonce, "not a valid key")
-    );
+        RuntimeException.class,
+        () -> RsaPublicKeyEncryptor.encrypt(password, nonce, "not a valid key"));
   }
 
   private static KeyPair generateKeyPair() throws Exception {

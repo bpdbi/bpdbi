@@ -4,8 +4,8 @@ import io.djb.pg.PgConnection;
 
 /**
  * Demonstrates reading various Postgres data types through the text protocol.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgDataTypesExample
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgDataTypesExample
  */
 public class PgDataTypesExample {
 
@@ -13,7 +13,9 @@ public class PgDataTypesExample {
     try (var conn = PgConnection.connect("localhost", 5432, "postgres", "postgres", "postgres")) {
 
       System.out.println("=== Numeric Types ===");
-      var rs = conn.query("""
+      var rs =
+          conn.query(
+              """
                               SELECT 42::int2 AS small,
                                      2147483647::int4 AS medium,
                                      9223372036854775807::int8 AS large,
@@ -43,7 +45,9 @@ public class PgDataTypesExample {
       System.out.println("  false: " + row.getBoolean("no"));
 
       System.out.println("\n=== Date/Time Types ===");
-      rs = conn.query("""
+      rs =
+          conn.query(
+              """
                           SELECT '2024-06-15'::date AS d,
                                  '13:45:30'::time AS t,
                                  '2024-06-15 13:45:30'::timestamp AS ts

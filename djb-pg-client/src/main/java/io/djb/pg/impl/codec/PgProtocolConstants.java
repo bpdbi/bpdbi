@@ -1,12 +1,9 @@
 package io.djb.pg.impl.codec;
 
-/**
- * Postgres wire protocol constants.
- */
+/** Postgres wire protocol constants. */
 public final class PgProtocolConstants {
 
-  private PgProtocolConstants() {
-  }
+  private PgProtocolConstants() {}
 
   // Authentication types
   public static final int AUTH_OK = 0;

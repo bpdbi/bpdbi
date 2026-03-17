@@ -14,7 +14,6 @@ import io.djb.Row;
 import io.djb.RowMapper;
 import io.djb.RowSet;
 import io.djb.pg.data.Box;
-import io.djb.test.AbstractConnectionTest;
 import io.djb.pg.data.Circle;
 import io.djb.pg.data.Inet;
 import io.djb.pg.data.Interval;
@@ -23,6 +22,7 @@ import io.djb.pg.data.LineSegment;
 import io.djb.pg.data.Path;
 import io.djb.pg.data.Point;
 import io.djb.pg.data.Polygon;
+import io.djb.test.AbstractConnectionTest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -59,8 +59,7 @@ class PgConnectionTest extends AbstractConnectionTest {
         pg.getMappedPort(5432),
         pg.getDatabaseName(),
         pg.getUsername(),
-        pg.getPassword()
-    );
+        pg.getPassword());
   }
 
   @Override
@@ -83,23 +82,27 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void connectWithWrongPassword() {
     assertThrows(
-        PgException.class, () ->
+        PgException.class,
+        () ->
             PgConnection.connect(
-                pg.getHost(), pg.getMappedPort(5432),
-                pg.getDatabaseName(), pg.getUsername(), "wrongpassword"
-            )
-    );
+                pg.getHost(),
+                pg.getMappedPort(5432),
+                pg.getDatabaseName(),
+                pg.getUsername(),
+                "wrongpassword"));
   }
 
   @Test
   void connectWithWrongDatabase() {
     assertThrows(
-        PgException.class, () ->
+        PgException.class,
+        () ->
             PgConnection.connect(
-                pg.getHost(), pg.getMappedPort(5432),
-                "nonexistent_db", pg.getUsername(), pg.getPassword()
-            )
-    );
+                pg.getHost(),
+                pg.getMappedPort(5432),
+                "nonexistent_db",
+                pg.getUsername(),
+                pg.getPassword()));
   }
 
   // ===== Simple query protocol =====
@@ -129,10 +132,12 @@ class PgConnectionTest extends AbstractConnectionTest {
   void multiStatementSimpleQuery() {
     try (var conn = connect()) {
       // Simple query protocol supports multiple statements
-      var rs = conn.query(
-          "CREATE TEMP TABLE multi_test (id int); INSERT INTO multi_test VALUES (1); SELECT * FROM multi_test");
+      var rs =
+          conn.query(
+              "CREATE TEMP TABLE multi_test (id int); INSERT INTO multi_test VALUES (1); SELECT * FROM multi_test");
       // The result should be from the last statement
-      // (simple protocol sends multiple CommandComplete/RowDescription, but we read until ReadyForQuery)
+      // (simple protocol sends multiple CommandComplete/RowDescription, but we read until
+      // ReadyForQuery)
       // Our implementation returns the last result
       assertNotNull(rs);
     }
@@ -177,10 +182,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void parameterizedQueryError() {
     try (var conn = connect()) {
-      var ex = assertThrows(
-          PgException.class,
-          () -> conn.query("SELECT $1::int", "not_a_number")
-      );
+      var ex = assertThrows(PgException.class, () -> conn.query("SELECT $1::int", "not_a_number"));
       assertNotNull(ex.sqlState());
     }
   }
@@ -190,8 +192,9 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void dataTypeNumeric() {
     try (var conn = connect()) {
-      var rs = conn.query(
-          "SELECT 42::int2 AS s, 42::int4 AS i, 42::int8 AS l, 3.14::float4 AS f, 3.14::float8 AS d, 123.456::numeric AS n");
+      var rs =
+          conn.query(
+              "SELECT 42::int2 AS s, 42::int4 AS i, 42::int8 AS l, 3.14::float4 AS f, 3.14::float8 AS d, 123.456::numeric AS n");
       var row = rs.first();
       assertEquals((short) 42, row.getShort(0));
       assertEquals(42, row.getInteger("i"));
@@ -219,8 +222,7 @@ class PgConnectionTest extends AbstractConnectionTest {
       var rs = conn.query("SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid AS u");
       assertEquals(
           java.util.UUID.fromString("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"),
-          rs.first().getUUID("u")
-      );
+          rs.first().getUUID("u"));
     }
   }
 
@@ -397,7 +399,8 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== Additional data type tests (ported from vertx TextDataTypeDecodeTestBase + PG codec tests) =====
+  // ===== Additional data type tests (ported from vertx TextDataTypeDecodeTestBase + PG codec
+  // tests) =====
 
   @Test
   void dataTypeInt2() {
@@ -444,9 +447,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       var rs = conn.query("SELECT 999999999999999999.999999999999::numeric");
       assertEquals(
-          new java.math.BigDecimal("999999999999999999.999999999999"),
-          rs.first().getBigDecimal(0)
-      );
+          new java.math.BigDecimal("999999999999999999.999999999999"), rs.first().getBigDecimal(0));
     }
   }
 
@@ -636,12 +637,14 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void connectWithInvalidUsername() {
     assertThrows(
-        PgException.class, () ->
+        PgException.class,
+        () ->
             PgConnection.connect(
-                pg.getHost(), pg.getMappedPort(5432),
-                pg.getDatabaseName(), "nonexistent_user_xyz", pg.getPassword()
-            )
-    );
+                pg.getHost(),
+                pg.getMappedPort(5432),
+                pg.getDatabaseName(),
+                "nonexistent_user_xyz",
+                pg.getPassword()));
   }
 
   @Test
@@ -917,10 +920,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void prepareErrorInvalidSql() {
     try (var conn = connect()) {
-      var ex = assertThrows(
-          PgException.class,
-          () -> conn.query("SELECT FROM WHERE INVALID", 1)
-      );
+      var ex = assertThrows(PgException.class, () -> conn.query("SELECT FROM WHERE INVALID", 1));
       assertNotNull(ex.sqlState());
     }
   }
@@ -931,10 +931,7 @@ class PgConnectionTest extends AbstractConnectionTest {
       // Provide 2 params but SQL has 1 placeholder — PG will error
       // (our text-format bind sends extra params, PG may ignore or error)
       // At minimum, providing too few params for the SQL should fail
-      var ex = assertThrows(
-          Exception.class,
-          () -> conn.query("SELECT $1::int, $2::text", 42)
-      );
+      var ex = assertThrows(Exception.class, () -> conn.query("SELECT $1::int, $2::text", 42));
       // Connection should still be usable after
       var rs = conn.query("SELECT 1");
       assertEquals(1, rs.first().getInteger(0));
@@ -1091,7 +1088,8 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_arr (id int)");
       conn.query("INSERT INTO np_arr VALUES (1), (2), (3), (4), (5)");
-      try (var stmt = conn.prepare("SELECT id FROM np_arr WHERE id = ANY(:ids::int[]) ORDER BY id")) {
+      try (var stmt =
+          conn.prepare("SELECT id FROM np_arr WHERE id = ANY(:ids::int[]) ORDER BY id")) {
         var rs1 = stmt.query(Map.of("ids", List.of(1, 3, 5)));
         var ids1 = new ArrayList<Integer>();
         for (var row : rs1) {
@@ -1115,8 +1113,9 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_parr (id int)");
       conn.query("INSERT INTO np_parr VALUES (10), (20), (30)");
-      try (var stmt = conn.prepare("SELECT id FROM np_parr WHERE id = ANY(:ids::int[]) ORDER BY id")) {
-        var rs = stmt.query(Map.of("ids", new int[]{10, 30}));
+      try (var stmt =
+          conn.prepare("SELECT id FROM np_parr WHERE id = ANY(:ids::int[]) ORDER BY id")) {
+        var rs = stmt.query(Map.of("ids", new int[] {10, 30}));
         var ids = new ArrayList<Integer>();
         for (var row : rs) {
           ids.add(row.getInteger("id"));
@@ -1131,8 +1130,8 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_sarr (name text)");
       conn.query("INSERT INTO np_sarr VALUES ('Alice'), ('Bob'), ('Carol')");
-      try (var stmt = conn.prepare(
-          "SELECT name FROM np_sarr WHERE name = ANY(:names::text[]) ORDER BY name")) {
+      try (var stmt =
+          conn.prepare("SELECT name FROM np_sarr WHERE name = ANY(:names::text[]) ORDER BY name")) {
         var rs = stmt.query(Map.of("names", List.of("Alice", "Carol")));
         var names = new ArrayList<String>();
         for (var row : rs) {
@@ -1157,11 +1156,20 @@ class PgConnectionTest extends AbstractConnectionTest {
 
   @Test
   void preparedStatementNamedParamsCachedPath() {
-    try (var conn = PgConnection.connect(
-        ConnectionConfig.fromUri("postgresql://" + pg.getUsername() + ":" + pg.getPassword()
-                                     + "@" + pg.getHost() + ":" + pg.getMappedPort(5432) + "/"
-                                     + pg.getDatabaseName())
-            .cachePreparedStatements(true))) {
+    try (var conn =
+        PgConnection.connect(
+            ConnectionConfig.fromUri(
+                    "postgresql://"
+                        + pg.getUsername()
+                        + ":"
+                        + pg.getPassword()
+                        + "@"
+                        + pg.getHost()
+                        + ":"
+                        + pg.getMappedPort(5432)
+                        + "/"
+                        + pg.getDatabaseName())
+                .cachePreparedStatements(true))) {
       String sql = "SELECT :n::int AS n";
 
       // First call: cache miss — prepares and caches
@@ -1387,11 +1395,12 @@ class PgConnectionTest extends AbstractConnectionTest {
   void withTransactionCommitsOnSuccess() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_test (id int)");
-      conn.withTransaction(tx -> {
-        tx.query("INSERT INTO wt_test VALUES (1)");
-        tx.query("INSERT INTO wt_test VALUES (2)");
-        return null;
-      });
+      conn.withTransaction(
+          tx -> {
+            tx.query("INSERT INTO wt_test VALUES (1)");
+            tx.query("INSERT INTO wt_test VALUES (2)");
+            return null;
+          });
       assertEquals(2L, conn.query("SELECT count(*) FROM wt_test").first().getLong(0));
     }
   }
@@ -1401,13 +1410,14 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_rb (id int)");
       try {
-        conn.withTransaction(tx -> {
-          tx.query("INSERT INTO wt_rb VALUES (1)");
-          if (true) {
-            throw new RuntimeException("simulated failure");
-          }
-          return null;
-        });
+        conn.withTransaction(
+            tx -> {
+              tx.query("INSERT INTO wt_rb VALUES (1)");
+              if (true) {
+                throw new RuntimeException("simulated failure");
+              }
+              return null;
+            });
       } catch (RuntimeException e) {
         assertEquals("simulated failure", e.getMessage());
       }
@@ -1419,10 +1429,12 @@ class PgConnectionTest extends AbstractConnectionTest {
   void withTransactionReturnsValue() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_ret (id serial, name text)");
-      int id = conn.withTransaction(tx -> {
-        var rs = tx.query("INSERT INTO wt_ret (name) VALUES ($1) RETURNING id", "Alice");
-        return rs.first().getInteger("id");
-      });
+      int id =
+          conn.withTransaction(
+              tx -> {
+                var rs = tx.query("INSERT INTO wt_ret (name) VALUES ($1) RETURNING id", "Alice");
+                return rs.first().getInteger("id");
+              });
       assertTrue(id > 0);
     }
   }
@@ -1433,11 +1445,12 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMP TABLE wt_dberr (id int PRIMARY KEY)");
       conn.query("INSERT INTO wt_dberr VALUES (1)");
       try {
-        conn.withTransaction(tx -> {
-          tx.query("INSERT INTO wt_dberr VALUES (2)");
-          tx.query("INSERT INTO wt_dberr VALUES (1)"); // duplicate PK
-          return null;
-        });
+        conn.withTransaction(
+            tx -> {
+              tx.query("INSERT INTO wt_dberr VALUES (2)");
+              tx.query("INSERT INTO wt_dberr VALUES (1)"); // duplicate PK
+              return null;
+            });
       } catch (PgException e) {
         // expected
       }
@@ -1450,14 +1463,16 @@ class PgConnectionTest extends AbstractConnectionTest {
   void withTransactionNested() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_nested (id int)");
-      conn.withTransaction(tx -> {
-        tx.query("INSERT INTO wt_nested VALUES (1)");
-        tx.withTransaction(nested -> {
-          nested.query("INSERT INTO wt_nested VALUES (2)");
-          return null;
-        });
-        return null;
-      });
+      conn.withTransaction(
+          tx -> {
+            tx.query("INSERT INTO wt_nested VALUES (1)");
+            tx.withTransaction(
+                nested -> {
+                  nested.query("INSERT INTO wt_nested VALUES (2)");
+                  return null;
+                });
+            return null;
+          });
       assertEquals(2L, conn.query("SELECT count(*) FROM wt_nested").first().getLong(0));
     }
   }
@@ -1466,21 +1481,23 @@ class PgConnectionTest extends AbstractConnectionTest {
   void withTransactionNestedRollback() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_nested_rb (id int)");
-      conn.withTransaction(tx -> {
-        tx.query("INSERT INTO wt_nested_rb VALUES (1)");
-        try {
-          tx.withTransaction(nested -> {
-            nested.query("INSERT INTO wt_nested_rb VALUES (2)");
-            if (true) {
-              throw new RuntimeException("inner failure");
+      conn.withTransaction(
+          tx -> {
+            tx.query("INSERT INTO wt_nested_rb VALUES (1)");
+            try {
+              tx.withTransaction(
+                  nested -> {
+                    nested.query("INSERT INTO wt_nested_rb VALUES (2)");
+                    if (true) {
+                      throw new RuntimeException("inner failure");
+                    }
+                    return null;
+                  });
+            } catch (RuntimeException e) {
+              // inner rollback, outer continues
             }
             return null;
           });
-        } catch (RuntimeException e) {
-          // inner rollback, outer continues
-        }
-        return null;
-      });
       // Outer committed, inner rolled back
       assertEquals(1L, conn.query("SELECT count(*) FROM wt_nested_rb").first().getLong(0));
     }
@@ -1533,9 +1550,18 @@ class PgConnectionTest extends AbstractConnectionTest {
 
   @Test
   void connectWithUri() {
-    var config = ConnectionConfig.fromUri(
-        "postgresql://" + pg.getUsername() + ":" + pg.getPassword()
-            + "@" + pg.getHost() + ":" + pg.getMappedPort(5432) + "/" + pg.getDatabaseName());
+    var config =
+        ConnectionConfig.fromUri(
+            "postgresql://"
+                + pg.getUsername()
+                + ":"
+                + pg.getPassword()
+                + "@"
+                + pg.getHost()
+                + ":"
+                + pg.getMappedPort(5432)
+                + "/"
+                + pg.getDatabaseName());
     try (var conn = PgConnection.connect(config)) {
       var rs = conn.query("SELECT 1");
       assertEquals(1, rs.first().getInteger(0));
@@ -1766,9 +1792,8 @@ class PgConnectionTest extends AbstractConnectionTest {
 
   @Test
   void rowMapperMapTo() {
-    record User(int id, String name) {
+    record User(int id, String name) {}
 
-    }
     RowMapper<User> mapper = row -> new User(row.getInteger("id"), row.getString("name"));
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE rm_test (id int, name text)");
@@ -1813,9 +1838,8 @@ class PgConnectionTest extends AbstractConnectionTest {
 
   @Test
   void columnMapperCustomType() {
-    record Money(java.math.BigDecimal amount) {
+    record Money(java.math.BigDecimal amount) {}
 
-    }
     try (var conn = connect()) {
       conn.mapperRegistry().register(Money.class, (v, c) -> new Money(new java.math.BigDecimal(v)));
       var rs = conn.query("SELECT '9.99'::numeric AS price");
@@ -1837,10 +1861,9 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void namedParamSelect() {
     try (var conn = connect()) {
-      var rs = conn.query(
-          "SELECT :name AS name, :age AS age",
-          java.util.Map.of("name", "Alice", "age", 30)
-      );
+      var rs =
+          conn.query(
+              "SELECT :name AS name, :age AS age", java.util.Map.of("name", "Alice", "age", 30));
       assertEquals("Alice", rs.first().getString("name"));
       assertEquals("30", rs.first().getString("age"));
     }
@@ -1851,18 +1874,11 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_test (id int, name text)");
       conn.query(
-          "INSERT INTO np_test VALUES (:id, :name)",
-          java.util.Map.of("id", 1, "name", "Alice")
-      );
+          "INSERT INTO np_test VALUES (:id, :name)", java.util.Map.of("id", 1, "name", "Alice"));
       conn.query(
-          "INSERT INTO np_test VALUES (:id, :name)",
-          java.util.Map.of("id", 2, "name", "Bob")
-      );
+          "INSERT INTO np_test VALUES (:id, :name)", java.util.Map.of("id", 2, "name", "Bob"));
 
-      var rs = conn.query(
-          "SELECT name FROM np_test WHERE id = :id",
-          java.util.Map.of("id", 1)
-      );
+      var rs = conn.query("SELECT name FROM np_test WHERE id = :id", java.util.Map.of("id", 1));
       assertEquals("Alice", rs.first().getString("name"));
     }
   }
@@ -1872,13 +1888,9 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_pipe (id int, val text)");
       conn.enqueue(
-          "INSERT INTO np_pipe VALUES (:id, :val)",
-          java.util.Map.of("id", 1, "val", "one")
-      );
+          "INSERT INTO np_pipe VALUES (:id, :val)", java.util.Map.of("id", 1, "val", "one"));
       conn.enqueue(
-          "INSERT INTO np_pipe VALUES (:id, :val)",
-          java.util.Map.of("id", 2, "val", "two")
-      );
+          "INSERT INTO np_pipe VALUES (:id, :val)", java.util.Map.of("id", 2, "val", "two"));
       conn.flush();
 
       var rs = conn.query("SELECT count(*) FROM np_pipe");
@@ -1890,9 +1902,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   void namedParamMissingThrows() {
     try (var conn = connect()) {
       assertThrows(
-          IllegalArgumentException.class, () ->
-              conn.query("SELECT :missing", java.util.Map.of())
-      );
+          IllegalArgumentException.class, () -> conn.query("SELECT :missing", java.util.Map.of()));
     }
   }
 
@@ -1900,9 +1910,8 @@ class PgConnectionTest extends AbstractConnectionTest {
 
   @Test
   void customBinder() {
-    record Currency(String code) {
+    record Currency(String code) {}
 
-    }
     try (var conn = connect()) {
       conn.binderRegistry().register(Currency.class, c -> c.code());
       conn.query("CREATE TEMP TABLE tb_test (id int, currency text)");
@@ -2026,7 +2035,7 @@ class PgConnectionTest extends AbstractConnectionTest {
       assertEquals(3, results.size());
       assertFalse(results.get(0).getError() != null); // BEGIN ok
       assertFalse(results.get(1).getError() != null); // insert ok
-      assertTrue(results.get(2).getError() != null);  // duplicate error
+      assertTrue(results.get(2).getError() != null); // duplicate error
 
       conn.query("ROLLBACK");
 
@@ -2038,11 +2047,20 @@ class PgConnectionTest extends AbstractConnectionTest {
 
   @Test
   void preparedStatementCacheHit() {
-    try (var conn = PgConnection.connect(
-        ConnectionConfig.fromUri("postgresql://" + pg.getUsername() + ":" + pg.getPassword()
-                                     + "@" + pg.getHost() + ":" + pg.getMappedPort(5432) + "/"
-                                     + pg.getDatabaseName())
-            .cachePreparedStatements(true))) {
+    try (var conn =
+        PgConnection.connect(
+            ConnectionConfig.fromUri(
+                    "postgresql://"
+                        + pg.getUsername()
+                        + ":"
+                        + pg.getPassword()
+                        + "@"
+                        + pg.getHost()
+                        + ":"
+                        + pg.getMappedPort(5432)
+                        + "/"
+                        + pg.getDatabaseName())
+                .cachePreparedStatements(true))) {
       // First call: cache miss
       var rs1 = conn.query("SELECT $1::int AS n", 1);
       assertEquals(1, rs1.first().getInteger("n"));
@@ -2079,7 +2097,8 @@ class PgConnectionTest extends AbstractConnectionTest {
 
   @Test
   void listenNotifyFromAnotherConnection() {
-    try (var listener = connect(); var sender = connect()) {
+    try (var listener = connect();
+        var sender = connect()) {
       listener.listen("cross_channel");
 
       // Send from another connection
@@ -2146,14 +2165,11 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE batch_test (id int, name text)");
 
-      var results = conn.executeMany(
-          "INSERT INTO batch_test (id, name) VALUES ($1, $2)",
-          List.of(
-              new Object[]{1, "Alice"},
-              new Object[]{2, "Bob"},
-              new Object[]{3, "Carol"}
-          )
-      );
+      var results =
+          conn.executeMany(
+              "INSERT INTO batch_test (id, name) VALUES ($1, $2)",
+              List.of(
+                  new Object[] {1, "Alice"}, new Object[] {2, "Bob"}, new Object[] {3, "Carol"}));
 
       assertEquals(3, results.size());
       for (var rs : results) {
@@ -2172,13 +2188,10 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE batch_ret (id serial, name text)");
 
-      var results = conn.executeMany(
-          "INSERT INTO batch_ret (name) VALUES ($1) RETURNING id",
-          List.of(
-              new Object[]{"Alice"},
-              new Object[]{"Bob"}
-          )
-      );
+      var results =
+          conn.executeMany(
+              "INSERT INTO batch_ret (name) VALUES ($1) RETURNING id",
+              List.of(new Object[] {"Alice"}, new Object[] {"Bob"}));
 
       assertEquals(2, results.size());
       assertEquals(1, results.get(0).first().getInteger("id"));
@@ -2202,10 +2215,10 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMP TABLE inlist_test (id int, name text)");
       conn.query("INSERT INTO inlist_test VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Carol')");
 
-      var rs = conn.query(
-          "SELECT * FROM inlist_test WHERE id IN (:ids) ORDER BY id",
-          java.util.Map.of("ids", List.of(1, 3))
-      );
+      var rs =
+          conn.query(
+              "SELECT * FROM inlist_test WHERE id IN (:ids) ORDER BY id",
+              java.util.Map.of("ids", List.of(1, 3)));
 
       assertEquals(2, rs.size());
       assertEquals("Alice", rs.first().getString("name"));
@@ -2224,10 +2237,8 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMP TABLE any_pos (id int, name text)");
       conn.query("INSERT INTO any_pos VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Carol')");
 
-      var rs = conn.query(
-          "SELECT name FROM any_pos WHERE id = ANY($1::int[]) ORDER BY id",
-          "{1,3}"
-      );
+      var rs =
+          conn.query("SELECT name FROM any_pos WHERE id = ANY($1::int[]) ORDER BY id", "{1,3}");
       var names = new ArrayList<String>();
       for (var row : rs) {
         names.add(row.getString("name"));
@@ -2242,10 +2253,10 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMP TABLE any_pstr (name text)");
       conn.query("INSERT INTO any_pstr VALUES ('Alice'), ('Bob'), ('Carol')");
 
-      var rs = conn.query(
-          "SELECT name FROM any_pstr WHERE name = ANY($1::text[]) ORDER BY name",
-          "{Alice,Carol}"
-      );
+      var rs =
+          conn.query(
+              "SELECT name FROM any_pstr WHERE name = ANY($1::text[]) ORDER BY name",
+              "{Alice,Carol}");
       var names = new ArrayList<String>();
       for (var row : rs) {
         names.add(row.getString("name"));
@@ -2260,8 +2271,7 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("CREATE TEMP TABLE any_pempty (id int)");
       conn.query("INSERT INTO any_pempty VALUES (1), (2)");
 
-      var rs = conn.query(
-          "SELECT id FROM any_pempty WHERE id = ANY($1::int[])", "{}");
+      var rs = conn.query("SELECT id FROM any_pempty WHERE id = ANY($1::int[])", "{}");
       assertFalse(rs.iterator().hasNext());
     }
   }
@@ -2290,10 +2300,11 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query(
           "INSERT INTO any_pmix VALUES (1, 'active'), (2, 'inactive'), (3, 'active'), (4, 'inactive')");
 
-      var rs = conn.query(
-          "SELECT id FROM any_pmix WHERE status = $1 AND id = ANY($2::int[]) ORDER BY id",
-          "active", "{1,2,3}"
-      );
+      var rs =
+          conn.query(
+              "SELECT id FROM any_pmix WHERE status = $1 AND id = ANY($2::int[]) ORDER BY id",
+              "active",
+              "{1,2,3}");
       var ids = new ArrayList<Integer>();
       for (var row : rs) {
         ids.add(row.getInteger("id"));
@@ -2308,10 +2319,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   void queryStreamSimple() {
     try (var conn = connect()) {
       var names = new ArrayList<String>();
-      conn.queryStream(
-          "SELECT generate_series(1, 100) AS n", row ->
-              names.add(row.getString("n"))
-      );
+      conn.queryStream("SELECT generate_series(1, 100) AS n", row -> names.add(row.getString("n")));
       assertEquals(100, names.size());
       assertEquals("1", names.getFirst());
       assertEquals("100", names.getLast());
@@ -2327,8 +2335,8 @@ class PgConnectionTest extends AbstractConnectionTest {
       var names = new ArrayList<String>();
       conn.queryStream(
           "SELECT name FROM stream_test WHERE id > $1 ORDER BY id",
-          row -> names.add(row.getString("name")), 1
-      );
+          row -> names.add(row.getString("name")),
+          1);
       assertEquals(List.of("Bob", "Carol"), names);
     }
   }
@@ -2336,7 +2344,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void queryStreamNoRows() {
     try (var conn = connect()) {
-      var count = new int[]{0};
+      var count = new int[] {0};
       conn.queryStream("SELECT 1 WHERE false", row -> count[0]++);
       assertEquals(0, count[0]);
     }
@@ -2346,12 +2354,8 @@ class PgConnectionTest extends AbstractConnectionTest {
   void queryStreamError() {
     try (var conn = connect()) {
       assertThrows(
-          PgException.class, () ->
-              conn.queryStream(
-                  "SELECT * FROM nonexistent_streaming_table", row -> {
-                  }
-              )
-      );
+          PgException.class,
+          () -> conn.queryStream("SELECT * FROM nonexistent_streaming_table", row -> {}));
       // Connection should still be usable after error
       var rs = conn.query("SELECT 1 AS n");
       assertEquals(1, rs.first().getInteger("n"));
@@ -2407,8 +2411,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   void streamConnectionUsableAfter() {
     try (var conn = connect()) {
       try (var rows = conn.stream("SELECT generate_series(1, 5) AS n")) {
-        rows.forEach(row -> {
-        }); // consume all
+        rows.forEach(row -> {}); // consume all
       }
       // Normal query should work after stream is consumed and closed
       var rs = conn.query("SELECT 'ok' AS status");

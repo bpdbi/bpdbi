@@ -5,8 +5,8 @@ import io.djb.pg.PgException;
 
 /**
  * Transaction patterns: commit, rollback, error handling, pipelined transactions.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgTransactionExample
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgTransactionExample
  */
 public class PgTransactionExample {
 

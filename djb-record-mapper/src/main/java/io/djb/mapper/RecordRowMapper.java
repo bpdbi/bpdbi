@@ -6,11 +6,11 @@ import io.djb.RowMapper;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.util.function.BiFunction;
+import org.jspecify.annotations.NonNull;
 
 /**
  * A {@link RowMapper} that maps rows to Java records by consuming columns in declaration order.
- * Nested records are flattened: their components consume the next consecutive columns from the
- * row.
+ * Nested records are flattened: their components consume the next consecutive columns from the row.
  *
  * <pre>{@code
  * record Address(String street, String city) {}
@@ -34,15 +34,13 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
     this.constructor = canonicalConstructor(recordType);
   }
 
-  /**
-   * Create a mapper for the given record type.
-   */
-  public static <T extends Record> RecordRowMapper<T> of(Class<T> recordType) {
+  /** Create a mapper for the given record type. */
+  public static <T extends Record> @NonNull RecordRowMapper<T> of(@NonNull Class<T> recordType) {
     return new RecordRowMapper<>(recordType);
   }
 
   @Override
-  public T map(Row row) {
+  public @NonNull T map(@NonNull Row row) {
     int[] cursor = {0};
     Object[] args = extract(slots, constructor, row, cursor);
     try {
@@ -56,9 +54,7 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
 
   private sealed interface Slot {
 
-    /**
-     * How many leaf columns this slot consumes.
-     */
+    /** How many leaf columns this slot consumes. */
     int columnCount();
   }
 
@@ -70,10 +66,9 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
     }
   }
 
-  private record NestedSlot(Slot[] children, Constructor<? extends Record> constructor,
-                            int columnCount) implements Slot {
-
-  }
+  private record NestedSlot(
+      Slot[] children, Constructor<? extends Record> constructor, int columnCount)
+      implements Slot {}
 
   private static Slot[] buildSlots(Class<? extends Record> recordType) {
     RecordComponent[] components = recordType.getRecordComponents();
@@ -86,11 +81,8 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
         for (Slot child : children) {
           count += child.columnCount();
         }
-        slots[i] = new NestedSlot(
-            children,
-            canonicalConstructor(type.asSubclass(Record.class)),
-            count
-        );
+        slots[i] =
+            new NestedSlot(children, canonicalConstructor(type.asSubclass(Record.class)), count);
       } else {
         slots[i] = new ScalarSlot(indexedExtractorFor(type, components[i].getName()));
       }
@@ -115,11 +107,7 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
   }
 
   private static Object[] extract(
-      Slot[] slots,
-      Constructor<? extends Record> ctor,
-      Row row,
-      int[] cursor
-  ) {
+      Slot[] slots, Constructor<? extends Record> ctor, Row row, int[] cursor) {
     Object[] args = new Object[slots.length];
     for (int i = 0; i < slots.length; i++) {
       switch (slots[i]) {
@@ -138,15 +126,19 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
   }
 
   private static BiFunction<Row, Integer, Object> indexedExtractorFor(
-      Class<?> type,
-      String componentName
-  ) {
+      Class<?> type, String componentName) {
     BiFunction<Row, Integer, Object> extractor = RowExtractors.extractorFor(type);
     if (extractor != null) {
       return extractor;
     }
     throw new IllegalArgumentException(
-        "Unsupported type " + type.getName() + " for component '" + componentName + "'. "
-            + "Supported: " + RowExtractors.SUPPORTED_TYPES_MESSAGE + ", and nested records");
+        "Unsupported type "
+            + type.getName()
+            + " for component '"
+            + componentName
+            + "'. "
+            + "Supported: "
+            + RowExtractors.SUPPORTED_TYPES_MESSAGE
+            + ", and nested records");
   }
 }

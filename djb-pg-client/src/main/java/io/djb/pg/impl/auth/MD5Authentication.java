@@ -5,16 +5,14 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import org.jspecify.annotations.NonNull;
 
-/**
- * Postgres MD5 password authentication.
- */
+/** Postgres MD5 password authentication. */
 public final class MD5Authentication {
 
   private static final char[] HEX = "0123456789abcdef".toCharArray();
 
-  private MD5Authentication() {
-  }
+  private MD5Authentication() {}
 
   private static String toHex(byte[] bytes) {
     char[] hex = new char[bytes.length * 2];
@@ -26,7 +24,8 @@ public final class MD5Authentication {
     return new String(hex);
   }
 
-  public static String encode(String username, String password, byte[] salt) {
+  public static @NonNull String encode(
+      @NonNull String username, @NonNull String password, byte @NonNull [] salt) {
     MessageDigest md;
     try {
       md = MessageDigest.getInstance("MD5");

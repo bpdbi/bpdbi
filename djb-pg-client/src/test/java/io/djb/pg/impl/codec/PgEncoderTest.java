@@ -76,7 +76,7 @@ class PgEncoderTest {
   @Test
   void parseMessage() throws IOException {
     var encoder = new PgEncoder();
-    encoder.writeParse("SELECT $1::int", new int[]{23}); // OID 23 = int4
+    encoder.writeParse("SELECT $1::int", new int[] {23}); // OID 23 = int4
     byte[] bytes = flush(encoder);
 
     var buf = ByteBuffer.wrap(bytes);
@@ -106,7 +106,7 @@ class PgEncoderTest {
   @Test
   void bindMessage() throws IOException {
     var encoder = new PgEncoder();
-    encoder.writeBind(new String[]{"42", null, "hello"});
+    encoder.writeBind(new String[] {"42", null, "hello"});
     byte[] bytes = flush(encoder);
 
     var buf = ByteBuffer.wrap(bytes);

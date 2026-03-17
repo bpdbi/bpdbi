@@ -41,18 +41,18 @@ class PgBinaryCodecTest {
 
   @Test
   void decodeBoolTrue() {
-    assertTrue(codec.decodeBool(new byte[]{1}));
+    assertTrue(codec.decodeBool(new byte[] {1}));
   }
 
   @Test
   void decodeBoolFalse() {
-    assertFalse(codec.decodeBool(new byte[]{0}));
+    assertFalse(codec.decodeBool(new byte[] {0}));
   }
 
   @Test
   void encodeBool() {
-    assertArrayEquals(new byte[]{1}, PgBinaryCodec.encodeBool(true));
-    assertArrayEquals(new byte[]{0}, PgBinaryCodec.encodeBool(false));
+    assertArrayEquals(new byte[] {1}, PgBinaryCodec.encodeBool(true));
+    assertArrayEquals(new byte[] {0}, PgBinaryCodec.encodeBool(false));
   }
 
   // =====================================================================
@@ -61,13 +61,13 @@ class PgBinaryCodecTest {
 
   @Test
   void decodeInt2() {
-    assertEquals((short) 256, codec.decodeInt2(new byte[]{0x01, 0x00}));
-    assertEquals((short) -1, codec.decodeInt2(new byte[]{(byte) 0xFF, (byte) 0xFF}));
+    assertEquals((short) 256, codec.decodeInt2(new byte[] {0x01, 0x00}));
+    assertEquals((short) -1, codec.decodeInt2(new byte[] {(byte) 0xFF, (byte) 0xFF}));
   }
 
   @Test
   void encodeInt2() {
-    assertArrayEquals(new byte[]{0x01, 0x00}, PgBinaryCodec.encodeInt2((short) 256));
+    assertArrayEquals(new byte[] {0x01, 0x00}, PgBinaryCodec.encodeInt2((short) 256));
   }
 
   // =====================================================================
@@ -76,11 +76,9 @@ class PgBinaryCodecTest {
 
   @Test
   void decodeInt4() {
-    assertEquals(1, codec.decodeInt4(new byte[]{0, 0, 0, 1}));
+    assertEquals(1, codec.decodeInt4(new byte[] {0, 0, 0, 1}));
     assertEquals(
-        -1,
-        codec.decodeInt4(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF})
-    );
+        -1, codec.decodeInt4(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
   }
 
   @Test
@@ -209,13 +207,9 @@ class PgBinaryCodecTest {
   @Test
   void decodeTimestampInfinity() {
     assertEquals(
-        LocalDateTime.MAX,
-        codec.decodeTimestamp(PgBinaryCodec.encodeInt8(Long.MAX_VALUE))
-    );
+        LocalDateTime.MAX, codec.decodeTimestamp(PgBinaryCodec.encodeInt8(Long.MAX_VALUE)));
     assertEquals(
-        LocalDateTime.MIN,
-        codec.decodeTimestamp(PgBinaryCodec.encodeInt8(Long.MIN_VALUE))
-    );
+        LocalDateTime.MIN, codec.decodeTimestamp(PgBinaryCodec.encodeInt8(Long.MIN_VALUE)));
   }
 
   // =====================================================================
@@ -231,13 +225,9 @@ class PgBinaryCodecTest {
   @Test
   void decodeTimestamptzInfinity() {
     assertEquals(
-        OffsetDateTime.MAX,
-        codec.decodeTimestamptz(PgBinaryCodec.encodeInt8(Long.MAX_VALUE))
-    );
+        OffsetDateTime.MAX, codec.decodeTimestamptz(PgBinaryCodec.encodeInt8(Long.MAX_VALUE)));
     assertEquals(
-        OffsetDateTime.MIN,
-        codec.decodeTimestamptz(PgBinaryCodec.encodeInt8(Long.MIN_VALUE))
-    );
+        OffsetDateTime.MIN, codec.decodeTimestamptz(PgBinaryCodec.encodeInt8(Long.MIN_VALUE)));
   }
 
   // =====================================================================
@@ -266,12 +256,12 @@ class PgBinaryCodecTest {
     // 12345 in base-10000: ndigits=2, weight=1, sign=POS, dscale=0
     // groups: [1, 2345]
     byte[] data = {
-        0, 2,   // ndigits = 2
-        0, 1,   // weight = 1
-        0, 0,   // sign = NUMERIC_POS
-        0, 0,   // dscale = 0
-        0, 1,   // group[0] = 1
-        0x09, 0x29 // group[1] = 2345
+      0, 2, // ndigits = 2
+      0, 1, // weight = 1
+      0, 0, // sign = NUMERIC_POS
+      0, 0, // dscale = 0
+      0, 1, // group[0] = 1
+      0x09, 0x29 // group[1] = 2345
     };
     assertEquals(new BigDecimal("12345"), codec.decodeNumeric(data));
   }
@@ -280,11 +270,11 @@ class PgBinaryCodecTest {
   void decodeNumericNegative() {
     // -42 in base-10000: ndigits=1, weight=0, sign=NEG, dscale=0
     byte[] data = {
-        0, 1,   // ndigits = 1
-        0, 0,   // weight = 0
-        0x40, 0x00, // sign = NUMERIC_NEG
-        0, 0,   // dscale = 0
-        0, 42   // group[0] = 42
+      0, 1, // ndigits = 1
+      0, 0, // weight = 0
+      0x40, 0x00, // sign = NUMERIC_NEG
+      0, 0, // dscale = 0
+      0, 42 // group[0] = 42
     };
     assertEquals(new BigDecimal("-42"), codec.decodeNumeric(data));
   }
@@ -294,12 +284,12 @@ class PgBinaryCodecTest {
     // 1.23 in base-10000: ndigits=2, weight=0, sign=POS, dscale=2
     // groups: [1, 2300]
     byte[] data = {
-        0, 2,   // ndigits = 2
-        0, 0,   // weight = 0
-        0, 0,   // sign = NUMERIC_POS
-        0, 2,   // dscale = 2
-        0, 1,   // group[0] = 1
-        0x08, (byte) 0xFC // group[1] = 2300
+      0, 2, // ndigits = 2
+      0, 0, // weight = 0
+      0, 0, // sign = NUMERIC_POS
+      0, 2, // dscale = 2
+      0, 1, // group[0] = 1
+      0x08, (byte) 0xFC // group[1] = 2300
     };
     assertEquals(new BigDecimal("1.23"), codec.decodeNumeric(data));
   }
@@ -307,10 +297,14 @@ class PgBinaryCodecTest {
   @Test
   void decodeNumericNaN() {
     byte[] data = {
-        0, 0,   // ndigits = 0
-        0, 0,   // weight = 0
-        (byte) 0xC0, 0x00, // sign = NUMERIC_NAN
-        0, 0    // dscale = 0
+      0,
+      0, // ndigits = 0
+      0,
+      0, // weight = 0
+      (byte) 0xC0,
+      0x00, // sign = NUMERIC_NAN
+      0,
+      0 // dscale = 0
     };
     assertThrows(ArithmeticException.class, () -> codec.decodeNumeric(data));
   }

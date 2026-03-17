@@ -22,14 +22,14 @@ class PgDecoderTest {
   void decodeAuthenticationMD5Password() throws IOException {
     var buf = new ByteBuffer(32);
     buf.writeByte('R'); // Authentication
-    buf.writeInt(12);   // length: 4 (len) + 4 (type) + 4 (salt)
+    buf.writeInt(12); // length: 4 (len) + 4 (type) + 4 (salt)
     buf.writeInt(PgProtocolConstants.AUTH_MD5_PASSWORD);
-    buf.writeBytes(new byte[]{1, 2, 3, 4}); // salt
+    buf.writeBytes(new byte[] {1, 2, 3, 4}); // salt
 
     var msg = decode(buf.toByteArray());
     assertInstanceOf(BackendMessage.AuthenticationMD5Password.class, msg);
     var md5 = (BackendMessage.AuthenticationMD5Password) msg;
-    assertArrayEquals(new byte[]{1, 2, 3, 4}, md5.salt());
+    assertArrayEquals(new byte[] {1, 2, 3, 4}, md5.salt());
   }
 
   @Test
@@ -120,17 +120,17 @@ class PgDecoderTest {
     // Column 1: "id"
     buf.writeCString("id");
     buf.writeInt(16384); // tableOID
-    buf.writeShort(1);   // column attribute number
-    buf.writeInt(23);    // typeOID (int4)
-    buf.writeShort(4);   // type size
-    buf.writeInt(-1);    // type modifier
-    buf.writeShort(0);   // text format
+    buf.writeShort(1); // column attribute number
+    buf.writeInt(23); // typeOID (int4)
+    buf.writeShort(4); // type size
+    buf.writeInt(-1); // type modifier
+    buf.writeShort(0); // text format
 
     // Column 2: "name"
     buf.writeCString("name");
     buf.writeInt(16384);
     buf.writeShort(2);
-    buf.writeInt(25);    // typeOID (text)
+    buf.writeInt(25); // typeOID (text)
     buf.writeShort(-1);
     buf.writeInt(-1);
     buf.writeShort(0);
@@ -312,14 +312,14 @@ class PgDecoderTest {
     int pos = buf.writerIndex();
     buf.writeInt(0);
     buf.writeShort(2); // 2 params
-    buf.writeInt(23);  // int4
-    buf.writeInt(25);  // text
+    buf.writeInt(23); // int4
+    buf.writeInt(25); // text
     buf.setInt(pos, buf.writerIndex() - pos);
 
     var msg = decode(buf.toByteArray());
     assertInstanceOf(BackendMessage.ParameterDescription.class, msg);
     var pd = (BackendMessage.ParameterDescription) msg;
-    assertArrayEquals(new int[]{23, 25}, pd.typeOIDs());
+    assertArrayEquals(new int[] {23, 25}, pd.typeOIDs());
   }
 
   @Test

@@ -1,14 +1,11 @@
 package io.djb.pg.data;
 
-
 import org.jspecify.annotations.NonNull;
 
-/**
- * A Postgres circle: &lt;(x,y),r&gt;.
- */
-public record Circle(Point centerPoint, double radius) {
+/** A Postgres circle: &lt;(x,y),r&gt;. */
+public record Circle(@NonNull Point centerPoint, double radius) {
 
-  public static Circle parse(String s) {
+  public static @NonNull Circle parse(@NonNull String s) {
     s = s.trim();
     if (s.startsWith("<") && s.endsWith(">")) {
       s = s.substring(1, s.length() - 1);

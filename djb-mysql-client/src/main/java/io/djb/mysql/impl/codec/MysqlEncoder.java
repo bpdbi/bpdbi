@@ -18,6 +18,8 @@ import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Encodes MySQL frontend (client → server) protocol messages. MySQL packets: [3-byte length LE]
@@ -110,14 +112,15 @@ public final class MysqlEncoder {
 
   // --- Protocol messages ---
 
-  /**
-   * Write handshake response (authentication) packet.
-   */
+  /** Write handshake response (authentication) packet. */
   public void writeHandshakeResponse(
-      int clientFlags, String username, byte[] authResponse,
-      String database, String authPluginName,
-      int collationId, Map<String, String> connectionAttributes
-  ) {
+      int clientFlags,
+      @NonNull String username,
+      byte @Nullable [] authResponse,
+      @Nullable String database,
+      @Nullable String authPluginName,
+      int collationId,
+      @Nullable Map<String, String> connectionAttributes) {
     int start = buf.writerIndex();
     beginPacket();
 
@@ -166,10 +169,8 @@ public final class MysqlEncoder {
     finishPacket(start);
   }
 
-  /**
-   * Write a COM_QUERY packet (simple text query).
-   */
-  public void writeComQuery(String sql, Charset charset) {
+  /** Write a COM_QUERY packet (simple text query). */
+  public void writeComQuery(@NonNull String sql, @NonNull Charset charset) {
     int start = buf.writerIndex();
     beginPacket();
     buf.writeByte(COM_QUERY);
@@ -178,10 +179,8 @@ public final class MysqlEncoder {
     finishPacket(start);
   }
 
-  /**
-   * Write a COM_STMT_PREPARE packet.
-   */
-  public void writeComStmtPrepare(String sql, Charset charset) {
+  /** Write a COM_STMT_PREPARE packet. */
+  public void writeComStmtPrepare(@NonNull String sql, @NonNull Charset charset) {
     int start = buf.writerIndex();
     beginPacket();
     buf.writeByte(COM_STMT_PREPARE);
@@ -194,7 +193,8 @@ public final class MysqlEncoder {
    * Write a COM_STMT_EXECUTE packet with binary-encoded parameters. Uses the MySQL binary protocol
    * (COM_STMT_EXECUTE, 0x17).
    */
-  public void writeComStmtExecute(int statementId, byte[] paramTypes, byte[][] paramValues) {
+  public void writeComStmtExecute(
+      int statementId, byte @Nullable [] paramTypes, byte @Nullable [][] paramValues) {
     int start = buf.writerIndex();
     beginPacket();
     buf.writeByte(COM_STMT_EXECUTE);
@@ -232,9 +232,7 @@ public final class MysqlEncoder {
     finishPacket(start);
   }
 
-  /**
-   * Write a COM_STMT_CLOSE packet. Fire-and-forget (no response).
-   */
+  /** Write a COM_STMT_CLOSE packet. Fire-and-forget (no response). */
   public void writeComStmtClose(int statementId) {
     int start = buf.writerIndex();
     beginPacket();
@@ -243,9 +241,7 @@ public final class MysqlEncoder {
     finishPacket(start);
   }
 
-  /**
-   * Write a COM_PING packet.
-   */
+  /** Write a COM_PING packet. */
   public void writeComPing() {
     int start = buf.writerIndex();
     beginPacket();
@@ -253,9 +249,7 @@ public final class MysqlEncoder {
     finishPacket(start);
   }
 
-  /**
-   * Write a COM_QUIT packet.
-   */
+  /** Write a COM_QUIT packet. */
   public void writeComQuit() {
     int start = buf.writerIndex();
     beginPacket();
@@ -263,20 +257,16 @@ public final class MysqlEncoder {
     finishPacket(start);
   }
 
-  /**
-   * Write an auth response (during auth switch or auth more data).
-   */
-  public void writeAuthResponse(byte[] authData) {
+  /** Write an auth response (during auth switch or auth more data). */
+  public void writeAuthResponse(byte @NonNull [] authData) {
     int start = buf.writerIndex();
     beginPacket();
     buf.writeBytes(authData);
     finishPacket(start);
   }
 
-  /**
-   * Flush all accumulated packets to the output stream as a single write.
-   */
-  public void flush(OutputStream out) throws IOException {
+  /** Flush all accumulated packets to the output stream as a single write. */
+  public void flush(@NonNull OutputStream out) throws IOException {
     if (buf.writerIndex() > 0) {
       out.write(buf.array(), 0, buf.writerIndex());
       out.flush();

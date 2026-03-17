@@ -2,6 +2,7 @@ package io.djb.mysql.impl.auth;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import org.jspecify.annotations.NonNull;
 
 /**
  * MySQL native authentication (mysql_native_password). SHA1(password) XOR SHA1(nonce +
@@ -9,10 +10,9 @@ import java.security.NoSuchAlgorithmException;
  */
 public final class Native41Authenticator {
 
-  private Native41Authenticator() {
-  }
+  private Native41Authenticator() {}
 
-  public static byte[] encode(byte[] password, byte[] nonce) {
+  public static byte @NonNull [] encode(byte @NonNull [] password, byte @NonNull [] nonce) {
     MessageDigest md;
     try {
       md = MessageDigest.getInstance("SHA-1");

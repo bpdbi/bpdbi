@@ -54,7 +54,7 @@ class BinderRegistryTest {
 
   @Test
   void defaultBindByteArray() {
-    var result = BinderRegistry.defaults().bind(new byte[]{(byte) 0xCA, (byte) 0xFE});
+    var result = BinderRegistry.defaults().bind(new byte[] {(byte) 0xCA, (byte) 0xFE});
     assertEquals("\\xcafe", result);
   }
 
@@ -65,9 +65,8 @@ class BinderRegistryTest {
 
   @Test
   void customBinder() {
-    record Money(BigDecimal amount, String currency) {
+    record Money(BigDecimal amount, String currency) {}
 
-    }
     var reg = BinderRegistry.defaults();
     reg.register(Money.class, m -> m.amount().toPlainString());
     assertEquals("9.99", reg.bind(new Money(new BigDecimal("9.99"), "USD")));
@@ -87,8 +86,7 @@ class BinderRegistryTest {
 
   @Test
   void registerAsJsonAddsToJsonTypes() {
-    record OrderMeta(String note) {
-    }
+    record OrderMeta(String note) {}
     var reg = BinderRegistry.defaults();
     assertFalse(reg.isJsonType(OrderMeta.class));
     assertTrue(reg.jsonTypes().isEmpty());

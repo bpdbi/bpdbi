@@ -4,8 +4,8 @@ import io.djb.pg.PgConnection;
 
 /**
  * Demonstrates pipelining: multiple statements sent in a single network roundtrip.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgPipeliningExample
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgPipeliningExample
  */
 public class PgPipeliningExample {
 
@@ -25,10 +25,12 @@ public class PgPipeliningExample {
       // --- Transaction with RETURNING (5 statements, 1 roundtrip) ---
       System.out.println("\n=== Pipelined Transaction with RETURNING ===");
       conn.enqueue("BEGIN");
-      int i1 = conn.enqueue(
-          "INSERT INTO orders (product, qty) VALUES ('Gadget', 5) RETURNING id, product");
-      int i2 = conn.enqueue(
-          "INSERT INTO orders (product, qty) VALUES ('Doohickey', 3) RETURNING id, product");
+      int i1 =
+          conn.enqueue(
+              "INSERT INTO orders (product, qty) VALUES ('Gadget', 5) RETURNING id, product");
+      int i2 =
+          conn.enqueue(
+              "INSERT INTO orders (product, qty) VALUES ('Doohickey', 3) RETURNING id, product");
       conn.enqueue("COMMIT");
       var results = conn.flush();
 
@@ -41,10 +43,7 @@ public class PgPipeliningExample {
       System.out.println("\n=== Batch Insert (102 statements, 1 roundtrip) ===");
       conn.enqueue("BEGIN");
       for (int i = 0; i < 100; i++) {
-        conn.enqueue(
-            "INSERT INTO orders (product, qty) VALUES ($1, $2)",
-            "Product-" + i, i + 1
-        );
+        conn.enqueue("INSERT INTO orders (product, qty) VALUES ($1, $2)", "Product-" + i, i + 1);
       }
       conn.enqueue("COMMIT");
       conn.flush();
@@ -55,7 +54,7 @@ public class PgPipeliningExample {
       // --- Error isolation in pipeline ---
       System.out.println("\n=== Error Isolation ===");
       conn.enqueue("SELECT 'before error'");
-      conn.enqueue("SELECT * FROM nonexistent_table");  // will fail
+      conn.enqueue("SELECT * FROM nonexistent_table"); // will fail
       conn.enqueue("SELECT 'after error'");
       var errorResults = conn.flush();
 

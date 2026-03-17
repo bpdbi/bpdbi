@@ -1,10 +1,12 @@
 package io.djb.pool;
 
+import org.jspecify.annotations.NonNull;
 
 /**
  * Configuration for a {@link ConnectionPool} with fluent builder API.
  *
  * <p>All settings have sensible defaults suitable for small-to-medium deployments:
+ *
  * <pre>{@code
  * var config = new PoolConfig()
  *     .maxSize(20)
@@ -26,17 +28,14 @@ public final class PoolConfig {
   private boolean validateOnBorrow = false;
   private long leakDetectionThresholdMillis = 0; // 0 = disabled
 
-  public PoolConfig() {
-  }
+  public PoolConfig() {}
 
-  /**
-   * Maximum number of connections in the pool. Default: 10.
-   */
+  /** Maximum number of connections in the pool. Default: 10. */
   public int maxSize() {
     return maxSize;
   }
 
-  public PoolConfig maxSize(int maxSize) {
+  public @NonNull PoolConfig maxSize(int maxSize) {
     if (maxSize < 1) {
       throw new IllegalArgumentException("maxSize must be >= 1");
     }
@@ -52,7 +51,7 @@ public final class PoolConfig {
     return maxWaitQueueSize;
   }
 
-  public PoolConfig maxWaitQueueSize(int maxWaitQueueSize) {
+  public @NonNull PoolConfig maxWaitQueueSize(int maxWaitQueueSize) {
     if (maxWaitQueueSize < -1) {
       throw new IllegalArgumentException("maxWaitQueueSize must be >= -1");
     }
@@ -60,14 +59,12 @@ public final class PoolConfig {
     return this;
   }
 
-  /**
-   * Max time a connection can sit idle before being evicted. 0 = disabled. Default: 10 minutes.
-   */
+  /** Max time a connection can sit idle before being evicted. 0 = disabled. Default: 10 minutes. */
   public long maxIdleTimeMillis() {
     return maxIdleTimeMillis;
   }
 
-  public PoolConfig maxIdleTimeMillis(long millis) {
+  public @NonNull PoolConfig maxIdleTimeMillis(long millis) {
     if (millis < 0) {
       throw new IllegalArgumentException("maxIdleTimeMillis must be >= 0");
     }
@@ -83,7 +80,7 @@ public final class PoolConfig {
     return maxLifetimeMillis;
   }
 
-  public PoolConfig maxLifetimeMillis(long millis) {
+  public @NonNull PoolConfig maxLifetimeMillis(long millis) {
     if (millis < 0) {
       throw new IllegalArgumentException("maxLifetimeMillis must be >= 0");
     }
@@ -91,14 +88,12 @@ public final class PoolConfig {
     return this;
   }
 
-  /**
-   * Max time to wait for a connection from the pool. Default: 30 seconds.
-   */
+  /** Max time to wait for a connection from the pool. Default: 30 seconds. */
   public long connectionTimeoutMillis() {
     return connectionTimeoutMillis;
   }
 
-  public PoolConfig connectionTimeoutMillis(long millis) {
+  public @NonNull PoolConfig connectionTimeoutMillis(long millis) {
     if (millis < 0) {
       throw new IllegalArgumentException("connectionTimeoutMillis must be >= 0");
     }
@@ -108,15 +103,15 @@ public final class PoolConfig {
 
   /**
    * How often the background pool cleaner runs to evict idle/expired connections, in milliseconds.
-   * Only active when {@link #maxIdleTimeMillis()} > 0 or {@link #maxLifetimeMillis()} > 0.
-   * {@code <= 0} disables background eviction (connections are still checked on acquire). Default:
-   * 1000 (1 second).
+   * Only active when {@link #maxIdleTimeMillis()} > 0 or {@link #maxLifetimeMillis()} > 0. {@code
+   * <= 0} disables background eviction (connections are still checked on acquire). Default: 1000 (1
+   * second).
    */
   public long poolCleanerPeriodMillis() {
     return poolCleanerPeriodMillis;
   }
 
-  public PoolConfig poolCleanerPeriodMillis(long millis) {
+  public @NonNull PoolConfig poolCleanerPeriodMillis(long millis) {
     this.poolCleanerPeriodMillis = millis;
     return this;
   }
@@ -131,21 +126,21 @@ public final class PoolConfig {
     return validateOnBorrow;
   }
 
-  public PoolConfig validateOnBorrow(boolean validateOnBorrow) {
+  public @NonNull PoolConfig validateOnBorrow(boolean validateOnBorrow) {
     this.validateOnBorrow = validateOnBorrow;
     return this;
   }
 
   /**
    * Time in milliseconds after which a connection held without being returned triggers a leak
-   * warning in the logs. 0 = disabled. Default: 0 (disabled). Requires
-   * {@link #poolCleanerPeriodMillis()} &gt; 0 to be effective.
+   * warning in the logs. 0 = disabled. Default: 0 (disabled). Requires {@link
+   * #poolCleanerPeriodMillis()} &gt; 0 to be effective.
    */
   public long leakDetectionThresholdMillis() {
     return leakDetectionThresholdMillis;
   }
 
-  public PoolConfig leakDetectionThresholdMillis(long millis) {
+  public @NonNull PoolConfig leakDetectionThresholdMillis(long millis) {
     if (millis < 0) {
       throw new IllegalArgumentException("leakDetectionThresholdMillis must be >= 0");
     }

@@ -4,8 +4,8 @@ import io.djb.pg.PgConnection;
 
 /**
  * Basic Postgres usage: connect, create a table, insert, query.
- * <p>
- * Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgBasicExample Requires: Postgres
+ *
+ * <p>Run: ./gradlew :examples:run -PmainClass=io.djb.examples.PgBasicExample Requires: Postgres
  * running on localhost:5432 with database "postgres"
  */
 public class PgBasicExample {
@@ -21,10 +21,7 @@ public class PgBasicExample {
       conn.query("INSERT INTO users (name, email) VALUES ($1, $2)", "Alice", "alice@example.com");
       conn.query("INSERT INTO users (name, email) VALUES ($1, $2)", "Bob", "bob@example.com");
       conn.query(
-          "INSERT INTO users (name, email) VALUES ($1, $2)",
-          "Charlie",
-          "charlie@example.com"
-      );
+          "INSERT INTO users (name, email) VALUES ($1, $2)", "Charlie", "charlie@example.com");
 
       // Query all rows
       var rs = conn.query("SELECT id, name, email FROM users ORDER BY id");
@@ -32,8 +29,7 @@ public class PgBasicExample {
       for (var row : rs) {
         System.out.printf(
             "  id=%d name=%s email=%s%n",
-            row.getInteger("id"), row.getString("name"), row.getString("email")
-        );
+            row.getInteger("id"), row.getString("name"), row.getString("email"));
       }
 
       // Query with parameter
@@ -41,11 +37,8 @@ public class PgBasicExample {
       System.out.println("\nFound Bob: " + rs2.first().getString("email"));
 
       // Update
-      var updated = conn.query(
-          "UPDATE users SET email = $1 WHERE name = $2",
-          "bob@newdomain.com",
-          "Bob"
-      );
+      var updated =
+          conn.query("UPDATE users SET email = $1 WHERE name = $2", "bob@newdomain.com", "Bob");
       System.out.println("Updated " + updated.rowsAffected() + " row(s)");
 
       // Delete
