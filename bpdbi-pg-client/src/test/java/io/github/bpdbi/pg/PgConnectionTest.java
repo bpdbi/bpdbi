@@ -33,7 +33,6 @@ import io.github.bpdbi.pg.data.Polygon;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -44,19 +43,13 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 class PgConnectionTest extends AbstractConnectionTest {
 
-  static PostgreSQLContainer<?> pg;
+  @SuppressWarnings("resource") // withReuse keeps container alive across test runs
+  static PostgreSQLContainer<?> pg =
+      new PostgreSQLContainer<>("postgres:16-alpine").withReuse(true);
 
   @BeforeAll
   static void startContainer() {
-    pg = new PostgreSQLContainer<>("postgres:16-alpine");
     pg.start();
-  }
-
-  @AfterAll
-  static void stopContainer() {
-    if (pg != null) {
-      pg.stop();
-    }
   }
 
   @Override

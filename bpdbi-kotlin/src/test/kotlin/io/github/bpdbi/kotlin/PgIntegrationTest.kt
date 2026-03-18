@@ -2,7 +2,6 @@ package io.github.bpdbi.kotlin
 
 import io.github.bpdbi.pg.PgConnection
 import kotlinx.serialization.Serializable
-import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -12,19 +11,13 @@ import org.testcontainers.containers.PostgreSQLContainer
 class PgIntegrationTest {
 
     companion object {
-        lateinit var pg: PostgreSQLContainer<*>
+        @Suppress("resource") // withReuse keeps container alive across test runs
+        val pg: PostgreSQLContainer<*> = PostgreSQLContainer("postgres:16-alpine").withReuse(true)
 
         @BeforeAll
         @JvmStatic
         fun startContainer() {
-            pg = PostgreSQLContainer("postgres:16-alpine")
             pg.start()
-        }
-
-        @AfterAll
-        @JvmStatic
-        fun stopContainer() {
-            pg.stop()
         }
     }
 

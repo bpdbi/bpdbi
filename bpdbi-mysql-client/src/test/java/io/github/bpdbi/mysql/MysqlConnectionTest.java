@@ -18,26 +18,18 @@ import io.github.bpdbi.core.test.AbstractConnectionTest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.MySQLContainer;
 
 class MysqlConnectionTest extends AbstractConnectionTest {
 
-  static MySQLContainer<?> mysql;
+  @SuppressWarnings("resource") // withReuse keeps container alive across test runs
+  static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0").withReuse(true);
 
   @BeforeAll
   static void startContainer() {
-    mysql = new MySQLContainer<>("mysql:8.0");
     mysql.start();
-  }
-
-  @AfterAll
-  static void stopContainer() {
-    if (mysql != null) {
-      mysql.stop();
-    }
   }
 
   @Override
