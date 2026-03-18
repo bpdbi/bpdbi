@@ -18,6 +18,25 @@
 ./gradlew :bpdbi-pg-client:test --tests "io.github.bpdbi.pg.PgConnectionTest"
 ```
 
+## Benchmarks
+
+```bash
+# Run all benchmarks with 1ms latency per direction (2ms round-trip via Toxiproxy)
+./gradlew :benchmark:jmh -PbenchLatencyMs=1
+
+# Run a specific benchmark scenario
+./gradlew :benchmark:jmh -PbenchLatencyMs=1 -PjmhIncludes="SingleRowLookup"
+
+# Run only Vert.x benchmarks
+./gradlew :benchmark:jmh -PbenchLatencyMs=1 -PjmhIncludes="vertx"
+
+# Run without latency simulation (direct connection)
+./gradlew :benchmark:jmh
+
+# Tune iterations (defaults: fork=1, warmup=3, measurement=5)
+./gradlew :benchmark:jmh -PbenchLatencyMs=1 -PjmhFork=1 -PjmhWarmupIterations=2 -PjmhIterations=3
+```
+
 ## Project Structure
 
 - `bpdbi-core/` — Database-agnostic API: Connection, Row, RowSet, pipelining, type registries

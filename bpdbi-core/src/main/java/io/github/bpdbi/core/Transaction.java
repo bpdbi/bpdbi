@@ -108,7 +108,7 @@ public final class Transaction implements Connection {
   @Override
   public @NonNull Transaction begin() {
     checkNotFinished();
-    String sp = "_djb_sp_" + savepointCounter.getAndIncrement();
+    String sp = "_bpdbi_sp_" + savepointCounter.getAndIncrement();
     return new Transaction(conn, sp, savepointCounter);
   }
 

@@ -9,5 +9,6 @@ include(
     "bpdbi-record-mapper",
     "bpdbi-javabean-mapper",
     "bpdbi-pool",
-    "examples"
+    "examples",
+    "benchmark"
 )

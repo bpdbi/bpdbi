@@ -399,6 +399,185 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
+  // ===== Pipelined batch execution =====
+
+  @Test
+  void pipelinedBatchInserts() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE pipe_batch (id int, val text)");
+
+      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 1, "a");
+      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 2, "b");
+      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 3, "c");
+      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 4, "d");
+      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 5, "e");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(5, results.size());
+      for (var rs : results) {
+        assertNull(rs.getError());
+        assertEquals(1, rs.rowsAffected());
+      }
+
+      var count = conn.query("SELECT count(*) FROM pipe_batch").first().getLong(0);
+      assertEquals(5L, count);
+    }
+  }
+
+  @Test
+  void pipelinedBatchSelects() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE pipe_sel (id int, val text)");
+      conn.query("INSERT INTO pipe_sel VALUES (1, 'one'), (2, 'two'), (3, 'three')");
+
+      conn.enqueue("SELECT val FROM pipe_sel WHERE id = $1", 1);
+      conn.enqueue("SELECT val FROM pipe_sel WHERE id = $1", 2);
+      conn.enqueue("SELECT val FROM pipe_sel WHERE id = $1", 3);
+      List<RowSet> results = conn.flush();
+
+      assertEquals(3, results.size());
+      assertEquals("one", results.get(0).first().getString(0));
+      assertEquals("two", results.get(1).first().getString(0));
+      assertEquals("three", results.get(2).first().getString(0));
+    }
+  }
+
+  @Test
+  void pipelinedBatchMixedSql() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE pipe_mix (id int, val text)");
+
+      conn.enqueue("INSERT INTO pipe_mix VALUES ($1, $2)", 1, "a");
+      conn.enqueue("SELECT $1::text", "hello");
+      conn.enqueue("INSERT INTO pipe_mix VALUES ($1, $2)", 2, "b");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(3, results.size());
+      assertNull(results.get(0).getError());
+      assertEquals("hello", results.get(1).first().getString(0));
+      assertNull(results.get(2).getError());
+    }
+  }
+
+  @Test
+  void pipelinedBatchErrorMidPipeline() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE pipe_err (id int PRIMARY KEY, val text)");
+      conn.query("INSERT INTO pipe_err VALUES (1, 'existing')");
+
+      conn.enqueue("INSERT INTO pipe_err VALUES ($1, $2)", 10, "ok");
+      conn.enqueue("INSERT INTO pipe_err VALUES ($1, $2)", 1, "duplicate"); // PK violation
+      conn.enqueue("INSERT INTO pipe_err VALUES ($1, $2)", 20, "skipped");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(3, results.size());
+      // First insert succeeded
+      assertNull(results.get(0).getError());
+      assertEquals(1, results.get(0).rowsAffected());
+      // Second insert failed (duplicate key)
+      assertNotNull(results.get(1).getError());
+      // Third was skipped by the server
+      assertNotNull(results.get(2).getError());
+
+      // Connection should still be usable after pipeline error
+      var rs = conn.query("SELECT 'recovered'");
+      assertEquals("recovered", rs.first().getString(0));
+    }
+  }
+
+  @Test
+  void pipelinedBatchSingleStatement() {
+    try (var conn = connect()) {
+      // Single parameterized statement should still work (falls back to sequential)
+      conn.enqueue("SELECT $1::int", 42);
+      List<RowSet> results = conn.flush();
+
+      assertEquals(1, results.size());
+      assertEquals(42, results.get(0).first().getInteger(0));
+    }
+  }
+
+  @Test
+  void pipelinedBatchWithParameterlessFallback() {
+    try (var conn = connect()) {
+      // Mix of parameterless and parameterized should fall back to sequential
+      conn.enqueue("SELECT 1");
+      conn.enqueue("SELECT $1::int", 2);
+      conn.enqueue("SELECT 3");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(3, results.size());
+      assertEquals(1, results.get(0).first().getInteger(0));
+      assertEquals(2, results.get(1).first().getInteger(0));
+      assertEquals(3, results.get(2).first().getInteger(0));
+    }
+  }
+
+  @Test
+  void executeManyPipelined() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE exec_many_pipe (id int, name text)");
+
+      List<Object[]> paramSets = new ArrayList<>();
+      for (int i = 1; i <= 50; i++) {
+        paramSets.add(new Object[] {i, "name" + i});
+      }
+      var results =
+          conn.executeMany("INSERT INTO exec_many_pipe (id, name) VALUES ($1, $2)", paramSets);
+
+      assertEquals(50, results.size());
+      for (var rs : results) {
+        assertNull(rs.getError());
+        assertEquals(1, rs.rowsAffected());
+      }
+
+      var count = conn.query("SELECT count(*) FROM exec_many_pipe").first().getLong(0);
+      assertEquals(50L, count);
+    }
+  }
+
+  @Test
+  void executeManyInTransaction() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE exec_many_tx (id int, val text)");
+
+      try (var tx = conn.begin()) {
+        var results =
+            conn.executeMany(
+                "INSERT INTO exec_many_tx (id, val) VALUES ($1, $2)",
+                List.of(new Object[] {1, "a"}, new Object[] {2, "b"}, new Object[] {3, "c"}));
+        assertEquals(3, results.size());
+        for (var rs : results) {
+          assertNull(rs.getError());
+        }
+        tx.commit();
+      }
+
+      var count = conn.query("SELECT count(*) FROM exec_many_tx").first().getLong(0);
+      assertEquals(3L, count);
+    }
+  }
+
+  @Test
+  void pipelinedBatchWithReturning() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE pipe_ret2 (id serial, name text)");
+
+      conn.enqueue("INSERT INTO pipe_ret2 (name) VALUES ($1) RETURNING id", "Alice");
+      conn.enqueue("INSERT INTO pipe_ret2 (name) VALUES ($1) RETURNING id", "Bob");
+      conn.enqueue("INSERT INTO pipe_ret2 (name) VALUES ($1) RETURNING id", "Carol");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(3, results.size());
+      long id1 = results.get(0).first().getLong("id");
+      long id2 = results.get(1).first().getLong("id");
+      long id3 = results.get(2).first().getLong("id");
+      assertTrue(id1 > 0);
+      assertTrue(id2 > id1);
+      assertTrue(id3 > id2);
+    }
+  }
+
   // ===== Additional data type tests (ported from vertx TextDataTypeDecodeTestBase + PG codec
   // tests) =====
 
@@ -2015,6 +2194,25 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
+  @Test
+  void cursorParamsUseBinderRegistry() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE cursor_binder (id int, data bytea)");
+      byte[] value = new byte[] {(byte) 0xCA, (byte) 0xFE};
+      conn.query("INSERT INTO cursor_binder VALUES ($1, $2)", 1, value);
+
+      conn.query("BEGIN");
+      // Cursor with a byte[] param should use BinderRegistry (hex-encoding),
+      // not raw toString() which produces "[B@..." garbage
+      try (var cursor = conn.cursor("SELECT id, data FROM cursor_binder WHERE data = $1", value)) {
+        var batch = cursor.read(10);
+        assertEquals(1, batch.size());
+        assertEquals(1, batch.first().getInteger(0));
+      }
+      conn.query("COMMIT");
+    }
+  }
+
   // ===== Additional pipeline error handling tests =====
 
   @Test
@@ -2594,5 +2792,263 @@ class PgConnectionTest extends AbstractConnectionTest {
       // Connection usable after
       assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
     }
+  }
+
+  // ===== Cursor: large result set with progressive reading =====
+
+  @Test
+  void cursorLargeResultProgressiveRead() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE cursor_large AS SELECT generate_series(1, 10000) AS n");
+
+      conn.query("BEGIN");
+      try (var cursor = conn.cursor("SELECT n FROM cursor_large ORDER BY n")) {
+        long sum = 0;
+        int totalRows = 0;
+        while (cursor.hasMore()) {
+          var batch = cursor.read(500);
+          for (var row : batch) {
+            sum += row.getInteger(0);
+            totalRows++;
+          }
+        }
+        assertEquals(10000, totalRows);
+        assertEquals(50005000L, sum); // n*(n+1)/2
+      }
+      conn.query("COMMIT");
+    }
+  }
+
+  @Test
+  void cursorReadExactBatchBoundary() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE cursor_exact AS SELECT generate_series(1, 100) AS n");
+
+      conn.query("BEGIN");
+      try (var cursor = conn.cursor("SELECT n FROM cursor_exact ORDER BY n")) {
+        // Read exactly the number of rows available
+        var batch = cursor.read(100);
+        assertEquals(100, batch.size());
+
+        // Next read should return empty and hasMore false
+        var batch2 = cursor.read(100);
+        assertEquals(0, batch2.size());
+        assertFalse(cursor.hasMore());
+      }
+      conn.query("COMMIT");
+    }
+  }
+
+  @Test
+  void cursorMultipleCursorsSequentially() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE cursor_multi AS SELECT generate_series(1, 50) AS n");
+
+      conn.query("BEGIN");
+
+      try (var c1 = conn.cursor("SELECT n FROM cursor_multi WHERE n <= $1 ORDER BY n", 25)) {
+        int count = 0;
+        while (c1.hasMore()) {
+          count += c1.read(10).size();
+        }
+        assertEquals(25, count);
+      }
+
+      try (var c2 = conn.cursor("SELECT n FROM cursor_multi WHERE n > $1 ORDER BY n", 25)) {
+        int count = 0;
+        while (c2.hasMore()) {
+          count += c2.read(10).size();
+        }
+        assertEquals(25, count);
+      }
+
+      conn.query("COMMIT");
+    }
+  }
+
+  @Test
+  void cursorConnectionUsableAfterClose() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE cursor_reuse AS SELECT generate_series(1, 100) AS n");
+
+      conn.query("BEGIN");
+      try (var cursor = conn.cursor("SELECT n FROM cursor_reuse ORDER BY n")) {
+        cursor.read(10); // read partial
+        // cursor.close() called implicitly by try-with-resources
+      }
+      conn.query("COMMIT");
+
+      // Connection should be fully usable after cursor close
+      var rs = conn.query("SELECT 42 AS answer");
+      assertEquals(42, rs.first().getInteger("answer"));
+    }
+  }
+
+  // ===== Streaming: comprehensive tests =====
+
+  @Test
+  void streamLargeResultConstantMemory() {
+    try (var conn = connect()) {
+      long sum = 0;
+      int count = 0;
+      try (var rows = conn.stream("SELECT generate_series(1, 10000) AS n")) {
+        for (var row : rows) {
+          sum += row.getLong("n");
+          count++;
+        }
+      }
+      assertEquals(10000, count);
+      assertEquals(50005000L, sum);
+    }
+  }
+
+  @Test
+  void streamWithParamsAndFilter() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE stream_filter (id int, category text)");
+      for (int i = 1; i <= 100; i++) {
+        conn.enqueue("INSERT INTO stream_filter VALUES ($1, $2)", i, i % 2 == 0 ? "even" : "odd");
+      }
+      conn.flush();
+
+      List<Integer> evenIds = new ArrayList<>();
+      try (var rows =
+          conn.stream("SELECT id FROM stream_filter WHERE category = $1 ORDER BY id", "even")) {
+        for (var row : rows) {
+          evenIds.add(row.getInteger("id"));
+        }
+      }
+
+      assertEquals(50, evenIds.size());
+      assertEquals(2, evenIds.getFirst());
+      assertEquals(100, evenIds.getLast());
+    }
+  }
+
+  @Test
+  void streamToJavaStream() {
+    try (var conn = connect()) {
+      try (var rows = conn.stream("SELECT generate_series(1, 100) AS n")) {
+        long sum = rows.stream().mapToLong(r -> r.getLong("n")).sum();
+        assertEquals(5050L, sum);
+      }
+    }
+  }
+
+  @Test
+  void streamCloseBeforeFullConsumption() {
+    try (var conn = connect()) {
+      try (var rows = conn.stream("SELECT generate_series(1, 10000) AS n")) {
+        var iter = rows.iterator();
+        // Only read a few rows
+        for (int i = 0; i < 5; i++) {
+          assertTrue(iter.hasNext());
+          iter.next();
+        }
+        // Close without consuming the rest — should drain properly
+      }
+
+      // Connection must be usable after early stream close
+      var rs = conn.query("SELECT 'after_stream' AS val");
+      assertEquals("after_stream", rs.first().getString("val"));
+    }
+  }
+
+  @Test
+  void queryStreamCallbackCount() {
+    try (var conn = connect()) {
+      int[] count = {0};
+      conn.queryStream(
+          "SELECT generate_series(1, 500) AS n",
+          row -> {
+            assertNotNull(row.getString("n"));
+            count[0]++;
+          });
+      assertEquals(500, count[0]);
+    }
+  }
+
+  @Test
+  void queryStreamWithParamsCallback() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE qs_param (id int, val text)");
+      conn.query("INSERT INTO qs_param VALUES (1, 'x'), (2, 'y'), (3, 'z')");
+
+      List<String> vals = new ArrayList<>();
+      conn.queryStream(
+          "SELECT val FROM qs_param WHERE id >= $1 ORDER BY id",
+          row -> vals.add(row.getString("val")),
+          2);
+
+      assertEquals(2, vals.size());
+      assertEquals("y", vals.get(0));
+      assertEquals("z", vals.get(1));
+    }
+  }
+
+  // ===== SSL/TLS connection tests =====
+
+  @Test
+  void connectWithSslModeDisable() {
+    // Explicit SSL disable should work (default behavior)
+    var config =
+        ConnectionConfig.fromUri(
+            "postgresql://"
+                + pg.getUsername()
+                + ":"
+                + pg.getPassword()
+                + "@"
+                + pg.getHost()
+                + ":"
+                + pg.getMappedPort(5432)
+                + "/"
+                + pg.getDatabaseName()
+                + "?sslmode=disable");
+    try (var conn = PgConnection.connect(config)) {
+      var rs = conn.query("SELECT 1 AS n");
+      assertEquals(1, rs.first().getInteger("n"));
+    }
+  }
+
+  @Test
+  void connectWithSslModePreferFallsBackToPlaintext() {
+    // The default Testcontainers Postgres does not have SSL configured,
+    // so sslmode=prefer should fall back to plaintext
+    var config =
+        ConnectionConfig.fromUri(
+            "postgresql://"
+                + pg.getUsername()
+                + ":"
+                + pg.getPassword()
+                + "@"
+                + pg.getHost()
+                + ":"
+                + pg.getMappedPort(5432)
+                + "/"
+                + pg.getDatabaseName()
+                + "?sslmode=prefer");
+    try (var conn = PgConnection.connect(config)) {
+      var rs = conn.query("SELECT 1 AS n");
+      assertEquals(1, rs.first().getInteger("n"));
+    }
+  }
+
+  @Test
+  void connectWithSslModeRequireFailsWhenServerHasNoSsl() {
+    // Testcontainers Postgres without SSL should reject sslmode=require
+    var config =
+        ConnectionConfig.fromUri(
+            "postgresql://"
+                + pg.getUsername()
+                + ":"
+                + pg.getPassword()
+                + "@"
+                + pg.getHost()
+                + ":"
+                + pg.getMappedPort(5432)
+                + "/"
+                + pg.getDatabaseName()
+                + "?sslmode=require");
+    assertThrows(DbConnectionException.class, () -> PgConnection.connect(config));
   }
 }

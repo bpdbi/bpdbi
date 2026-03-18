@@ -173,13 +173,25 @@ public abstract class BaseConnection implements Connection {
     List<PendingStatement> toFlush = new ArrayList<>(pending);
     pending.clear();
 
-    List<RowSet> results = new ArrayList<>(toFlush.size());
-    for (PendingStatement stmt : toFlush) {
-      RowSet result = executeExtendedQuery(stmt.sql, stmt.paramValues);
-      attachSqlToError(result, stmt.sql);
-      results.add(result);
+    List<RowSet> results = executePipelinedBatch(toFlush);
+    for (int i = 0; i < results.size(); i++) {
+      attachSqlToError(results.get(i), toFlush.get(i).sql);
     }
 
+    return results;
+  }
+
+  /**
+   * Execute a batch of pending statements. Subclasses may override to implement pipelining (e.g.
+   * sending all messages in a single TCP write with one Sync at the end). The default
+   * implementation executes statements sequentially.
+   */
+  protected @NonNull List<RowSet> executePipelinedBatch(
+      @NonNull List<PendingStatement> statements) {
+    List<RowSet> results = new ArrayList<>(statements.size());
+    for (PendingStatement stmt : statements) {
+      results.add(executeExtendedQuery(stmt.sql, stmt.paramValues));
+    }
     return results;
   }
 
@@ -210,7 +222,7 @@ public abstract class BaseConnection implements Connection {
     return createExtendedQueryRowStream(sql, textParams);
   }
 
-  private String[] encodeParams(Object[] params) {
+  protected String[] encodeParams(Object[] params) {
     String[] textParams = new String[params.length];
     for (int i = 0; i < params.length; i++) {
       if (params[i] != null

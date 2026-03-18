@@ -5,6 +5,7 @@ import io.github.bpdbi.core.ColumnDescriptor;
 import io.github.bpdbi.core.ConnectionConfig;
 import io.github.bpdbi.core.Cursor;
 import io.github.bpdbi.core.DbConnectionException;
+import io.github.bpdbi.core.DbException;
 import io.github.bpdbi.core.PreparedStatement;
 import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowSet;
@@ -354,13 +355,10 @@ public final class PgConnection extends BaseConnection {
 
   @Override
   public @NonNull Cursor cursor(@NonNull String sql, @Nullable Object... params) {
-    String portalName = "_djb_p" + (stmtCounter++);
+    String portalName = "_bpdbi_p" + (stmtCounter++);
     String[] textParams = null;
     if (params != null && params.length > 0) {
-      textParams = new String[params.length];
-      for (int i = 0; i < params.length; i++) {
-        textParams[i] = params[i] == null ? null : params[i].toString();
-      }
+      textParams = encodeParams(params);
     }
     try {
       // Parse unnamed + Bind into named portal + Describe portal + Sync
@@ -822,6 +820,100 @@ public final class PgConnection extends BaseConnection {
       throw new DbConnectionException("I/O error during flush", e);
     }
     return readExtendedQueryResponse();
+  }
+
+  // --- Pipelined batch execution ---
+
+  @Override
+  protected @NonNull List<RowSet> executePipelinedBatch(
+      @NonNull List<PendingStatement> statements) {
+    if (statements.size() <= 1) {
+      return super.executePipelinedBatch(statements);
+    }
+
+    // Fall back to sequential if any statement is parameterless (uses simple protocol)
+    for (PendingStatement stmt : statements) {
+      if (stmt.paramValues().length == 0) {
+        return super.executePipelinedBatch(statements);
+      }
+    }
+
+    // Phase 1: Write all messages in one TCP write
+    String lastParsedSql = null;
+    for (PendingStatement stmt : statements) {
+      if (!stmt.sql().equals(lastParsedSql)) {
+        encoder.writeParse(stmt.sql(), null);
+        lastParsedSql = stmt.sql();
+      }
+      encoder.writeBind(stmt.paramValues());
+      encoder.writeDescribePortal();
+      encoder.writeExecute();
+    }
+    encoder.writeSync();
+    flushToNetwork();
+
+    // Phase 2: Read all responses
+    return readPipelinedResponses(statements.size());
+  }
+
+  private List<RowSet> readPipelinedResponses(int count) {
+    try {
+      List<RowSet> results = new ArrayList<>(count);
+      ColumnDescriptor[] columns = null;
+      ColumnBuffer[] buffers = null;
+      int rowCount = 0;
+      int rowsAffected = 0;
+
+      while (true) {
+        BackendMessage msg = decoder.readMessage();
+        switch (msg) {
+          case BackendMessage.ParseComplete pc -> {}
+          case BackendMessage.BindComplete bc -> {}
+          case BackendMessage.RowDescription rd -> {
+            columns = rd.columns();
+            buffers = newColumnBuffers(columns.length);
+          }
+          case BackendMessage.NoData nd -> {}
+          case BackendMessage.DataRow dr -> {
+            appendToBuffers(buffers, dr.values());
+            rowCount++;
+          }
+          case BackendMessage.CommandComplete cc -> {
+            rowsAffected = cc.rowsAffected();
+            results.add(buildRowSet(columns, buffers, rowCount, rowsAffected));
+            // Reset accumulators for next statement
+            columns = null;
+            buffers = null;
+            rowCount = 0;
+            rowsAffected = 0;
+          }
+          case BackendMessage.EmptyQueryResponse eq -> {
+            results.add(buildRowSet(null, null, 0, 0));
+          }
+          case BackendMessage.ErrorResponse err -> {
+            results.add(new RowSet(PgException.fromErrorResponse(err)));
+            // Server skips remaining messages until Sync; wait for ReadyForQuery
+          }
+          case BackendMessage.NoticeResponse notice -> {}
+          case BackendMessage.NotificationResponse notif ->
+              notifications.add(
+                  new PgNotification(notif.processId(), notif.channel(), notif.payload()));
+          case BackendMessage.ReadyForQuery rq -> {
+            // Fill skipped statements (after an error) with error RowSets
+            while (results.size() < count) {
+              results.add(
+                  new RowSet(
+                      new DbException(
+                          null, null, "Skipped: earlier statement in pipeline failed")));
+            }
+            return results;
+          }
+          default -> {}
+        }
+      }
+    } catch (IOException e) {
+      throw new DbConnectionException("I/O error reading pipelined response", e);
+    }
   }
 
   // --- Simple query protocol (parameterless queries, text format results) ---

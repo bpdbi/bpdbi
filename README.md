@@ -823,6 +823,63 @@ try (var tx = conn.begin()) {
 }
 ```
 
+### High-Throughput Bulk Inserts
+
+For maximum INSERT throughput, construct a multi-row `VALUES` clause yourself. This sends
+all rows in a single statement — one parse, one plan, one WAL entry — which is significantly
+faster than executing N separate INSERTs, even with pipelining:
+
+```java
+// Build a multi-row INSERT for N rows with 3 columns each
+int cols = 3;
+var sql = new StringBuilder("INSERT INTO users (name, age, active) VALUES ");
+var params = new ArrayList<>();
+for (int i = 0; i < rows.size(); i++) {
+    if (i > 0) sql.append(", ");
+    int base = i * cols;
+    sql.append("($").append(base + 1)
+       .append(", $").append(base + 2)
+       .append(", $").append(base + 3).append(")");
+    params.add(rows.get(i).name());
+    params.add(rows.get(i).age());
+    params.add(rows.get(i).active());
+}
+conn.query(sql.toString(), params.toArray());
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+val cols = 3
+val sql = buildString {
+    append("INSERT INTO users (name, age, active) VALUES ")
+    rows.forEachIndexed { i, row ->
+        if (i > 0) append(", ")
+        val base = i * cols
+        append("(\$${base + 1}, \$${base + 2}, \$${base + 3})")
+    }
+}
+val params = rows.flatMap { listOf(it.name, it.age, it.active) }
+conn.query(sql, *params.toTypedArray())
+```
+
+</details>
+
+For very large batches (1000+ rows), split into blocks to stay within Postgres's parameter
+limit of 65535:
+
+```java
+int maxRowsPerBlock = 65535 / cols;
+for (int offset = 0; offset < rows.size(); offset += maxRowsPerBlock) {
+    var block = rows.subList(offset, Math.min(offset + maxRowsPerBlock, rows.size()));
+    // ... build and execute multi-row INSERT for this block
+}
+```
+
+> **Tip**: Use `executeMany()` when you need per-row results (e.g. with `RETURNING`) or
+> per-row error handling. Use multi-row `VALUES` when you want raw insert speed and only
+> need the total rows-affected count.
+
 ### IN-list Expansion
 
 Named parameters support automatic expansion for collections and arrays:

@@ -3,6 +3,8 @@ plugins {
     signing
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
     id("com.diffplug.spotless") version "7.0.4"
+    kotlin("jvm") version "2.1.20" apply false
+    kotlin("plugin.serialization") version "2.1.20" apply false
 }
 
 group = "io.github.bpdbi"
@@ -30,6 +32,7 @@ subprojects {
 
     if (name != "bpdbi-bom") {
         apply(plugin = "java")
+        apply(plugin = "jacoco")
         apply(plugin = "com.diffplug.spotless")
 
         configure<JavaPluginExtension> {
@@ -45,6 +48,13 @@ subprojects {
         configure<com.diffplug.gradle.spotless.SpotlessExtension> {
             java {
                 googleJavaFormat()
+            }
+        }
+
+        tasks.withType<JacocoReport> {
+            reports {
+                xml.required = true
+                html.required = true
             }
         }
     }

@@ -101,8 +101,16 @@ public interface Connection extends AutoCloseable {
 
   /**
    * Flush all enqueued statements in a single network write, then read all responses. Returns one
-   * {@link RowSet} per enqueued statement, in order. If a statement fails, its RowSet wraps the
-   * error and subsequent statements still execute.
+   * {@link RowSet} per enqueued statement, in order.
+   *
+   * <p><b>Error semantics in pipelined mode (Postgres):</b> When the batch contains only
+   * parameterized statements, Postgres executes them in a single pipeline with one Sync at the end.
+   * If statement K fails, the server skips all subsequent statements K+1..N per the Postgres wire
+   * protocol. Their RowSets will contain an error indicating they were skipped due to the earlier
+   * failure. This matches pgjdbc's and Vert.x's pipelining behavior.
+   *
+   * <p>When the batch contains parameterless statements (simple protocol), statements execute
+   * sequentially and errors do not affect subsequent statements.
    *
    * @return a list of RowSet results, one per enqueued statement
    * @throws DbConnectionException if a network/transport error occurs
