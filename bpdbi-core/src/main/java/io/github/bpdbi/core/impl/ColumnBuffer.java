@@ -20,6 +20,7 @@ public final class ColumnBuffer implements ColumnData {
   private int[] lengths; // -1 = NULL
   private int rowCount;
   private int dataPos;
+  private long totalValueBytes; // tracks total non-null bytes appended for average calculation
 
   public ColumnBuffer(int initialRows, int estimatedAvgSize) {
     this.data = new byte[initialRows * estimatedAvgSize];
@@ -45,6 +46,7 @@ public final class ColumnBuffer implements ColumnData {
       lengths[rowCount] = value.length;
       System.arraycopy(value, 0, data, dataPos, value.length);
       dataPos += value.length;
+      totalValueBytes += value.length;
     }
     rowCount++;
   }
@@ -89,6 +91,30 @@ public final class ColumnBuffer implements ColumnData {
 
   public int rowCount() {
     return rowCount;
+  }
+
+  /**
+   * Average byte size of non-null values appended so far. Returns 0 if no non-null values have been
+   * appended. Useful for sizing future ColumnBuffers based on observed data.
+   */
+  public int averageValueSize() {
+    int nonNullCount = 0;
+    for (int i = 0; i < rowCount; i++) {
+      if (lengths[i] != -1) {
+        nonNullCount++;
+      }
+    }
+    return nonNullCount == 0 ? 0 : (int) (totalValueBytes / nonNullCount);
+  }
+
+  /**
+   * Reset this buffer for reuse, retaining the current backing arrays. This avoids reallocating
+   * buffers when reading successive cursor batches of similar size.
+   */
+  public void reset() {
+    rowCount = 0;
+    dataPos = 0;
+    totalValueBytes = 0;
   }
 
   /**

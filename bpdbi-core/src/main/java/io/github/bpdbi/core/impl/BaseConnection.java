@@ -341,9 +341,18 @@ public abstract class BaseConnection implements Connection {
   // --- Shared helpers for result set construction ---
 
   protected static ColumnBuffer[] newColumnBuffers(int columnCount) {
+    return newColumnBuffers(columnCount, 64, 32);
+  }
+
+  /**
+   * Create column buffers with explicit initial sizing. Use when the expected row count and average
+   * value size are known (e.g. from a previous cursor batch).
+   */
+  protected static ColumnBuffer[] newColumnBuffers(
+      int columnCount, int initialRows, int estimatedAvgSize) {
     ColumnBuffer[] buffers = new ColumnBuffer[columnCount];
     for (int i = 0; i < columnCount; i++) {
-      buffers[i] = new ColumnBuffer(64, 32);
+      buffers[i] = new ColumnBuffer(initialRows, estimatedAvgSize);
     }
     return buffers;
   }

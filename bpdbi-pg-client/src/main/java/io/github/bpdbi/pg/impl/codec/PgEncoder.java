@@ -212,6 +212,36 @@ public final class PgEncoder {
   }
 
   /**
+   * Estimate the byte size of an extended query sequence (Parse + Bind + Describe + Execute) for a
+   * single statement. Used to pre-size the buffer before encoding a pipelined batch.
+   *
+   * <p>Overhead per message: type byte (1) + length int (4) = 5 bytes. Parse has statement name
+   * (1 null byte) + SQL + null + param count (2). Bind has portal (1) + statement (1) + format
+   * codes (2) + param count (2) + per-param (4 length + value bytes) + result format (4).
+   * DescribePortal is 7 bytes. Execute is 10 bytes.
+   */
+  public static int estimateExtendedQuerySize(String sql, String[] params) {
+    // Parse: type(1) + len(4) + stmtName(1) + sql_bytes + null(1) + paramCount(2)
+    int estimate = 1 + 4 + 1 + sql.length() + 1 + 2;
+    // Bind: type(1) + len(4) + portal(1) + stmtName(1) + fmtCodes(2) + paramCount(2)
+    //       + per-param(4 + avg 16 bytes) + resultFmt(4)
+    estimate += 1 + 4 + 1 + 1 + 2 + 2 + 4;
+    for (String p : params) {
+      estimate += 4 + (p == null ? 0 : p.length());
+    }
+    // DescribePortal: type(1) + len(4) + 'P'(1) + name(1)
+    estimate += 7;
+    // Execute: type(1) + len(4) + portal(1) + maxRows(4)
+    estimate += 10;
+    return estimate;
+  }
+
+  /** Pre-size the internal buffer to avoid resizing during batch encoding. */
+  public void ensureCapacity(int bytes) {
+    buf.ensureWritable(bytes);
+  }
+
+  /**
    * Flush all accumulated messages to the output stream as a single write, then clear the buffer.
    */
   public void flush(@NonNull OutputStream out) throws IOException {

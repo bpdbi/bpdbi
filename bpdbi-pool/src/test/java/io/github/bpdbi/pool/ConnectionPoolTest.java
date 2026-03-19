@@ -807,4 +807,75 @@ class ConnectionPoolTest {
         "Expected IllegalStateException or PoolTimeoutException but got: "
             + result.get().getClass().getName());
   }
+
+  @Test
+  void afterAcquireHookIsCalled() {
+    var hookCalls = new AtomicInteger();
+    var counter = new AtomicInteger();
+    var config = new PoolConfig().maxSize(2).afterAcquire(conn -> hookCalls.incrementAndGet());
+    var pool = new ConnectionPool(() -> new StubConnection(counter.incrementAndGet()), config);
+
+    var c1 = pool.acquire();
+    assertEquals(1, hookCalls.get());
+    c1.close();
+
+    // Reuse from idle — hook should fire again
+    var c2 = pool.acquire();
+    assertEquals(2, hookCalls.get());
+    c2.close();
+    pool.close();
+  }
+
+  @Test
+  void afterAcquireHookFailureDiscardsConnection() {
+    var counter = new AtomicInteger();
+    var config =
+        new PoolConfig()
+            .maxSize(2)
+            .afterAcquire(
+                conn -> {
+                  throw new RuntimeException("hook failed");
+                });
+    var pool = new ConnectionPool(() -> new StubConnection(counter.incrementAndGet()), config);
+
+    assertThrows(RuntimeException.class, pool::acquire);
+    // Connection was discarded, total count back to 0
+    assertEquals(0, pool.totalCount());
+    pool.close();
+  }
+
+  @Test
+  void beforeRecycleHookIsCalled() {
+    var hookCalls = new AtomicInteger();
+    var counter = new AtomicInteger();
+    var config = new PoolConfig().maxSize(2).beforeRecycle(conn -> hookCalls.incrementAndGet());
+    var pool = new ConnectionPool(() -> new StubConnection(counter.incrementAndGet()), config);
+
+    var c1 = pool.acquire();
+    assertEquals(0, hookCalls.get());
+    c1.close(); // triggers beforeRecycle
+    assertEquals(1, hookCalls.get());
+    assertEquals(1, pool.idleCount());
+    pool.close();
+  }
+
+  @Test
+  void beforeRecycleHookFailureDiscardsConnection() {
+    var counter = new AtomicInteger();
+    var config =
+        new PoolConfig()
+            .maxSize(2)
+            .beforeRecycle(
+                conn -> {
+                  throw new RuntimeException("recycle failed");
+                });
+    var pool = new ConnectionPool(() -> new StubConnection(counter.incrementAndGet()), config);
+
+    var c1 = pool.acquire();
+    assertEquals(1, pool.totalCount());
+    c1.close(); // triggers beforeRecycle, which throws — connection discarded
+    assertEquals(0, pool.totalCount());
+    assertEquals(0, pool.idleCount());
+    pool.close();
+  }
 }

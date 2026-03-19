@@ -2325,6 +2325,70 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
+  @Test
+  void searchPathChangeInvalidatesPreparedStatementCache() {
+    try (var conn =
+        PgConnection.connect(
+            new ConnectionConfig(
+                    pg.getHost(),
+                    pg.getMappedPort(5432),
+                    pg.getDatabaseName(),
+                    pg.getUsername(),
+                    pg.getPassword())
+                .cachePreparedStatements(true))) {
+      // Cache a prepared statement
+      conn.query("SELECT $1::int AS n", 42);
+
+      int epochBefore = conn.deallocateEpoch();
+
+      // Change search_path — detected by SQL text inspection (Postgres does not send
+      // ParameterStatus for search_path, so we detect SET search_path in the SQL)
+      conn.query("SET search_path TO pg_catalog");
+
+      int epochAfter = conn.deallocateEpoch();
+      assertTrue(
+          epochAfter > epochBefore,
+          "search_path change should increment deallocate epoch (was "
+              + epochBefore
+              + ", now "
+              + epochAfter
+              + ")");
+
+      // Queries still work after cache invalidation (statement re-prepared)
+      var rs = conn.query("SELECT $1::int AS n", 99);
+      assertEquals(99, rs.first().getInteger("n"));
+    }
+  }
+
+  @Test
+  void deallocateAllInvalidatesPreparedStatementCache() {
+    try (var conn =
+        PgConnection.connect(
+            new ConnectionConfig(
+                    pg.getHost(),
+                    pg.getMappedPort(5432),
+                    pg.getDatabaseName(),
+                    pg.getUsername(),
+                    pg.getPassword())
+                .cachePreparedStatements(true))) {
+      // Cache a prepared statement
+      conn.query("SELECT $1::int AS n", 42);
+      int epochBefore = conn.deallocateEpoch();
+
+      // DEALLOCATE ALL destroys server-side prepared statements
+      conn.query("DEALLOCATE ALL");
+
+      int epochAfter = conn.deallocateEpoch();
+      assertTrue(
+          epochAfter > epochBefore,
+          "DEALLOCATE ALL should increment deallocate epoch");
+
+      // Queries still work (re-prepared)
+      var rs = conn.query("SELECT $1::int AS n", 99);
+      assertEquals(99, rs.first().getInteger("n"));
+    }
+  }
+
   // ===== LISTEN/NOTIFY =====
 
   @Test

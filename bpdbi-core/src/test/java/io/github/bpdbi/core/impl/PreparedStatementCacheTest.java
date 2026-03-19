@@ -129,6 +129,55 @@ class PreparedStatementCacheTest {
   }
 
   @Test
+  void oversizedSqlIsRejected() {
+    // maxTotalSqlBytes = 100; SQL > 50 chars is rejected (> 50% of budget)
+    var cache = new PreparedStatementCache(10, 100);
+    var longSql = "SELECT * FROM very_long_table_name WHERE a = $1 AND b = $2 AND c = $3";
+    assertTrue(longSql.length() > 50);
+
+    var rejected = cache.cache(longSql, stmt(longSql));
+    // Rejected: returned list contains the statement itself
+    assertEquals(1, rejected.size());
+    assertEquals(longSql, rejected.get(0).sql());
+    // Cache is still empty
+    assertEquals(0, cache.size());
+    assertTrue(cache.isOversized(longSql));
+  }
+
+  @Test
+  void normalSqlNotOversized() {
+    var cache = new PreparedStatementCache(10, 100);
+    var shortSql = "SELECT 1";
+    assertFalse(cache.isOversized(shortSql));
+
+    var evicted = cache.cache(shortSql, stmt(shortSql));
+    assertTrue(evicted.isEmpty());
+    assertEquals(1, cache.size());
+    assertEquals(shortSql.length(), cache.totalSqlBytes());
+  }
+
+  @Test
+  void totalSqlBytesTracksEvictions() {
+    var cache = new PreparedStatementCache(2, 1000);
+    cache.cache("SELECT 1", stmt("SELECT 1")); // 8 bytes
+    cache.cache("SELECT 2", stmt("SELECT 2")); // 8 bytes
+    assertEquals(16, cache.totalSqlBytes());
+
+    // Adding a third evicts the first
+    cache.cache("SELECT 3", stmt("SELECT 3"));
+    assertEquals(2, cache.size());
+    assertEquals(16, cache.totalSqlBytes()); // 8 evicted, 8 added
+  }
+
+  @Test
+  void noByteLimit() {
+    // maxTotalSqlBytes = 0 means no byte limit
+    var cache = new PreparedStatementCache(10, 0);
+    var longSql = "x".repeat(10000);
+    assertFalse(cache.isOversized(longSql));
+  }
+
+  @Test
   void replaceSameKey() {
     var cache = new PreparedStatementCache(2);
     cache.cache("a", stmt("a-v1"));

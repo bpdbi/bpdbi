@@ -213,6 +213,11 @@ public final class ByteBuffer {
     data[index + 3] = (byte) value;
   }
 
+  /** Ensure the buffer can hold at least {@code additionalBytes} more bytes without resizing. */
+  public void ensureWritable(int additionalBytes) {
+    ensureCapacity(additionalBytes);
+  }
+
   // --- Lifecycle ---
 
   public byte @NonNull [] toByteArray() {

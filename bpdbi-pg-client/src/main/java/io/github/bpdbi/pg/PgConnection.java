@@ -24,7 +24,7 @@ import io.github.bpdbi.pg.impl.codec.PgBinaryCodec;
 import io.github.bpdbi.pg.impl.codec.PgDecoder;
 import io.github.bpdbi.pg.impl.codec.PgEncoder;
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
+import io.github.bpdbi.core.impl.UnsyncBufferedOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -69,6 +69,19 @@ public final class PgConnection extends BaseConnection {
   private int processId;
   private int secretKey;
   private int stmtCounter = 0;
+  private int deallocateEpoch = 0;
+
+  /**
+   * Conservative estimate of TCP receive buffer size. If the estimated server response exceeds
+   * this, a mid-pipeline Sync is inserted to prevent deadlock. Same threshold as pgjdbc.
+   */
+  private static final int MAX_BUFFERED_RECV_BYTES = 64 * 1024;
+
+  /**
+   * Estimated response bytes per statement. Each query returns at minimum: ParseComplete (5) +
+   * BindComplete (5) + RowDescription/NoData (~50) + CommandComplete (~20) + overhead (~170).
+   */
+  private static final int ESTIMATED_RESPONSE_BYTES_PER_QUERY = 250;
 
   private PgConnection(Socket socket, OutputStream out, PgEncoder encoder, PgDecoder decoder) {
     this.socket = socket;
@@ -126,7 +139,7 @@ public final class PgConnection extends BaseConnection {
         socket = upgradeToSsl(socket, config);
       }
 
-      var out = new BufferedOutputStream(socket.getOutputStream(), 8192);
+      var out = new UnsyncBufferedOutputStream(socket.getOutputStream(), 8192);
       var in = new BufferedInputStream(socket.getInputStream(), 8192);
       var encoder = new PgEncoder();
       var decoder = new PgDecoder(in);
@@ -682,6 +695,8 @@ public final class PgConnection extends BaseConnection {
     private final ColumnDescriptor[] columns;
     private boolean hasMore = true;
     private boolean closed = false;
+    // Reusable column buffers — sized from the previous batch's observed data
+    private ColumnBuffer @Nullable [] prevBuffers;
 
     PgCursor(String portalName, ColumnDescriptor[] columns) {
       this.portalName = portalName;
@@ -701,12 +716,16 @@ public final class PgConnection extends BaseConnection {
         encoder.writeSync();
         encoder.flush(out);
 
-        List<Row> rows = new ArrayList<>();
+        ColumnBuffer[] buffers = createOrReuseBuffers(count);
+        int rowCount = 0;
         int rowsAffected = 0;
         while (true) {
           BackendMessage msg = decoder.readMessage();
           switch (msg) {
-            case BackendMessage.DataRow dr -> rows.add(createRow(columns, dr.values()));
+            case BackendMessage.DataRow dr -> {
+              appendToBuffers(buffers, dr.values());
+              rowCount++;
+            }
             case BackendMessage.CommandComplete cc -> {
               rowsAffected = cc.rowsAffected();
               hasMore = false;
@@ -717,7 +736,8 @@ public final class PgConnection extends BaseConnection {
               throw PgException.fromErrorResponse(err);
             }
             case BackendMessage.ReadyForQuery rq -> {
-              return new RowSet(rows, columns != null ? List.of(columns) : List.of(), rowsAffected);
+              prevBuffers = buffers;
+              return buildRowSet(columns, buffers, rowCount, rowsAffected);
             }
             default -> {}
           }
@@ -725,6 +745,19 @@ public final class PgConnection extends BaseConnection {
       } catch (IOException e) {
         throw new DbConnectionException("I/O error reading cursor", e);
       }
+    }
+
+    private ColumnBuffer[] createOrReuseBuffers(int expectedRows) {
+      if (columns == null) {
+        return new ColumnBuffer[0];
+      }
+      ColumnBuffer[] prev = this.prevBuffers;
+      if (prev != null && prev.length > 0) {
+        // Size new buffers based on observed average from last batch
+        int avgSize = Math.max(prev[0].averageValueSize(), 8);
+        return newColumnBuffers(columns.length, expectedRows, avgSize);
+      }
+      return newColumnBuffers(columns.length, expectedRows, 32);
     }
 
     @Override
@@ -838,9 +871,28 @@ public final class PgConnection extends BaseConnection {
       }
     }
 
-    // Phase 1: Write all messages in one TCP write
-    String lastParsedSql = null;
+    // Pre-size the encoder buffer to avoid resizing during batch encoding
+    int estimatedBytes = 5; // Sync message at the end
     for (PendingStatement stmt : statements) {
+      estimatedBytes += PgEncoder.estimateExtendedQuerySize(stmt.sql(), stmt.paramValues());
+    }
+    encoder.ensureCapacity(estimatedBytes);
+
+    // Deadlock prevention: if the estimated server response exceeds the TCP receive
+    // buffer (~64KB), the server may block trying to send while we block trying to write.
+    // Split large batches into chunks with intermediate Sync+drain to avoid this.
+    // Conservative estimate: each query response is at least ~250 bytes
+    // (ParseComplete + BindComplete + RowDescription/NoData + CommandComplete).
+    int estimatedResponseBytes = 0;
+    int chunkStart = 0;
+    List<RowSet> allResults = new ArrayList<>(statements.size());
+
+    // Phase 1: Write messages, flushing when response estimate gets risky
+    String lastParsedSql = null;
+    for (int i = 0; i < statements.size(); i++) {
+      PendingStatement stmt = statements.get(i);
+      estimatedResponseBytes += ESTIMATED_RESPONSE_BYTES_PER_QUERY;
+
       if (!stmt.sql().equals(lastParsedSql)) {
         encoder.writeParse(stmt.sql(), null);
         lastParsedSql = stmt.sql();
@@ -848,12 +900,27 @@ public final class PgConnection extends BaseConnection {
       encoder.writeBind(stmt.paramValues());
       encoder.writeDescribePortal();
       encoder.writeExecute();
+
+      // Flush and drain mid-pipeline if approaching TCP buffer limit
+      if (estimatedResponseBytes >= MAX_BUFFERED_RECV_BYTES
+          && i < statements.size() - 1) {
+        int chunkSize = i - chunkStart + 1;
+        encoder.writeSync();
+        flushToNetwork();
+        allResults.addAll(readPipelinedResponses(chunkSize));
+        chunkStart = i + 1;
+        estimatedResponseBytes = 0;
+        lastParsedSql = null; // server forgets unnamed statement after Sync
+      }
     }
+
+    // Final chunk
     encoder.writeSync();
     flushToNetwork();
+    int remainingCount = statements.size() - chunkStart;
+    allResults.addAll(readPipelinedResponses(remainingCount));
 
-    // Phase 2: Read all responses
-    return readPipelinedResponses(statements.size());
+    return allResults;
   }
 
   private List<RowSet> readPipelinedResponses(int count) {
@@ -898,6 +965,7 @@ public final class PgConnection extends BaseConnection {
           case BackendMessage.NotificationResponse notif ->
               notifications.add(
                   new PgNotification(notif.processId(), notif.channel(), notif.payload()));
+          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ReadyForQuery rq -> {
             // Fill skipped statements (after an error) with error RowSets
             while (results.size() < count) {
@@ -919,6 +987,21 @@ public final class PgConnection extends BaseConnection {
   // --- Simple query protocol (parameterless queries, text format results) ---
 
   private RowSet executeSimpleQuery(String sql) {
+    // Detect statements that may invalidate cached prepared statements.
+    // search_path changes cause table/function names to resolve differently,
+    // so cached Parse results may become stale. DEALLOCATE ALL and DISCARD ALL
+    // explicitly destroy all prepared statements. Like pgjdbc, we detect this
+    // by inspecting the SQL text since Postgres does not send ParameterStatus
+    // for search_path changes.
+    if (psCache != null && !psCache.isEmpty()) {
+      if ((sql.regionMatches(true, 0, "SET", 0, 3)
+              && containsIgnoreCase(sql, "search_path"))
+          || sql.regionMatches(true, 0, "DEALLOCATE", 0, 10)
+          || sql.regionMatches(true, 0, "DISCARD", 0, 7)) {
+        invalidatePreparedStatementCache();
+      }
+    }
+
     encoder.writeQuery(sql);
     try {
       encoder.flush(out);
@@ -926,6 +1009,17 @@ public final class PgConnection extends BaseConnection {
       throw new DbConnectionException("I/O error during flush", e);
     }
     return readSimpleQueryResponse();
+  }
+
+  private static boolean containsIgnoreCase(String haystack, String needle) {
+    int hLen = haystack.length();
+    int nLen = needle.length();
+    for (int i = 0; i <= hLen - nLen; i++) {
+      if (haystack.regionMatches(true, i, needle, 0, nLen)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private RowSet readSimpleQueryResponse() {
@@ -956,11 +1050,12 @@ public final class PgConnection extends BaseConnection {
           case BackendMessage.NotificationResponse notif ->
               notifications.add(
                   new PgNotification(notif.processId(), notif.channel(), notif.payload()));
+          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ReadyForQuery rq -> {
             return buildTextRowSet(columns, buffers, rowCount, rowsAffected);
           }
           default -> {}
-        }
+}
       }
     } catch (IOException e) {
       throw new DbConnectionException("I/O error reading response", e);
@@ -997,6 +1092,7 @@ public final class PgConnection extends BaseConnection {
           case BackendMessage.NotificationResponse notif ->
               notifications.add(
                   new PgNotification(notif.processId(), notif.channel(), notif.payload()));
+          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ReadyForQuery rq -> {
             return;
           }
@@ -1101,6 +1197,7 @@ public final class PgConnection extends BaseConnection {
           case BackendMessage.NotificationResponse notif ->
               notifications.add(
                   new PgNotification(notif.processId(), notif.channel(), notif.payload()));
+          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ReadyForQuery rq -> {
             return buildRowSet(columns, buffers, rowCount, rowsAffected);
           }
@@ -1174,6 +1271,7 @@ public final class PgConnection extends BaseConnection {
           case BackendMessage.NotificationResponse notif ->
               notifications.add(
                   new PgNotification(notif.processId(), notif.channel(), notif.payload()));
+          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ReadyForQuery rq -> {
             return;
           }
@@ -1376,11 +1474,38 @@ public final class PgConnection extends BaseConnection {
     return PgBinaryCodec.INSTANCE;
   }
 
+  /**
+   * Handle a ParameterStatus message received during query execution. Updates the parameters map.
+   */
+  private void handleParameterStatus(BackendMessage.ParameterStatus ps) {
+    parameters.put(ps.name(), ps.value());
+  }
+
+  /**
+   * Invalidate all cached prepared statements. Called when server-side state changes (e.g.
+   * search_path) that could cause cached statements to resolve differently.
+   */
+  private void invalidatePreparedStatementCache() {
+    if (psCache != null && !psCache.isEmpty()) {
+      deallocateEpoch++;
+      handleEvicted(new ArrayList<>(psCache.values()));
+      psCache.clear();
+    }
+  }
+
+  /** Return the current deallocate epoch (for testing). */
+  int deallocateEpoch() {
+    return deallocateEpoch;
+  }
+
   private void drainUntilReady() throws IOException {
     while (true) {
       BackendMessage msg = decoder.readMessage();
       if (msg instanceof BackendMessage.ReadyForQuery) {
         return;
+      }
+      if (msg instanceof BackendMessage.ParameterStatus ps) {
+        handleParameterStatus(ps);
       }
     }
   }

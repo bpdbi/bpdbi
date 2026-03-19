@@ -35,7 +35,7 @@ import io.github.bpdbi.mysql.impl.codec.MysqlDecoder;
 import io.github.bpdbi.mysql.impl.codec.MysqlEncoder;
 import io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants;
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
+import io.github.bpdbi.core.impl.UnsyncBufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -113,7 +113,7 @@ public final class MysqlConnection extends BaseConnection {
     try {
       Socket socket = new Socket(host, port);
       socket.setTcpNoDelay(true);
-      var out = new BufferedOutputStream(socket.getOutputStream(), 8192);
+      var out = new UnsyncBufferedOutputStream(socket.getOutputStream(), 8192);
 
       var in = new BufferedInputStream(socket.getInputStream(), 8192);
       var encoder = new MysqlEncoder();
@@ -1499,7 +1499,7 @@ public final class MysqlConnection extends BaseConnection {
 
       // Replace socket and I/O streams for encrypted communication
       this.socket = sslSocket;
-      this.out = new BufferedOutputStream(sslSocket.getOutputStream(), 8192);
+      this.out = new UnsyncBufferedOutputStream(sslSocket.getOutputStream(), 8192);
       boolean wasDeprecateEof = decoder.isDeprecateEof();
       this.decoder = new MysqlDecoder(new BufferedInputStream(sslSocket.getInputStream(), 8192));
       if (wasDeprecateEof) {

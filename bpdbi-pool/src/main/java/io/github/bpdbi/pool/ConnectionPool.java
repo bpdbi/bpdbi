@@ -108,14 +108,15 @@ public final class ConnectionPool implements AutoCloseable {
       int current;
       while ((current = totalCount.get()) < config.maxSize()) {
         if (totalCount.compareAndSet(current, current + 1)) {
+          Connection conn;
           try {
-            Connection conn = factory.create();
-            pc = new PooledConnection(conn, this, System.currentTimeMillis());
-            return checkout(pc);
+            conn = factory.create();
           } catch (Exception e) {
             totalCount.decrementAndGet();
             throw e;
           }
+          pc = new PooledConnection(conn, this, System.currentTimeMillis());
+          return checkout(pc); // if hook fails, checkout calls discard (which decrements)
         }
       }
 
@@ -163,6 +164,15 @@ public final class ConnectionPool implements AutoCloseable {
     if (closed.get()) {
       discard(pc);
       return;
+    }
+    var beforeRecycle = config.beforeRecycle();
+    if (beforeRecycle != null) {
+      try {
+        beforeRecycle.accept(pc);
+      } catch (Exception e) {
+        discard(pc);
+        return;
+      }
     }
     if (!idle.offer(pc)) {
       discard(pc);
@@ -218,6 +228,16 @@ public final class ConnectionPool implements AutoCloseable {
   private Connection checkout(PooledConnection pc) {
     pc.acquiredAt = System.currentTimeMillis();
     active.add(pc);
+    var afterAcquire = config.afterAcquire();
+    if (afterAcquire != null) {
+      try {
+        afterAcquire.accept(pc);
+      } catch (Exception e) {
+        active.remove(pc);
+        discard(pc);
+        throw e;
+      }
+    }
     return pc;
   }
 

@@ -1,6 +1,9 @@
 package io.github.bpdbi.pool;
 
+import io.github.bpdbi.core.Connection;
+import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Configuration for a {@link ConnectionPool} with fluent builder API.
@@ -27,6 +30,8 @@ public final class PoolConfig {
   private long poolCleanerPeriodMillis = 1_000; // 1 second
   private boolean validateOnBorrow = false;
   private long leakDetectionThresholdMillis = 0; // 0 = disabled
+  private @Nullable Consumer<Connection> afterAcquire;
+  private @Nullable Consumer<Connection> beforeRecycle;
 
   public PoolConfig() {}
 
@@ -145,6 +150,34 @@ public final class PoolConfig {
       throw new IllegalArgumentException("leakDetectionThresholdMillis must be >= 0");
     }
     this.leakDetectionThresholdMillis = millis;
+    return this;
+  }
+
+  /**
+   * Callback invoked after a connection is acquired from the pool and before it is handed to the
+   * caller. Useful for resetting session state (e.g. timezone, search_path). If the callback
+   * throws, the connection is discarded. Default: null (no hook).
+   */
+  public @Nullable Consumer<Connection> afterAcquire() {
+    return afterAcquire;
+  }
+
+  public @NonNull PoolConfig afterAcquire(@Nullable Consumer<Connection> afterAcquire) {
+    this.afterAcquire = afterAcquire;
+    return this;
+  }
+
+  /**
+   * Callback invoked before a connection is returned to the idle pool. Useful for cleaning up
+   * session state (e.g. rolling back uncommitted transactions, resetting session variables). If the
+   * callback throws, the connection is discarded instead of returned. Default: null (no hook).
+   */
+  public @Nullable Consumer<Connection> beforeRecycle() {
+    return beforeRecycle;
+  }
+
+  public @NonNull PoolConfig beforeRecycle(@Nullable Consumer<Connection> beforeRecycle) {
+    this.beforeRecycle = beforeRecycle;
     return this;
   }
 }

@@ -74,6 +74,8 @@ pool.close()
 | `maxWaitQueueSize`        | -1 (unbounded)   | Max number of threads waiting for a connection. -1 = no limit      |
 | `poolCleanerPeriodMillis` | 1,000 (1 sec)    | Background eviction interval. 0 = no background eviction           |
 | `validateOnBorrow`        | false            | Ping idle connections before handing them out                      |
+| `afterAcquire`            | null             | Callback invoked after a connection is acquired                    |
+| `beforeRecycle`           | null             | Callback invoked before a connection is returned to the idle pool  |
 
 ## Features
 
@@ -83,5 +85,21 @@ pool.close()
 - **Background cleaner** — a daemon thread periodically evicts expired connections
 - **Validate on borrow** — optionally ping connections before use to detect stale connections
 - **Wait queue limit** — reject requests when too many threads are waiting
+- **Lifecycle hooks** — run custom logic after acquire or before recycle (see below)
 - **Virtual thread friendly** — blocking on `acquire()` is cheap with virtual threads
 - **Works with any driver** — swap `PgConnection` for `MysqlConnection`
+
+### Lifecycle hooks
+
+Use `afterAcquire` and `beforeRecycle` to reset session state when connections move in
+and out of the pool. If a hook throws, the connection is discarded instead of being used
+or returned.
+
+```java
+var pool = new ConnectionPool(
+    () -> PgConnection.connect("localhost", 5432, "mydb", "user", "pass"),
+    new PoolConfig()
+        .maxSize(10)
+        .afterAcquire(conn -> conn.query("SET search_path TO myapp, public"))
+        .beforeRecycle(conn -> conn.query("RESET ALL")));
+```

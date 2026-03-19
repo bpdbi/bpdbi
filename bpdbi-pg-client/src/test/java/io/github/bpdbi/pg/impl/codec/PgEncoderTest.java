@@ -1,6 +1,7 @@
 package io.github.bpdbi.pg.impl.codec;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.bpdbi.core.impl.ByteBuffer;
 import java.io.ByteArrayOutputStream;
@@ -257,6 +258,44 @@ class PgEncoderTest {
     var baos = new ByteArrayOutputStream();
     encoder.flush(baos);
     assertEquals(0, baos.size());
+  }
+
+  @Test
+  void estimateExtendedQuerySize() throws IOException {
+    // Verify the estimate is at least as large as the actual encoded bytes
+    var encoder = new PgEncoder();
+    String sql = "SELECT * FROM users WHERE id = $1 AND name = $2";
+    String[] params = {"42", "Alice"};
+
+    int estimate = PgEncoder.estimateExtendedQuerySize(sql, params);
+
+    // Encode the same sequence and measure actual size
+    encoder.writeParse(sql, null);
+    encoder.writeBind(params);
+    encoder.writeDescribePortal();
+    encoder.writeExecute();
+    byte[] actual = flush(encoder);
+
+    // Estimate must be >= actual size (it's a lower bound for pre-sizing)
+    assertTrue(
+        estimate >= actual.length,
+        "estimate ("
+            + estimate
+            + ") should be >= actual ("
+            + actual.length
+            + ") for pre-sizing to avoid resizing");
+  }
+
+  @Test
+  void ensureCapacityPreventsResizing() throws IOException {
+    var encoder = new PgEncoder();
+    // Pre-size for a large batch
+    encoder.ensureCapacity(8192);
+    // Should still work correctly
+    encoder.writeQuery("SELECT 1");
+    byte[] bytes = flush(encoder);
+    var buf = ByteBuffer.wrap(bytes);
+    assertEquals('Q', buf.readByte());
   }
 
   private byte[] flush(PgEncoder encoder) throws IOException {

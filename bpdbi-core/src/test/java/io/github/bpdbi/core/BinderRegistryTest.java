@@ -2,9 +2,12 @@ package io.github.bpdbi.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -103,5 +106,52 @@ class BinderRegistryTest {
     var reg = BinderRegistry.defaults();
     var result = reg.registerAsJson(String.class);
     assertEquals(reg, result);
+  }
+
+  @Retention(RetentionPolicy.RUNTIME)
+  @interface NVarchar {}
+
+  @Retention(RetentionPolicy.RUNTIME)
+  @interface Encrypted {}
+
+  @Test
+  void qualifiedTypeBinderOverridesDefault() {
+    var reg = BinderRegistry.defaults();
+    var nvarchar = QualifiedType.of(String.class, NVarchar.class);
+    reg.register(nvarchar, v -> "N'" + v + "'");
+
+    // Qualified binding uses the qualified binder
+    assertEquals("N'hello'", reg.bind(nvarchar, "hello"));
+    // Unqualified binding uses the default String binder
+    assertEquals("hello", reg.bind("hello"));
+  }
+
+  @Test
+  void qualifiedTypeBinderFallsBackToUnqualified() {
+    var reg = BinderRegistry.defaults();
+    var encrypted = QualifiedType.of(String.class, Encrypted.class);
+
+    // No qualified binder registered — falls back to default String binder
+    assertEquals("plain", reg.bind(encrypted, "plain"));
+  }
+
+  @Test
+  void qualifiedTypeBinderHandlesNull() {
+    var reg = BinderRegistry.defaults();
+    var nvarchar = QualifiedType.of(String.class, NVarchar.class);
+    reg.register(nvarchar, v -> "N'" + v + "'");
+
+    assertNull(reg.bind(nvarchar, null));
+  }
+
+  @Test
+  void qualifiedTypeEquality() {
+    var qt1 = QualifiedType.of(String.class, NVarchar.class);
+    var qt2 = QualifiedType.of(String.class, NVarchar.class);
+    var qt3 = QualifiedType.of(String.class, Encrypted.class);
+
+    assertEquals(qt1, qt2);
+    assertNotEquals(qt1, qt3);
+    assertEquals(qt1.hashCode(), qt2.hashCode());
   }
 }

@@ -17,6 +17,7 @@ dependencies {
     jmh("com.zaxxer:HikariCP:6.2.1")
     jmh("org.jdbi:jdbi3-core:3.47.0")
     jmh("org.jdbi:jdbi3-kotlin:3.47.0")
+    jmh(kotlin("reflect"))
     jmh("org.hibernate.orm:hibernate-core:6.6.5.Final")
 
     jmh("io.vertx:vertx-pg-client:5.0.8")

@@ -41,10 +41,21 @@ import org.jspecify.annotations.Nullable;
 public final class BinderRegistry {
 
   private final Map<Class<?>, Binder<?>> binders = new LinkedHashMap<>();
+  private final Map<QualifiedType<?>, Binder<?>> qualifiedBinders = new LinkedHashMap<>();
   private final Set<Class<?>> jsonTypes = new LinkedHashSet<>();
 
   public <T> @NonNull BinderRegistry register(@NonNull Class<T> type, @NonNull Binder<T> binder) {
     binders.put(type, binder);
+    return this;
+  }
+
+  /**
+   * Register a binder for a qualified type. The qualified binder is consulted when {@link
+   * #bind(QualifiedType, Object)} is called with a matching qualified type.
+   */
+  public <T> @NonNull BinderRegistry register(
+      @NonNull QualifiedType<T> qualifiedType, @NonNull Binder<T> binder) {
+    qualifiedBinders.put(qualifiedType, binder);
     return this;
   }
 
@@ -65,6 +76,22 @@ public final class BinderRegistry {
 
   public boolean isJsonType(@NonNull Class<?> type) {
     return jsonTypes.contains(type);
+  }
+
+  /**
+   * Convert a value to its SQL string representation using a qualified binder. Falls back to the
+   * unqualified {@link #bind(Object)} if no qualified binder matches.
+   */
+  @SuppressWarnings("unchecked")
+  public <T> @Nullable String bind(@NonNull QualifiedType<T> qualifiedType, @Nullable T value) {
+    if (value == null) {
+      return null;
+    }
+    Binder<T> binder = (Binder<T>) qualifiedBinders.get(qualifiedType);
+    if (binder != null) {
+      return binder.bind(value);
+    }
+    return bind(value);
   }
 
   /**
