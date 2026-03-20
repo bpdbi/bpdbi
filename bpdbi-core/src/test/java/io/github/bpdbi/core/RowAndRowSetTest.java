@@ -545,4 +545,103 @@ class RowAndRowSetTest {
     String s = e.toString();
     assertTrue(s.contains("oops"));
   }
+
+  @Test
+  void dbExceptionWithSqlInToString() {
+    var e = new DbException("ERROR", "42P01", "relation does not exist");
+    e.setSql("SELECT * FROM nope");
+    String s = e.toString();
+    assertTrue(s.contains("SELECT * FROM nope"));
+    assertTrue(s.contains("SQL:"));
+  }
+
+  @Test
+  void dbExceptionWithCause() {
+    var cause = new RuntimeException("underlying error");
+    var e = new DbException("ERROR", "42P01", "relation does not exist", cause);
+    assertSame(cause, e.getCause());
+    assertEquals("ERROR", e.severity());
+    assertEquals("42P01", e.sqlState());
+  }
+
+  @Test
+  void dbConnectionExceptionFields() {
+    var e = new DbConnectionException("connection lost");
+    assertEquals("FATAL", e.severity());
+    assertEquals("08006", e.sqlState());
+    assertTrue(e.getMessage().contains("connection lost"));
+  }
+
+  @Test
+  void dbConnectionExceptionWithCause() {
+    var cause = new java.io.IOException("socket closed");
+    var e = new DbConnectionException("connection lost", cause);
+    assertSame(cause, e.getCause());
+    assertEquals("FATAL", e.severity());
+  }
+
+  // =====================================================================
+  // Row — array getters (text mode PG array literals)
+  // =====================================================================
+
+  @Test
+  void getStringArray() {
+    var row = textRow(new String[] {"a"}, new String[] {"{hello,world,foo}"});
+    var arr = row.getStringArray(0);
+    assertEquals(List.of("hello", "world", "foo"), arr);
+  }
+
+  @Test
+  void getIntegerArray() {
+    var row = textRow(new String[] {"a"}, new String[] {"{1,2,3}"});
+    var arr = row.getIntegerArray(0);
+    assertEquals(List.of(1, 2, 3), arr);
+  }
+
+  @Test
+  void getLongArray() {
+    var row = textRow(new String[] {"a"}, new String[] {"{100,200}"});
+    var arr = row.getLongArray(0);
+    assertEquals(List.of(100L, 200L), arr);
+  }
+
+  @Test
+  void getDoubleArray() {
+    var row = textRow(new String[] {"a"}, new String[] {"{1.5,2.5}"});
+    var arr = row.getDoubleArray(0);
+    assertEquals(List.of(1.5, 2.5), arr);
+  }
+
+  @Test
+  void getFloatArray() {
+    var row = textRow(new String[] {"a"}, new String[] {"{1.5,2.5}"});
+    var arr = row.getFloatArray(0);
+    assertEquals(List.of(1.5f, 2.5f), arr);
+  }
+
+  @Test
+  void getShortArray() {
+    var row = textRow(new String[] {"a"}, new String[] {"{10,20}"});
+    var arr = row.getShortArray(0);
+    assertEquals(List.of((short) 10, (short) 20), arr);
+  }
+
+  @Test
+  void getBooleanArray() {
+    var row = textRow(new String[] {"a"}, new String[] {"{t,f,t}"});
+    var arr = row.getBooleanArray(0);
+    assertEquals(List.of(true, false, true), arr);
+  }
+
+  @Test
+  void getArrayReturnsNullForNullColumn() {
+    var row = textRow(new String[] {"a"}, new String[] {null});
+    assertNull(row.getStringArray(0));
+    assertNull(row.getIntegerArray(0));
+    assertNull(row.getLongArray(0));
+    assertNull(row.getDoubleArray(0));
+    assertNull(row.getFloatArray(0));
+    assertNull(row.getShortArray(0));
+    assertNull(row.getBooleanArray(0));
+  }
 }

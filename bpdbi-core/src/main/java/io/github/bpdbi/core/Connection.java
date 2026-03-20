@@ -238,12 +238,11 @@ public interface Connection extends AutoCloseable {
    * Execute a parameterized query and process each row via the callback.
    *
    * @param sql the SQL with positional placeholders
-   * @param consumer called once per result row
    * @param params the parameter values
+   * @param consumer called once per result row
    * @throws DbException if the statement fails
    */
-  void queryStream(
-      @NonNull String sql, @NonNull Consumer<Row> consumer, @Nullable Object... params);
+  void queryStream(@NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer);
 
   /**
    * Return a closeable, iterable stream of rows. Must be closed after use (use try-with-resources)
@@ -276,7 +275,7 @@ public interface Connection extends AutoCloseable {
   @NonNull ColumnMapperRegistry mapperRegistry();
 
   /** Set the mapper registry used for typed column access. */
-  void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry);
+  void setMapperRegistry(@NonNull ColumnMapperRegistry registry);
 
   /** Return the JSON mapper, or null if none is configured. */
   @Nullable JsonMapper jsonMapper();

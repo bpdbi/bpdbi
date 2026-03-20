@@ -62,6 +62,10 @@ public final class MysqlProtocolConstants {
   public static final int AUTH_SWITCH_REQUEST = 0xFE;
   public static final int AUTH_MORE_DATA = 0x01;
 
+  // Character set collation IDs
+  // Always tell the server we speak utf8mb4 so it matches Java's StandardCharsets.UTF_8
+  public static final int COLLATION_UTF8MB4_GENERAL_CI = 45;
+
   // Nonce length
   public static final int NONCE_LENGTH = 20;
 }

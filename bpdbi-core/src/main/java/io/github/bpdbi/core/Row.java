@@ -9,8 +9,10 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.OffsetTime;
+import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -21,10 +23,9 @@ import org.jspecify.annotations.Nullable;
  * A single row in a query result with lazy decoding.
  *
  * <p>Values are stored as raw bytes from the wire and decoded only when a typed getter is called
- * ({@link #getString(int)}, {@link #getInteger(int)}, etc.). Parameterized queries produce
- * binary-format rows (decoded via {@link BinaryCodec}); parameterless queries produce text-format
- * rows (decoded from UTF-8 strings). Columns you never read are never decoded, keeping CPU overhead
- * minimal.
+ * ({@link #getString(int)}, {@link #getInteger(int)}, etc.). Postgres returns binary-format rows
+ * (decoded via {@link BinaryCodec}); MySQL returns text-format rows (decoded from UTF-8 strings).
+ * Columns you never read are never decoded, keeping CPU overhead minimal.
  *
  * <p>All getters accept either a column index ({@code int}, zero-based) or a column name ({@code
  * String}). NULL values return {@code null} — check with {@link #isNull(int)}.
@@ -38,10 +39,14 @@ import org.jspecify.annotations.Nullable;
 public final class Row {
 
   private final ColumnDescriptor[] columns;
+  // Cached column name → index map, built lazily on first by-name access.
+  // Shared across all Row objects that reference the same ColumnDescriptor[].
+  private final @Nullable Map<String, Integer> columnNameIndex;
   // Backing mode 1: per-row byte[][] (used by streaming and legacy path).
   // Inner byte[] elements are nullable (SQL NULL) but NullAway cannot model this on
   // multi-dimensional primitive arrays, so null handling is done manually in accessors.
-  private final byte[][] values;
+  // Non-final to allow streaming reuse via resetForStreaming().
+  private byte[][] values;
   // Backing mode 2: column buffers + row index (used by buffered result sets)
   private final ColumnData @Nullable [] buffers;
   private final int rowIndex;
@@ -51,7 +56,12 @@ public final class Row {
   private final @Nullable JsonMapper jsonMapper;
   private final Set<Class<?>> jsonTypes;
 
-  /** Per-row byte[][] constructor (original path, used by streaming). */
+  /**
+   * Per-row byte[][] constructor (used by streaming paths). This and the other multi-arg
+   * constructors are intended for driver internals ({@link
+   * io.github.bpdbi.core.impl.BaseConnection} factory methods). Prefer the 4-arg convenience
+   * constructor for tests.
+   */
   public Row(
       @NonNull ColumnDescriptor[] columns,
       byte @NonNull [][] values,
@@ -60,6 +70,30 @@ public final class Row {
       @Nullable JsonMapper jsonMapper,
       @NonNull Set<Class<?>> jsonTypes) {
     this.columns = columns;
+    this.columnNameIndex = buildColumnNameIndex(columns);
+    this.values = values;
+    this.buffers = null;
+    this.rowIndex = -1;
+    this.binaryCodec = binaryCodec;
+    this.mapperRegistry = mapperRegistry;
+    this.jsonMapper = jsonMapper;
+    this.jsonTypes = jsonTypes;
+  }
+
+  /**
+   * Per-row byte[][] constructor with a pre-built column name index. Use this when creating many
+   * rows from the same column set (e.g. streaming) to avoid rebuilding the map per row.
+   */
+  public Row(
+      @NonNull ColumnDescriptor[] columns,
+      @NonNull Map<String, Integer> columnNameIndex,
+      byte @NonNull [][] values,
+      @Nullable BinaryCodec binaryCodec,
+      @Nullable ColumnMapperRegistry mapperRegistry,
+      @Nullable JsonMapper jsonMapper,
+      @NonNull Set<Class<?>> jsonTypes) {
+    this.columns = columns;
+    this.columnNameIndex = columnNameIndex;
     this.values = values;
     this.buffers = null;
     this.rowIndex = -1;
@@ -79,6 +113,7 @@ public final class Row {
       @Nullable JsonMapper jsonMapper,
       @NonNull Set<Class<?>> jsonTypes) {
     this.columns = columns;
+    this.columnNameIndex = buildColumnNameIndex(columns);
     this.values = new byte[0][];
     this.buffers = buffers;
     this.rowIndex = rowIndex;
@@ -88,7 +123,31 @@ public final class Row {
     this.jsonTypes = jsonTypes;
   }
 
-  /** Backward-compatible constructor (no JSON support). */
+  /**
+   * Column-buffer-backed constructor with a pre-built column name index. Use this when creating
+   * many rows from the same column set to share the map across rows.
+   */
+  public Row(
+      @NonNull ColumnDescriptor[] columns,
+      @NonNull Map<String, Integer> columnNameIndex,
+      @NonNull ColumnData[] buffers,
+      int rowIndex,
+      @Nullable BinaryCodec binaryCodec,
+      @Nullable ColumnMapperRegistry mapperRegistry,
+      @Nullable JsonMapper jsonMapper,
+      @NonNull Set<Class<?>> jsonTypes) {
+    this.columns = columns;
+    this.columnNameIndex = columnNameIndex;
+    this.values = new byte[0][];
+    this.buffers = buffers;
+    this.rowIndex = rowIndex;
+    this.binaryCodec = binaryCodec;
+    this.mapperRegistry = mapperRegistry;
+    this.jsonMapper = jsonMapper;
+    this.jsonTypes = jsonTypes;
+  }
+
+  /** Convenience constructor for tests and simple usage (no JSON support, no binary codec). */
   public Row(
       @NonNull ColumnDescriptor[] columns,
       byte @NonNull [][] values,
@@ -97,13 +156,60 @@ public final class Row {
     this(columns, values, binaryCodec, mapperRegistry, null, Set.of());
   }
 
+  /**
+   * Reset this row's backing byte arrays for reuse in streaming. Not thread-safe — matches
+   * single-threaded connection design. Callers must not retain references to a recycled row.
+   */
+  public void resetForStreaming(byte @NonNull [][] newValues) {
+    this.values = newValues;
+  }
+
   public int size() {
     return columns.length;
   }
 
+  // ---- Column value access ----
+  // Performance note: column value access is the innermost hot loop for result-set processing.
+  // We read buffer, offset, and length in a single pass through readValue() to avoid 3 separate
+  // interface dispatches per column through the ColumnData interface. The buf/off/len triple is
+  // stored in mutable thread-local-like fields (this class is not thread-safe by design) to avoid
+  // allocating a holder object per access.
+
+  // Scratch fields for readValue() — avoids allocating a holder object on every getter call.
+  // Safe because Row is single-threaded (one connection = one thread).
+  private byte[] vBuf;
+  private int vOff;
+  private int vLen;
+
+  /**
+   * Read buffer, offset, and length for a column into scratch fields in one pass. Returns false if
+   * the value is SQL NULL. After a true return, vBuf/vOff/vLen hold the value coordinates.
+   */
+  private boolean readValue(int index) {
+    ColumnData[] b = this.buffers;
+    if (b != null) {
+      ColumnData col = b[index];
+      if (col.isNull(rowIndex)) {
+        return false;
+      }
+      vBuf = col.buffer(rowIndex);
+      vOff = col.offset(rowIndex);
+      vLen = col.length(rowIndex);
+    } else {
+      byte[] v = values[index];
+      if (v == null) {
+        return false;
+      }
+      vBuf = v;
+      vOff = 0;
+      vLen = v.length;
+    }
+    return true;
+  }
+
   /**
    * Get the backing byte array for a column value (zero-copy for ColumnBuffer path). Returns null
-   * if SQL NULL.
+   * if SQL NULL. Used by getBytes() and array getters that need the raw buffer.
    */
   private byte[] getBuffer(int index) {
     ColumnData[] b = this.buffers;
@@ -111,25 +217,6 @@ public final class Row {
       return b[index].buffer(rowIndex);
     }
     return values[index];
-  }
-
-  /** Offset into the buffer returned by {@link #getBuffer}. */
-  private int getOffset(int index) {
-    ColumnData[] b = this.buffers;
-    if (b != null) {
-      return b[index].offset(rowIndex);
-    }
-    return 0;
-  }
-
-  /** Length of the value in the buffer returned by {@link #getBuffer}, or -1 for NULL. */
-  private int getLength(int index) {
-    ColumnData[] b = this.buffers;
-    if (b != null) {
-      return b[index].length(rowIndex);
-    }
-    byte[] v = values[index];
-    return v == null ? -1 : v.length;
   }
 
   public boolean isNull(int index) {
@@ -144,21 +231,22 @@ public final class Row {
     return isNull(columnIndex(columnName));
   }
 
-  private boolean isBinary() {
-    return binaryCodec != null;
-  }
-
-  /** Returns the non-null binary codec. Only call when {@link #isBinary} returned true. */
+  /** Returns the non-null binary codec. Only call when binaryCodec is known to be set. */
   private BinaryCodec requireBinaryCodec() {
-    return Objects.requireNonNull(binaryCodec, "binaryCodec is null but isBinary was true");
+    BinaryCodec bc = this.binaryCodec;
+    if (bc == null) {
+      throw new IllegalStateException("binaryCodec is null");
+    }
+    return bc;
   }
 
   // --- Decode helpers ---
 
-  /**
-   * Decodes a raw byte buffer from a column. Handles null checks, binary vs text branching, and
-   * buffer slicing. Used by most typed getters to avoid repeating this boilerplate.
-   */
+  // The decode() helper with lambda dispatch is kept for less-frequently-called getters
+  // (date/time, UUID, BigDecimal, etc.) where the overhead is negligible relative to the
+  // parsing cost. High-frequency getters (getInteger, getLong, getString, getBoolean) are
+  // inlined below to eliminate functional interface dispatch and autoboxing on the hot path.
+
   @FunctionalInterface
   private interface RawTextDecoder<T> {
 
@@ -167,16 +255,14 @@ public final class Row {
 
   private <T> T decode(
       int index, BinaryCodec.BinaryDecoder<T> binaryDecode, RawTextDecoder<T> textDecode) {
-    byte[] buf = getBuffer(index);
-    if (buf == null) {
+    if (!readValue(index)) {
       return null;
     }
-    int off = getOffset(index);
-    int len = getLength(index);
-    if (isBinary()) {
-      return binaryDecode.decode(requireBinaryCodec(), buf, off, len);
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return binaryDecode.decode(bc, vBuf, vOff, vLen);
     }
-    return textDecode.decode(buf, off, len);
+    return textDecode.decode(vBuf, vOff, vLen);
   }
 
   private static <T> RawTextDecoder<T> parseText(Function<String, T> parser) {
@@ -190,20 +276,23 @@ public final class Row {
   // --- String ---
 
   public @Nullable String getString(int index) {
-    byte[] buf = getBuffer(index);
-    if (buf == null) {
+    if (!readValue(index)) {
       return null;
     }
-    int off = getOffset(index);
-    int len = getLength(index);
-    if (isBinary()) {
-      BinaryCodec bc = requireBinaryCodec();
-      if (columns[index].isJsonType()) {
-        return bc.decodeJson(buf, off, len, columns[index].typeOID());
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      // Fast path for text/varchar: in Postgres binary protocol the wire format for text-like
+      // types is raw UTF-8 bytes, identical to text protocol. Skipping the type OID switch in
+      // decodeToString() avoids unnecessary dispatch for the most common getString() use case.
+      if (columns[index].isTextLikeType()) {
+        return new String(vBuf, vOff, vLen, StandardCharsets.UTF_8);
       }
-      return bc.decodeString(buf, off, len);
+      if (columns[index].isJsonType()) {
+        return bc.decodeJson(vBuf, vOff, vLen, columns[index].typeOID());
+      }
+      return bc.decodeToString(vBuf, vOff, vLen, columns[index].typeOID());
     }
-    return new String(buf, off, len, StandardCharsets.UTF_8);
+    return new String(vBuf, vOff, vLen, StandardCharsets.UTF_8);
   }
 
   public @Nullable String getString(@NonNull String columnName) {
@@ -211,28 +300,101 @@ public final class Row {
   }
 
   // --- Numeric ---
+  // Inlined (no lambda dispatch) because these are called in tight result-set loops.
+  // Eliminating the BinaryDecoder/RawTextDecoder functional interface dispatch and the
+  // generic decode() method saves ~2-3 virtual calls per getter invocation.
 
   public @Nullable Integer getInteger(int index) {
-    return decode(index, (c, buf, off, len) -> c.decodeInt4(buf, off), Row::parseIntFromBytes);
+    if (!readValue(index)) {
+      return null;
+    }
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return switch (vLen) {
+        case 4 -> bc.decodeInt4(vBuf, vOff);
+        case 2 -> (int) bc.decodeInt2(vBuf, vOff);
+        case 8 -> (int) bc.decodeInt8(vBuf, vOff);
+        default -> bc.decodeInt4(vBuf, vOff);
+      };
+    }
+    return parseIntFromBytes(vBuf, vOff, vLen);
   }
 
   public @Nullable Integer getInteger(@NonNull String columnName) {
     return getInteger(columnIndex(columnName));
   }
 
+  /** Primitive int getter — avoids autoboxing. Throws if the column is NULL. */
+  public int getIntValue(int index) {
+    if (!readValue(index)) {
+      throw new NullPointerException("Column " + index + " is NULL");
+    }
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return switch (vLen) {
+        case 4 -> bc.decodeInt4(vBuf, vOff);
+        case 2 -> (int) bc.decodeInt2(vBuf, vOff);
+        case 8 -> (int) bc.decodeInt8(vBuf, vOff);
+        default -> bc.decodeInt4(vBuf, vOff);
+      };
+    }
+    return parseIntFromBytes(vBuf, vOff, vLen);
+  }
+
+  public int getIntValue(@NonNull String columnName) {
+    return getIntValue(columnIndex(columnName));
+  }
+
   public @Nullable Long getLong(int index) {
-    return decode(index, (c, buf, off, len) -> c.decodeInt8(buf, off), Row::parseLongFromBytes);
+    if (!readValue(index)) {
+      return null;
+    }
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return switch (vLen) {
+        case 8 -> bc.decodeInt8(vBuf, vOff);
+        case 4 -> (long) bc.decodeInt4(vBuf, vOff);
+        case 2 -> (long) bc.decodeInt2(vBuf, vOff);
+        default -> bc.decodeInt8(vBuf, vOff);
+      };
+    }
+    return parseLongFromBytes(vBuf, vOff, vLen);
   }
 
   public @Nullable Long getLong(@NonNull String columnName) {
     return getLong(columnIndex(columnName));
   }
 
+  /** Primitive long getter — avoids autoboxing. Throws if the column is NULL. */
+  public long getLongValue(int index) {
+    if (!readValue(index)) {
+      throw new NullPointerException("Column " + index + " is NULL");
+    }
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return switch (vLen) {
+        case 8 -> bc.decodeInt8(vBuf, vOff);
+        case 4 -> (long) bc.decodeInt4(vBuf, vOff);
+        case 2 -> (long) bc.decodeInt2(vBuf, vOff);
+        default -> bc.decodeInt8(vBuf, vOff);
+      };
+    }
+    return parseLongFromBytes(vBuf, vOff, vLen);
+  }
+
+  public long getLongValue(@NonNull String columnName) {
+    return getLongValue(columnIndex(columnName));
+  }
+
   public @Nullable Short getShort(int index) {
-    return decode(
-        index,
-        (c, buf, off, len) -> c.decodeInt2(buf, off),
-        (buf, off, len) -> (short) parseIntFromBytes(buf, off, len));
+    if (!readValue(index)) {
+      return null;
+    }
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return bc.decodeInt2(vBuf, vOff);
+    }
+    return (short) parseIntFromBytes(vBuf, vOff, vLen);
   }
 
   public @Nullable Short getShort(@NonNull String columnName) {
@@ -250,7 +412,14 @@ public final class Row {
 
   public @Nullable Double getDouble(int index) {
     return decode(
-        index, (c, buf, off, len) -> c.decodeFloat8(buf, off), parseAscii(Double::parseDouble));
+        index,
+        (c, buf, off, len) ->
+            switch (len) {
+              case 8 -> c.decodeFloat8(buf, off);
+              case 4 -> (double) c.decodeFloat4(buf, off);
+              default -> c.decodeFloat8(buf, off);
+            },
+        parseAscii(Double::parseDouble));
   }
 
   public @Nullable Double getDouble(@NonNull String columnName) {
@@ -267,11 +436,34 @@ public final class Row {
   }
 
   public @Nullable Boolean getBoolean(int index) {
-    return decode(index, (c, buf, off, len) -> c.decodeBool(buf, off), Row::parseBoolFromBytes);
+    if (!readValue(index)) {
+      return null;
+    }
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return bc.decodeBool(vBuf, vOff);
+    }
+    return parseBoolFromBytes(vBuf, vOff, vLen);
   }
 
   public @Nullable Boolean getBoolean(@NonNull String columnName) {
     return getBoolean(columnIndex(columnName));
+  }
+
+  /** Primitive boolean getter — avoids autoboxing. Throws if the column is NULL. */
+  public boolean getBoolValue(int index) {
+    if (!readValue(index)) {
+      throw new NullPointerException("Column " + index + " is NULL");
+    }
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return bc.decodeBool(vBuf, vOff);
+    }
+    return parseBoolFromBytes(vBuf, vOff, vLen);
+  }
+
+  public boolean getBoolValue(@NonNull String columnName) {
+    return getBoolValue(columnIndex(columnName));
   }
 
   // --- Date/time ---
@@ -298,7 +490,7 @@ public final class Row {
     return decode(
         index,
         (c, buf, off, len) -> c.decodeTimestamp(buf, off, len),
-        parseText(s -> LocalDateTime.parse(s.replace(' ', 'T'))));
+        Row::parseTimestampFromBytes);
   }
 
   public @Nullable LocalDateTime getLocalDateTime(@NonNull String columnName) {
@@ -309,7 +501,7 @@ public final class Row {
     return decode(
         index,
         (c, buf, off, len) -> c.decodeTimestamptz(buf, off, len),
-        parseText(s -> OffsetDateTime.parse(s.replace(' ', 'T'))));
+        Row::parseOffsetTimestampFromBytes);
   }
 
   public @Nullable OffsetDateTime getOffsetDateTime(@NonNull String columnName) {
@@ -317,24 +509,18 @@ public final class Row {
   }
 
   public @Nullable Instant getInstant(int index) {
-    byte[] buf = getBuffer(index);
-    if (buf == null) {
-      return null;
-    }
-    if (isBinary()) {
-      return requireBinaryCodec()
-          .decodeTimestamptz(buf, getOffset(index), getLength(index))
-          .toInstant();
-    }
-    String s =
-        new String(buf, getOffset(index), getLength(index), StandardCharsets.UTF_8)
-            .replace(' ', 'T');
-    // Try as OffsetDateTime first (has timezone), fall back to LocalDateTime (assume UTC)
-    try {
-      return OffsetDateTime.parse(s).toInstant();
-    } catch (java.time.format.DateTimeParseException e) {
-      return LocalDateTime.parse(s).toInstant(java.time.ZoneOffset.UTC);
-    }
+    return decode(
+        index,
+        (c, buf, off, len) -> c.decodeTimestamptz(buf, off, len).toInstant(),
+        (buf, off, len) -> {
+          String s = new String(buf, off, len, StandardCharsets.UTF_8).replace(' ', 'T');
+          // Try as OffsetDateTime first (has timezone), fall back to LocalDateTime (assume UTC)
+          try {
+            return OffsetDateTime.parse(s).toInstant();
+          } catch (java.time.format.DateTimeParseException e) {
+            return LocalDateTime.parse(s).toInstant(ZoneOffset.UTC);
+          }
+        });
   }
 
   public @Nullable Instant getInstant(@NonNull String columnName) {
@@ -342,25 +528,23 @@ public final class Row {
   }
 
   public @Nullable OffsetTime getOffsetTime(int index) {
-    byte[] buf = getBuffer(index);
-    if (buf == null) {
-      return null;
-    }
-    if (isBinary()) {
-      return requireBinaryCodec().decodeTimetz(buf, getOffset(index), getLength(index));
-    }
-    String s = new String(buf, getOffset(index), getLength(index), StandardCharsets.UTF_8);
-    // PG returns short offsets like +02 but Java requires +02:00
-    int sLen = s.length();
-    if (sLen >= 3) {
-      char sign = s.charAt(sLen - 3);
-      if ((sign == '+' || sign == '-')
-          && Character.isDigit(s.charAt(sLen - 2))
-          && Character.isDigit(s.charAt(sLen - 1))) {
-        s = s + ":00";
-      }
-    }
-    return OffsetTime.parse(s);
+    return decode(
+        index,
+        (c, buf, off, len) -> c.decodeTimetz(buf, off, len),
+        (buf, off, len) -> {
+          String s = new String(buf, off, len, StandardCharsets.UTF_8);
+          // PG returns short offsets like +02 but Java requires +02:00
+          int sLen = s.length();
+          if (sLen >= 3) {
+            char sign = s.charAt(sLen - 3);
+            if ((sign == '+' || sign == '-')
+                && Character.isDigit(s.charAt(sLen - 2))
+                && Character.isDigit(s.charAt(sLen - 1))) {
+              s = s + ":00";
+            }
+          }
+          return OffsetTime.parse(s);
+        });
   }
 
   public @Nullable OffsetTime getOffsetTime(@NonNull String columnName) {
@@ -379,28 +563,26 @@ public final class Row {
   }
 
   public byte @Nullable [] getBytes(int index) {
-    byte[] buf = getBuffer(index);
-    if (buf == null) {
+    if (!readValue(index)) {
       return null;
     }
-    int off = getOffset(index);
-    int len = getLength(index);
-    if (isBinary()) {
-      return requireBinaryCodec().decodeBytes(buf, off, len);
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return bc.decodeBytes(vBuf, vOff, vLen);
     }
     // Text format: PostgreSQL bytea hex format \x...
-    if (len >= 2 && buf[off] == '\\' && buf[off + 1] == 'x') {
-      int hexLen = len - 2;
+    if (vLen >= 2 && vBuf[vOff] == '\\' && vBuf[vOff + 1] == 'x') {
+      int hexLen = vLen - 2;
       byte[] result = new byte[hexLen / 2];
-      int hexOff = off + 2;
+      int hexOff = vOff + 2;
       for (int i = 0; i < result.length; i++) {
-        int hi = Character.digit(buf[hexOff + i * 2], 16);
-        int lo = Character.digit(buf[hexOff + i * 2 + 1], 16);
+        int hi = Character.digit(vBuf[hexOff + i * 2], 16);
+        int lo = Character.digit(vBuf[hexOff + i * 2 + 1], 16);
         result[i] = (byte) ((hi << 4) | lo);
       }
       return result;
     }
-    return copySlice(buf, off, len);
+    return copySlice(vBuf, vOff, vLen);
   }
 
   public byte @Nullable [] getBytes(@NonNull String columnName) {
@@ -410,12 +592,9 @@ public final class Row {
   // --- Generic typed access via ColumnMapper ---
 
   public <T> @Nullable T get(int index, @NonNull Class<T> type) {
-    byte[] buf = getBuffer(index);
-    if (buf == null) {
+    if (!readValue(index)) {
       return null;
     }
-    int off = getOffset(index);
-    int len = getLength(index);
     // JSON deserialization: auto-detect by column OID, or by explicit registration
     if (jsonMapper != null && (columns[index].isJsonType() || jsonTypes.contains(type))) {
       String jsonStr = getString(index);
@@ -426,19 +605,19 @@ public final class Row {
     }
     // Binary path: decode directly when codec supports this type
     BinaryCodec bc = this.binaryCodec;
-    if (bc != null && isBinary() && bc.canDecode(type)) {
-      return bc.decode(buf, off, len, type);
+    if (bc != null && bc.canDecode(type)) {
+      return bc.decode(vBuf, vOff, vLen, type);
     }
     // Text fallback via ColumnMapper (for custom user-registered types)
     if (mapperRegistry == null) {
       throw new IllegalStateException(
-          "No ColumnMapperRegistry available. Use connection.setColumnMapperRegistry() to configure one.");
+          "No ColumnMapperRegistry available. Use connection.setMapperRegistry() to configure one.");
     }
     String textVal;
-    if (bc != null && isBinary()) {
-      textVal = bc.decodeToString(buf, off, len, columns[index].typeOID());
+    if (bc != null) {
+      textVal = bc.decodeToString(vBuf, vOff, vLen, columns[index].typeOID());
     } else {
-      textVal = new String(buf, off, len, StandardCharsets.UTF_8);
+      textVal = new String(vBuf, vOff, vLen, StandardCharsets.UTF_8);
     }
     return mapperRegistry.map(type, textVal, columns[index].name());
   }
@@ -575,11 +754,10 @@ public final class Row {
 
   /** Get the raw column bytes, or null if NULL. Copies from buffer if needed. */
   private byte @Nullable [] getRawBytes(int index) {
-    byte[] buf = getBuffer(index);
-    if (buf == null) {
+    if (!readValue(index)) {
       return null;
     }
-    return copySlice(buf, getOffset(index), getLength(index));
+    return copySlice(vBuf, vOff, vLen);
   }
 
   /** Copy a slice from a buffer into an owned byte[]. Used for binary codec calls. */
@@ -670,12 +848,110 @@ public final class Row {
     return negative ? -result : result;
   }
 
-  private int columnIndex(String name) {
-    for (int i = 0; i < columns.length; i++) {
-      if (columns[i].name().equals(name)) {
-        return i;
+  /**
+   * Parse a Postgres timestamp text representation directly from bytes without intermediate String
+   * allocation. Format: "2025-06-01 10:30:45" or "2025-06-01 10:30:45.123456".
+   */
+  private static LocalDateTime parseTimestampFromBytes(byte[] buf, int off, int len) {
+    // Minimum: "YYYY-MM-DD HH:MM:SS" = 19 chars
+    if (len < 19) {
+      // Fall back for short/unusual formats
+      return LocalDateTime.parse(
+          new String(buf, off, len, StandardCharsets.UTF_8).replace(' ', 'T'));
+    }
+    int year = parseDigits4(buf, off);
+    int month = parseDigits2(buf, off + 5);
+    int day = parseDigits2(buf, off + 8);
+    int hour = parseDigits2(buf, off + 11);
+    int minute = parseDigits2(buf, off + 14);
+    int second = parseDigits2(buf, off + 17);
+    int nano = len > 19 && buf[off + 19] == '.' ? parseFraction(buf, off + 20, len - 20) : 0;
+    return LocalDateTime.of(year, month, day, hour, minute, second, nano);
+  }
+
+  /**
+   * Parse a Postgres timestamptz text representation directly from bytes. Format: "2025-06-01
+   * 10:30:45+02" or "2025-06-01 10:30:45.123456+02:00".
+   */
+  private static OffsetDateTime parseOffsetTimestampFromBytes(byte[] buf, int off, int len) {
+    // Find the timezone offset: scan backward for +/-
+    int tzPos = -1;
+    for (int i = off + len - 1; i >= off + 19; i--) {
+      if (buf[i] == '+' || buf[i] == '-') {
+        tzPos = i;
+        break;
       }
     }
+    if (tzPos == -1) {
+      // No timezone found — fall back
+      return OffsetDateTime.parse(
+          new String(buf, off, len, StandardCharsets.UTF_8).replace(' ', 'T'));
+    }
+    // Parse the datetime portion
+    int year = parseDigits4(buf, off);
+    int month = parseDigits2(buf, off + 5);
+    int day = parseDigits2(buf, off + 8);
+    int hour = parseDigits2(buf, off + 11);
+    int minute = parseDigits2(buf, off + 14);
+    int second = parseDigits2(buf, off + 17);
+    int dotEnd = tzPos;
+    int nano =
+        dotEnd > off + 19 && buf[off + 19] == '.'
+            ? parseFraction(buf, off + 20, dotEnd - off - 20)
+            : 0;
+    // Parse timezone: +HH, +HH:MM, or +HH:MM:SS
+    int tzLen = off + len - tzPos;
+    int sign = buf[tzPos] == '-' ? -1 : 1;
+    int tzHour = parseDigits2(buf, tzPos + 1);
+    int tzMin = tzLen >= 6 ? parseDigits2(buf, tzPos + 4) : 0;
+    ZoneOffset offset = ZoneOffset.ofHoursMinutes(sign * tzHour, sign * tzMin);
+    return OffsetDateTime.of(year, month, day, hour, minute, second, nano, offset);
+  }
+
+  private static int parseDigits4(byte[] buf, int off) {
+    return (buf[off] - '0') * 1000
+        + (buf[off + 1] - '0') * 100
+        + (buf[off + 2] - '0') * 10
+        + (buf[off + 3] - '0');
+  }
+
+  private static int parseDigits2(byte[] buf, int off) {
+    return (buf[off] - '0') * 10 + (buf[off + 1] - '0');
+  }
+
+  /** Parse fractional seconds (digits after '.') into nanoseconds. */
+  private static int parseFraction(byte[] buf, int off, int maxLen) {
+    int nanos = 0;
+    int digits = 0;
+    for (int i = off; i < off + maxLen && digits < 9; i++) {
+      int d = buf[i] - '0';
+      if (d < 0 || d > 9) break;
+      nanos = nanos * 10 + d;
+      digits++;
+    }
+    // Pad to 9 digits (nanosecond precision)
+    for (int i = digits; i < 9; i++) {
+      nanos *= 10;
+    }
+    return nanos;
+  }
+
+  private int columnIndex(String name) {
+    Integer idx = columnNameIndex.get(name);
+    if (idx != null) {
+      return idx;
+    }
     throw new IllegalArgumentException("No column named: " + name);
+  }
+
+  /** Build a column name → index map. O(1) lookups instead of linear scan per getter call. */
+  public static @NonNull Map<String, Integer> buildColumnNameIndex(
+      @NonNull ColumnDescriptor[] columns) {
+    // Size for no rehash: n / 0.75 + 1
+    Map<String, Integer> map = new HashMap<>((columns.length * 4 / 3) + 1);
+    for (int i = 0; i < columns.length; i++) {
+      map.putIfAbsent(columns[i].name(), i);
+    }
+    return map;
   }
 }

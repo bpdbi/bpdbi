@@ -11,6 +11,7 @@ import io.github.bpdbi.benchmark.model.OrderItemEntity;
 import io.github.bpdbi.benchmark.model.ProductEntity;
 import io.github.bpdbi.benchmark.model.UserEntity;
 import io.github.bpdbi.core.Connection;
+import io.github.bpdbi.core.ConnectionConfig;
 import io.github.bpdbi.pg.PgConnection;
 import io.github.bpdbi.pool.ConnectionPool;
 import io.github.bpdbi.pool.PoolConfig;
@@ -100,7 +101,9 @@ public class DatabaseState {
   }
 
   public Connection newBpdbiConnection() {
-    return PgConnection.connect(benchHost, benchPort, pgDatabase, pgUser, pgPassword);
+    var config = new ConnectionConfig(benchHost, benchPort, pgDatabase, pgUser, pgPassword);
+    config.cachePreparedStatements(true);
+    return PgConnection.connect(config);
   }
 
   public ConnectionPool bpdbiPool() {

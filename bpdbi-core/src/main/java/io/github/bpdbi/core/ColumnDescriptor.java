@@ -31,4 +31,23 @@ public record ColumnDescriptor(
   public boolean isJsonType() {
     return typeOID == OID_PG_JSON || typeOID == OID_PG_JSONB || typeOID == OID_MYSQL_JSON;
   }
+
+  // Postgres OIDs for text-like types where binary wire format is identical to UTF-8 text
+  private static final int OID_TEXT = 25;
+  private static final int OID_VARCHAR = 1043;
+  private static final int OID_BPCHAR = 1042;
+  private static final int OID_CHAR = 18;
+  private static final int OID_NAME = 19;
+  private static final int OID_XML = 142;
+
+  /**
+   * True if this column's binary wire format is raw UTF-8 text, making binary-to-string decoding a
+   * plain {@code new String(buf, off, len, UTF_8)} without any type-specific conversion.
+   */
+  public boolean isTextLikeType() {
+    return switch (typeOID) {
+      case OID_TEXT, OID_VARCHAR, OID_BPCHAR, OID_CHAR, OID_NAME, OID_XML -> true;
+      default -> false;
+    };
+  }
 }

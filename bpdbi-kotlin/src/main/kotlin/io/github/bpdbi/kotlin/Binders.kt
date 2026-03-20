@@ -14,7 +14,7 @@ fun BinderRegistry.registerKotlinTypes(): BinderRegistry = apply {
     register(ULong::class.java) { it.toLong().toString() }
 }
 
-/** Register ColumnMappers (the parse from text) for Kotlin-specific types. */
+/** Register ColumnMappers (that parse from text) for Kotlin-specific types. */
 fun ColumnMapperRegistry.registerKotlinTypes(): ColumnMapperRegistry = apply {
     register(kotlin.uuid.Uuid::class.java) { v, _ -> kotlin.uuid.Uuid.parse(v) }
     register(kotlin.time.Instant::class.java) { v, _ -> parseInstant(v) }

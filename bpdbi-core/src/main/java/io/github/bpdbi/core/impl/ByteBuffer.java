@@ -201,6 +201,16 @@ public final class ByteBuffer {
     data[writerIndex++] = 0;
   }
 
+  /**
+   * Write a pre-encoded null-terminated C string. The input must already include the trailing null
+   * byte. Avoids the String → byte[] conversion of {@link #writeCString(String)}.
+   */
+  public void writeCStringBytes(byte @NonNull [] cstring) {
+    ensureCapacity(cstring.length);
+    System.arraycopy(cstring, 0, data, writerIndex, cstring.length);
+    writerIndex += cstring.length;
+  }
+
   public void writeString(@NonNull String s) {
     byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
     writeBytes(bytes);

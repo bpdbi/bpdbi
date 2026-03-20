@@ -97,6 +97,10 @@ public final class BinderRegistry {
   /**
    * Convert a value to its SQL string representation using the registered binder. Returns null if
    * the value is null.
+   *
+   * <p>If no binder is registered for the value's exact type or any of its supertypes, the value is
+   * converted via {@link Object#toString()} as a fallback. Register explicit binders for custom
+   * types to avoid relying on this fallback.
    */
   @SuppressWarnings("unchecked")
   public @Nullable String bind(@Nullable Object value) {
@@ -114,7 +118,7 @@ public final class BinderRegistry {
         return ((Binder<Object>) entry.getValue()).bind(value);
       }
     }
-    // Fallback to toString
+    // Fallback: no registered binder found, use toString()
     return value.toString();
   }
 

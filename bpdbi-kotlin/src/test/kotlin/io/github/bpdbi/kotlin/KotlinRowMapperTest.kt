@@ -3,6 +3,7 @@ package io.github.bpdbi.kotlin
 import io.github.bpdbi.core.ColumnDescriptor
 import io.github.bpdbi.core.Row
 import io.github.bpdbi.core.RowMapper
+import io.github.bpdbi.core.RowSet
 import kotlinx.serialization.Serializable
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -86,5 +87,21 @@ class KotlinRowMapperTest {
         val r2 = mapper.map(row("2", "Bob", "bob@y.com"))
         assertEquals(User(1, "Alice", "alice@x.com"), r1)
         assertEquals(User(2, "Bob", "bob@y.com"), r2)
+    }
+
+    @Test
+    fun `deserializeFirstOrNull on empty RowSet returns null`() {
+        val rs = RowSet(listOf(), listOf(), 0)
+        val result = rs.deserializeFirstOrNull<User>()
+        assertNull(result)
+    }
+
+    @Test
+    fun `deserializeFirstOrNull on non-empty RowSet returns value`() {
+        val r = row("1", "Alice", "alice@x.com")
+        val cols = listOf(col("col0"), col("col1"), col("col2"))
+        val rs = RowSet(listOf(r), cols, 0)
+        val result = rs.deserializeFirstOrNull<User>()
+        assertEquals(User(1, "Alice", "alice@x.com"), result)
     }
 }

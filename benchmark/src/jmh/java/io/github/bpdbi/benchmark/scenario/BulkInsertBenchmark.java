@@ -67,6 +67,14 @@ public class BulkInsertBenchmark {
     }
   }
 
+  /** executeMany inside a transaction — matches JDBC's setAutoCommit(false) + batch + commit. */
+  @Benchmark
+  public void bpdbi_executeManyTx(DatabaseState db, Blackhole bh) {
+    try (var conn = db.bpdbiPool().acquire()) {
+      conn.withTransaction(tx -> tx.executeMany(SQL, paramSets));
+    }
+  }
+
   // --- JDBC batch ---
 
   @Benchmark
@@ -125,7 +133,7 @@ public class BulkInsertBenchmark {
 
   // --- Vert.x ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void vertx_batch(DatabaseState db, Blackhole bh) {
     var tuples = new ArrayList<Tuple>(BATCH_SIZE);
     for (var params : paramSets) {

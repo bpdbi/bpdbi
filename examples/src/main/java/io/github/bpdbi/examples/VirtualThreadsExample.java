@@ -5,7 +5,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Demonstrates djb with Java 21 virtual threads. Each virtual thread gets its own connection — no
+ * Demonstrates bpdbi with Java 21 virtual threads. Each virtual thread gets its own connection — no
  * pool needed for moderate concurrency.
  *
  * <p>Run: ./gradlew :examples:run -PmainClass=io.github.bpdbi.examples.VirtualThreadsExample

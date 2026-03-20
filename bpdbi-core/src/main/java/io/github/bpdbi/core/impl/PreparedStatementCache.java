@@ -108,6 +108,15 @@ public class PreparedStatementCache
   }
 
   @Override
+  public CachedStatement remove(Object key) {
+    CachedStatement removed = super.remove(key);
+    if (removed != null && key instanceof String sql) {
+      totalSqlBytes -= sql.length();
+    }
+    return removed;
+  }
+
+  @Override
   public void clear() {
     super.clear();
     removed = null;
@@ -123,6 +132,7 @@ public class PreparedStatementCache
   public record CachedStatement(
       @NonNull String sql,
       @Nullable String pgStatementName, // PG: named statement, null for MySQL
+      byte @Nullable [] pgStatementNameCString, // pre-encoded null-terminated C string for the wire
       int mysqlStatementId, // MySQL: server-assigned ID, -1 for PG
       ColumnDescriptor @Nullable [] columns,
       int @Nullable [] columnTypes, // MySQL binary column types, null for PG
@@ -133,10 +143,18 @@ public class PreparedStatementCache
     public CachedStatement(
         @NonNull String sql,
         @Nullable String pgStatementName,
+        byte @Nullable [] pgStatementNameCString,
         int mysqlStatementId,
         ColumnDescriptor @Nullable [] columns,
         int @Nullable [] columnTypes) {
-      this(sql, pgStatementName, mysqlStatementId, columns, columnTypes, null);
+      this(
+          sql,
+          pgStatementName,
+          pgStatementNameCString,
+          mysqlStatementId,
+          columns,
+          columnTypes,
+          null);
     }
   }
 }

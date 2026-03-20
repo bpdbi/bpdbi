@@ -282,4 +282,47 @@ class NamedParamParserTest {
     var result = NamedParamParser.resolveParams(List.of("val"), params);
     assertNull(result[0]);
   }
+
+  // --- Dollar-quoted string tests ---
+
+  @Test
+  void paramInsideDollarQuoteNotSupported() {
+    // Dollar-quoted strings ($tag$...$tag$) are NOT supported by the parser.
+    // The :text inside is treated as a named parameter. This is a known limitation.
+    // Users should use single-quoted strings instead of dollar-quoting when using named params.
+    var result =
+        NamedParamParser.parse(
+            "SELECT $tag$some :text$tag$ WHERE x = :param",
+            Map.of("text", "ignored", "param", "yes"),
+            "$",
+            registry);
+    assertEquals(2, result.params().length);
+  }
+
+  @Test
+  void repeatedParamName() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT :val AS a, :val AS b", Map.of("val", "hello"), "$", registry);
+    assertEquals("SELECT $1 AS a, $2 AS b", result.sql());
+    assertArrayEquals(new String[] {"hello", "hello"}, result.params());
+  }
+
+  @Test
+  void pgCastWithMultipleParts() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT :val::timestamp::date", Map.of("val", "2025-01-01"), "$", registry);
+    assertEquals("SELECT $1::timestamp::date", result.sql());
+    assertEquals(1, result.params().length);
+  }
+
+  @Test
+  void paramInsideBlockCommentIgnored() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT /* :not_a_param */ :real", Map.of("real", "x"), "$", registry);
+    assertEquals("SELECT /* :not_a_param */ $1", result.sql());
+    assertEquals(1, result.params().length);
+  }
 }

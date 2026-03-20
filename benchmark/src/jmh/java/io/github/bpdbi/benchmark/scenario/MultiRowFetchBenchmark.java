@@ -134,7 +134,7 @@ public class MultiRowFetchBenchmark {
 
   // --- Vert.x ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void vertx_raw(DatabaseState db, Blackhole bh) {
     var category = DatabaseState.categoryForParam(categoryIdx);
     var rows =

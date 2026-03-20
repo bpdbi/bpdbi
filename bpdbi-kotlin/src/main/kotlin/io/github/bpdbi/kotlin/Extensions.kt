@@ -14,7 +14,7 @@ inline fun <reified T : Any> RowSet.deserializeFirst(): T =
 
 /** Deserialize the first row to [T], or null if empty. */
 inline fun <reified T : Any> RowSet.deserializeFirstOrNull(): T? =
-    if (size() == 0) null else deserializeFirst<T>()
+    if (isEmpty()) null else deserializeFirst<T>()
 
 /** Query and deserialize all rows to a list of [T]. */
 inline fun <reified T : Any> Connection.queryAs(sql: String, vararg params: Any?): List<T> =

@@ -67,7 +67,7 @@ public class PgDataTypesExample {
       System.out.printf("  bytea: %02X %02X %02X %02X%n", bytes[0], bytes[1], bytes[2], bytes[3]);
 
       System.out.println("\n=== JSON ===");
-      rs = conn.query("SELECT '{\"name\": \"djb\", \"version\": 1}'::jsonb AS j");
+      rs = conn.query("SELECT '{\"name\": \"bpdbi\", \"version\": 1}'::jsonb AS j");
       System.out.println("  jsonb: " + rs.first().getString("j"));
 
       System.out.println("\n=== NULL Handling ===");

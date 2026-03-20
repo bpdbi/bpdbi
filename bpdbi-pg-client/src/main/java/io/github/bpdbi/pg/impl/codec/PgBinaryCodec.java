@@ -264,48 +264,53 @@ public final class PgBinaryCodec implements BinaryCodec {
       return BigDecimal.ZERO.setScale(dScale, RoundingMode.UNNECESSARY);
     }
 
-    StringBuilder sb = new StringBuilder();
-    if (sign == NUMERIC_NEG) {
-      sb.append('-');
-    }
+    // Build the unscaled value using long arithmetic, promoting to BigInteger only if needed.
+    // Each Postgres digit is base-10000.
 
-    if (weight < 0) {
-      sb.append('0');
-    } else {
-      for (int i = 0; i <= weight; i++) {
-        int d = (i < nDigits) ? decodeInt2At(buf, offset + 8 + i * 2) : 0;
-        if (i == 0) {
-          sb.append(d);
-        } else {
-          appendPadded4(sb, d);
-        }
-      }
-    }
-
-    if (dScale > 0) {
-      sb.append('.');
-      int fracDigitsWritten = 0;
-      for (int i = 0; i < -(weight + 1) && fracDigitsWritten < dScale; i++) {
-        for (int j = 0; j < 4 && fracDigitsWritten < dScale; j++) {
-          sb.append('0');
-          fracDigitsWritten++;
-        }
-      }
-      int startGroup = Math.max(0, weight + 1);
-      for (int i = startGroup; i < nDigits && fracDigitsWritten < dScale; i++) {
+    // Fast path: try staying in long (up to 4 base-10000 digits = 16 decimal digits)
+    if (nDigits <= 4) {
+      long unscaled = 0;
+      for (int i = 0; i < nDigits; i++) {
         int d = decodeInt2At(buf, offset + 8 + i * 2);
-        for (int j = 0; j < 4 && fracDigitsWritten < dScale; j++) {
-          sb.append((char) ('0' + (d / DIGIT_DIVISORS[j]) % 10));
-          fracDigitsWritten++;
+        unscaled = unscaled * 10000 + d;
+      }
+      // The raw scale from digit positions: each digit past weight represents 4 decimal places
+      int rawScale = (nDigits - weight - 1) * 4;
+      // Adjust to target dScale by multiplying or dividing by powers of 10
+      if (rawScale < dScale) {
+        int shift = dScale - rawScale;
+        for (int i = 0; i < shift; i++) {
+          unscaled *= 10;
+        }
+      } else if (rawScale > dScale) {
+        int shift = rawScale - dScale;
+        for (int i = 0; i < shift; i++) {
+          unscaled /= 10;
         }
       }
-      while (fracDigitsWritten < dScale) {
-        sb.append('0');
-        fracDigitsWritten++;
+      if (sign == NUMERIC_NEG) {
+        unscaled = -unscaled;
       }
+      return BigDecimal.valueOf(unscaled, dScale);
     }
 
-    return new BigDecimal(sb.toString());
+    // Slow path: use BigInteger for large numbers
+    java.math.BigInteger unscaled = java.math.BigInteger.ZERO;
+    java.math.BigInteger base = java.math.BigInteger.valueOf(10000);
+    for (int i = 0; i < nDigits; i++) {
+      int d = decodeInt2At(buf, offset + 8 + i * 2);
+      unscaled = unscaled.multiply(base).add(java.math.BigInteger.valueOf(d));
+    }
+    int rawScale = (nDigits - weight - 1) * 4;
+    if (rawScale < dScale) {
+      unscaled = unscaled.multiply(java.math.BigInteger.TEN.pow(dScale - rawScale));
+    } else if (rawScale > dScale) {
+      unscaled = unscaled.divide(java.math.BigInteger.TEN.pow(rawScale - dScale));
+    }
+    if (sign == NUMERIC_NEG) {
+      unscaled = unscaled.negate();
+    }
+    return new BigDecimal(unscaled, dScale);
   }
 
   @Override
@@ -817,6 +822,7 @@ public final class PgBinaryCodec implements BinaryCodec {
       int elemLen = decodeInt4At(value, idx);
       idx += 4;
       if (elemLen == -1) {
+        result.add(null);
         continue;
       }
       result.add(elementDecoder.decode(value, idx, elemLen));
@@ -1132,13 +1138,6 @@ public final class PgBinaryCodec implements BinaryCodec {
 
   private static void putFloat8(byte[] buf, int offset, double value) {
     putInt8(buf, offset, Double.doubleToLongBits(value));
-  }
-
-  private static void appendPadded4(StringBuilder sb, int d) {
-    if (d < 10) sb.append("000");
-    else if (d < 100) sb.append("00");
-    else if (d < 1000) sb.append('0');
-    sb.append(d);
   }
 
   private static byte[] copySlice(byte[] buf, int offset, int length) {

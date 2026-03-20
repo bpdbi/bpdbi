@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -22,25 +24,34 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Transaction implements Connection {
 
+  private static final Logger LOG = Logger.getLogger(Transaction.class.getName());
+
   private final Connection conn;
   private final String savepointName; // null = root transaction, non-null = nested (savepoint)
   private final AtomicInteger savepointCounter;
   private boolean finished = false;
 
-  /** Create a root transaction (sends BEGIN). */
+  /**
+   * Create a root transaction. BEGIN is enqueued but not flushed — it will be pipelined with the
+   * first actual query, saving a roundtrip. This works because all statements (including
+   * parameterless ones like BEGIN) use the extended protocol pipeline.
+   */
   public Transaction(@NonNull Connection conn) {
     this.conn = conn;
     this.savepointName = null;
     this.savepointCounter = new AtomicInteger(0);
-    conn.query("BEGIN");
+    conn.enqueue("BEGIN");
   }
 
-  /** Create a nested transaction (sends SAVEPOINT). */
+  /**
+   * Create a nested transaction. SAVEPOINT is enqueued but not flushed — it will be pipelined with
+   * the next query.
+   */
   private Transaction(Connection conn, String savepointName, AtomicInteger savepointCounter) {
     this.conn = conn;
     this.savepointName = savepointName;
     this.savepointCounter = savepointCounter;
-    conn.query("SAVEPOINT " + savepointName);
+    conn.enqueue("SAVEPOINT " + savepointName);
   }
 
   private boolean isNested() {
@@ -138,9 +149,9 @@ public final class Transaction implements Connection {
 
   @Override
   public void queryStream(
-      @NonNull String sql, @NonNull Consumer<Row> consumer, @Nullable Object... params) {
+      @NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer) {
     checkNotFinished();
-    conn.queryStream(sql, consumer, params);
+    conn.queryStream(sql, params, consumer);
   }
 
   @Override
@@ -165,8 +176,8 @@ public final class Transaction implements Connection {
   }
 
   @Override
-  public void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry) {
-    conn.setColumnMapperRegistry(registry);
+  public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {
+    conn.setMapperRegistry(registry);
   }
 
   @Override
@@ -217,7 +228,8 @@ public final class Transaction implements Connection {
           conn.query("ROLLBACK");
         }
       } catch (Exception e) {
-        // best effort — connection may already be broken
+        LOG.log(
+            Level.FINE, "Failed to rollback transaction on close — connection may be broken", e);
       }
       finished = true;
     }

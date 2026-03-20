@@ -370,4 +370,105 @@ class BaseConnectionTest {
     conn.flush();
     assertNull(conn.extendedQueries.getFirst().params[0]);
   }
+
+  // ===== queryStream / stream =====
+
+  @Test
+  void queryStreamNoParamsCallsStreaming() {
+    var conn = new FakeConnection();
+    var count = new int[] {0};
+    conn.queryStream("SELECT 1", row -> count[0]++);
+    // FakeConnection.executeExtendedQueryStreaming is a no-op, so count stays 0
+    // but the method should not throw
+  }
+
+  @Test
+  void queryStreamFlushesQueuedStatements() {
+    var conn = new FakeConnection();
+    conn.enqueue("SET search_path TO public");
+    // queryStream should flush pending statements first
+    conn.queryStream("SELECT 1", row -> {});
+    // The enqueued statement should have been flushed
+    assertEquals(1, conn.extendedQueries.size());
+  }
+
+  @Test
+  void queryStreamWithParamsFlushesQueue() {
+    var conn = new FakeConnection();
+    conn.enqueue("SET timeout TO 5");
+    conn.queryStream("SELECT $1", new Object[] {42}, row -> {});
+    assertEquals(1, conn.extendedQueries.size());
+  }
+
+  @Test
+  void streamNoParamsUsesEmptyParams() {
+    var conn = new FakeConnection();
+    var rowStream = conn.stream("SELECT 1");
+    assertNotNull(rowStream);
+    rowStream.close();
+  }
+
+  @Test
+  void streamFlushesQueuedStatements() {
+    var conn = new FakeConnection();
+    conn.enqueue("SET search_path TO public");
+    var rowStream = conn.stream("SELECT 1");
+    rowStream.close();
+    assertEquals(1, conn.extendedQueries.size());
+  }
+
+  // ===== withTransaction =====
+
+  @Test
+  void withTransactionCommitsOnSuccess() {
+    var conn = new FakeConnection();
+    String result =
+        conn.withTransaction(
+            tx -> {
+              tx.query("INSERT INTO t VALUES (1)");
+              return "done";
+            });
+    assertEquals("done", result);
+    // BEGIN + INSERT + COMMIT should all be in the query list
+    assertTrue(conn.extendedQueries.size() >= 3);
+  }
+
+  @Test
+  void withTransactionRollsBackOnException() {
+    var conn = new FakeConnection();
+    assertThrows(
+        RuntimeException.class,
+        () ->
+            conn.withTransaction(
+                tx -> {
+                  tx.query("INSERT INTO t VALUES (1)");
+                  throw new RuntimeException("fail");
+                }));
+    // Should have BEGIN, INSERT, and then auto-rollback via close()
+  }
+
+  // ===== encodeParams with JSON mapper =====
+
+  @Test
+  void encodeParamsUsesJsonMapperForJsonTypes() {
+    var conn = new FakeConnection();
+    conn.binderRegistry().registerAsJson(StringBuilder.class);
+    conn.setJsonMapper(
+        new io.github.bpdbi.core.JsonMapper() {
+          @Override
+          public <T> T fromJson(String json, Class<T> type) {
+            return null;
+          }
+
+          @Override
+          public String toJson(Object value) {
+            return value.toString();
+          }
+        });
+
+    var sb = new StringBuilder("hello");
+    conn.enqueue("INSERT INTO t VALUES ($1)", sb);
+    conn.flush();
+    assertEquals("hello", conn.extendedQueries.getFirst().params[0]);
+  }
 }

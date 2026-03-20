@@ -68,6 +68,11 @@ public final class RowSet implements Iterable<Row> {
     return rows.size();
   }
 
+  public boolean isEmpty() {
+    checkError();
+    return rows.isEmpty();
+  }
+
   public int rowsAffected() {
     checkError();
     return rowsAffected;

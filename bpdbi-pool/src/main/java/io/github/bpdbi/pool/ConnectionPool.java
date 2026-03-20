@@ -1,13 +1,13 @@
 package io.github.bpdbi.pool;
 
 import io.github.bpdbi.core.Connection;
-import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,19 +16,20 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A simple db connection pool for Djb connections.
+ * A connection pool for bpdbi connections, optimized for minimal hot-path overhead.
  *
  * <p>Thread-safe. Each call to {@link #acquire()} borrows a connection from the pool; callers
  * return it by calling {@link Connection#close()} on the returned connection (which redirects to
  * the pool instead of closing). Alternatively, use {@link #withConnection(ConnectionAction)} for
  * automatic release.
  *
- * <p>Connections are created lazily up to {@link PoolConfig#maxSize()}. If all connections are in
- * use, {@link #acquire()} blocks until one is returned or the configured timeout expires.
+ * <p>The pool uses thread-local affinity inspired by HikariCP's ConcurrentBag: each thread
+ * remembers its last-used connection and tries to reclaim it on the next acquire, avoiding shared
+ * queue contention in the common borrow-use-return-borrow pattern.
  *
- * <p>When {@link PoolConfig#maxIdleTimeMillis()} or {@link PoolConfig#maxLifetimeMillis()} are
- * configured and {@link PoolConfig#poolCleanerPeriodMillis()} &gt; 0, a background thread
- * periodically evicts expired connections and checks for leaked connections.
+ * <p>Timestamps use {@link System#nanoTime()} (monotonic, not wall-clock) for all internal
+ * lifecycle management (idle time, max lifetime, leak detection). This avoids wall-clock drift
+ * issues and is cheaper to call on many platforms.
  */
 public final class ConnectionPool implements AutoCloseable {
 
@@ -37,17 +38,42 @@ public final class ConnectionPool implements AutoCloseable {
   private final ConnectionFactory factory;
   private final PoolConfig config;
   private final BlockingQueue<PooledConnection> idle;
-  private final Set<PooledConnection> active = ConcurrentHashMap.newKeySet();
   private final AtomicInteger totalCount = new AtomicInteger(0);
   private final AtomicInteger waitCount = new AtomicInteger(0);
   private final AtomicBoolean closed = new AtomicBoolean(false);
   private final @Nullable ScheduledExecutorService cleaner;
   private final @Nullable ScheduledFuture<?> cleanerTask;
 
+  // Leak detection: only tracked when leak detection is enabled. Uses a CopyOnWriteArrayList
+  // since writes (acquire/release) are infrequent relative to the cleaner's read sweeps, and
+  // this avoids the ConcurrentHashMap overhead on every acquire/release.
+  private final @Nullable CopyOnWriteArrayList<PooledConnection> activeForLeakDetection;
+
+  // Converted config values from millis to nanos, cached to avoid repeated conversion.
+  private final long maxIdleTimeNanos;
+  private final long connectionTimeoutNanos;
+  private final long leakDetectionThresholdNanos;
+
+  /**
+   * Thread-local hint for the last connection used by each thread. Checked first on acquire to
+   * avoid contending on the shared idle queue — a pattern borrowed from HikariCP's ConcurrentBag.
+   * The connection is only used if it is still idle and valid; otherwise it is ignored and the
+   * normal path is taken.
+   */
+  private final ThreadLocal<PooledConnection> threadLocal = new ThreadLocal<>();
+
   public ConnectionPool(@NonNull ConnectionFactory factory, @NonNull PoolConfig config) {
     this.factory = factory;
     this.config = config;
     this.idle = new ArrayBlockingQueue<>(config.maxSize());
+    this.maxIdleTimeNanos = TimeUnit.MILLISECONDS.toNanos(config.maxIdleTimeMillis());
+    this.connectionTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(config.connectionTimeoutMillis());
+    this.leakDetectionThresholdNanos =
+        TimeUnit.MILLISECONDS.toNanos(config.leakDetectionThresholdMillis());
+
+    // Only allocate the active-connections list when leak detection is enabled
+    this.activeForLeakDetection =
+        config.leakDetectionThresholdMillis() > 0 ? new CopyOnWriteArrayList<>() : null;
 
     boolean needsCleaner =
         config.poolCleanerPeriodMillis() > 0
@@ -58,7 +84,7 @@ public final class ConnectionPool implements AutoCloseable {
       this.cleaner =
           Executors.newSingleThreadScheduledExecutor(
               r -> {
-                Thread t = new Thread(r, "djb-pool-cleaner");
+                Thread t = new Thread(r, "bpdbi-pool-cleaner");
                 t.setDaemon(true);
                 return t;
               });
@@ -94,8 +120,24 @@ public final class ConnectionPool implements AutoCloseable {
         throw new IllegalStateException("Pool is closed");
       }
 
-      // Try to get an idle connection first (non-blocking)
-      PooledConnection pc = idle.poll();
+      // Fast path: check thread-local hint first to avoid shared queue contention.
+      // The hint is only used if the connection is still in the idle queue (remove returns true).
+      PooledConnection pc = threadLocal.get();
+      if (pc != null) {
+        threadLocal.remove();
+        if (idle.remove(pc)) {
+          // Successfully claimed from queue — validate like any other idle connection
+          if (isValid(pc) && validateConnection(pc)) {
+            return checkout(pc);
+          }
+          discard(pc);
+          continue; // slot freed — try again
+        }
+        // Hint was stale (connection already evicted or claimed by another thread) — fall through
+      }
+
+      // Try to get an idle connection (non-blocking)
+      pc = idle.poll();
       if (pc != null) {
         if (isValid(pc) && validateConnection(pc)) {
           return checkout(pc);
@@ -115,7 +157,9 @@ public final class ConnectionPool implements AutoCloseable {
             totalCount.decrementAndGet();
             throw e;
           }
-          pc = new PooledConnection(conn, this, System.currentTimeMillis());
+          pc =
+              new PooledConnection(
+                  conn, this, System.nanoTime(), computeEffectiveMaxLifetimeNanos());
           return checkout(pc); // if hook fails, checkout calls discard (which decrements)
         }
       }
@@ -132,7 +176,7 @@ public final class ConnectionPool implements AutoCloseable {
 
       // All connections are in use — wait for one to be returned
       try {
-        pc = idle.poll(config.connectionTimeoutMillis(), TimeUnit.MILLISECONDS);
+        pc = idle.poll(connectionTimeoutNanos, TimeUnit.NANOSECONDS);
         if (pc == null) {
           throw new PoolTimeoutException(config.connectionTimeoutMillis());
         }
@@ -159,16 +203,18 @@ public final class ConnectionPool implements AutoCloseable {
       closeQuietly(connection);
       return;
     }
-    active.remove(pc);
-    pc.returnedAt = System.currentTimeMillis();
+    pc.returnedAtNanos = System.nanoTime();
+    if (activeForLeakDetection != null) {
+      activeForLeakDetection.remove(pc);
+    }
     if (closed.get()) {
       discard(pc);
       return;
     }
-    var beforeRecycle = config.beforeRecycle();
-    if (beforeRecycle != null) {
+    var beforeReturn = config.beforeReturn();
+    if (beforeReturn != null) {
       try {
-        beforeRecycle.accept(pc);
+        beforeReturn.accept(pc);
       } catch (Exception e) {
         discard(pc);
         return;
@@ -176,7 +222,11 @@ public final class ConnectionPool implements AutoCloseable {
     }
     if (!idle.offer(pc)) {
       discard(pc);
+      return;
     }
+    // Set thread-local hint so this thread can reclaim the same connection on next acquire,
+    // avoiding shared queue contention in the common borrow-use-return-borrow pattern.
+    threadLocal.set(pc);
   }
 
   /** Execute an action with a pooled connection, automatically releasing it when done. */
@@ -187,7 +237,7 @@ public final class ConnectionPool implements AutoCloseable {
   }
 
   /** Execute an action with a pooled connection (no return value). */
-  @SuppressWarnings("overloads")
+  @SuppressWarnings("overloads") // intentional overload for void-returning variant
   public void withConnection(@NonNull ConnectionAction action) {
     try (Connection conn = acquire()) {
       action.accept(conn);
@@ -206,7 +256,7 @@ public final class ConnectionPool implements AutoCloseable {
 
   /** Number of connections currently borrowed and in use. */
   public int activeCount() {
-    return active.size();
+    return totalCount.get() - idle.size();
   }
 
   @Override
@@ -226,14 +276,18 @@ public final class ConnectionPool implements AutoCloseable {
   }
 
   private Connection checkout(PooledConnection pc) {
-    pc.acquiredAt = System.currentTimeMillis();
-    active.add(pc);
+    pc.acquiredAtNanos = System.nanoTime();
+    if (activeForLeakDetection != null) {
+      activeForLeakDetection.add(pc);
+    }
     var afterAcquire = config.afterAcquire();
     if (afterAcquire != null) {
       try {
         afterAcquire.accept(pc);
       } catch (Exception e) {
-        active.remove(pc);
+        if (activeForLeakDetection != null) {
+          activeForLeakDetection.remove(pc);
+        }
         discard(pc);
         throw e;
       }
@@ -247,7 +301,7 @@ public final class ConnectionPool implements AutoCloseable {
   }
 
   private void evict() {
-    long now = System.currentTimeMillis();
+    long now = System.nanoTime();
     int size = idle.size();
     for (int i = 0; i < size; i++) {
       PooledConnection pc = idle.poll();
@@ -265,40 +319,59 @@ public final class ConnectionPool implements AutoCloseable {
   }
 
   private void detectLeaks() {
-    long threshold = config.leakDetectionThresholdMillis();
-    if (threshold <= 0) {
+    if (activeForLeakDetection == null || leakDetectionThresholdNanos <= 0) {
       return;
     }
-    long now = System.currentTimeMillis();
-    for (PooledConnection pc : active) {
-      long held = now - pc.acquiredAt;
-      if (held >= threshold) {
+    long now = System.nanoTime();
+    for (PooledConnection pc : activeForLeakDetection) {
+      long heldNanos = now - pc.acquiredAtNanos;
+      if (heldNanos >= leakDetectionThresholdNanos) {
+        long heldMs = TimeUnit.NANOSECONDS.toMillis(heldNanos);
+        long threshMs = config.leakDetectionThresholdMillis();
         LOG.warning(
             "Possible connection leak detected: connection held for "
-                + held
+                + heldMs
                 + "ms (threshold: "
-                + threshold
+                + threshMs
                 + "ms)");
       }
     }
   }
 
   private boolean isValid(PooledConnection pc) {
-    return isValid(pc, System.currentTimeMillis());
+    return isValid(pc, System.nanoTime());
   }
 
-  private boolean isValid(PooledConnection pc, long now) {
-    long maxIdle = config.maxIdleTimeMillis();
-    if (maxIdle > 0) {
-      if (now - pc.returnedAt >= maxIdle) {
+  private boolean isValid(PooledConnection pc, long nowNanos) {
+    if (maxIdleTimeNanos > 0) {
+      if (nowNanos - pc.returnedAtNanos >= maxIdleTimeNanos) {
         return false;
       }
     }
-    long maxLifetime = config.maxLifetimeMillis();
-    if (maxLifetime > 0) {
-      return (now - pc.createdAt) < maxLifetime;
+    long effectiveLifetimeNanos = pc.effectiveMaxLifetimeNanos;
+    if (effectiveLifetimeNanos > 0) {
+      return (nowNanos - pc.createdAtNanos) < effectiveLifetimeNanos;
     }
     return true;
+  }
+
+  /**
+   * Compute a per-connection max lifetime with random variance (up to 25%) subtracted. This
+   * prevents all connections created around the same time from expiring simultaneously, which would
+   * cause a burst of reconnections (thundering herd). Inspired by HikariCP.
+   */
+  private long computeEffectiveMaxLifetimeNanos() {
+    long maxLifetime = config.maxLifetimeMillis();
+    if (maxLifetime <= 0) {
+      return 0;
+    }
+    long maxLifetimeNanos = TimeUnit.MILLISECONDS.toNanos(maxLifetime);
+    // Apply up to 25% variance for lifetimes > 10 seconds; skip variance for very short lifetimes
+    if (maxLifetime > 10_000) {
+      long variance = ThreadLocalRandom.current().nextLong(maxLifetimeNanos / 4);
+      return maxLifetimeNanos - variance;
+    }
+    return maxLifetimeNanos;
   }
 
   private boolean validateConnection(PooledConnection pc) {
@@ -314,6 +387,9 @@ public final class ConnectionPool implements AutoCloseable {
   }
 
   private void discard(PooledConnection pc) {
+    if (activeForLeakDetection != null) {
+      activeForLeakDetection.remove(pc);
+    }
     totalCount.decrementAndGet();
     pc.closeDelegate();
   }

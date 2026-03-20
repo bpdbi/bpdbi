@@ -7,18 +7,22 @@ Ported from the battle-tested [Vert.x SQL Client](https://github.com/eclipse-ver
 Since it's blocking, `java.net.Socket` is used for I/O (no Netty dependencies, event loop, `Uni<T>`,
 Kotlin coroutines or other implementations of the "future" pattern).
 
+This library —like Vert.x SQL— does not use JDBC, as JDBC does not expose pipelining.
+This library presents a developer experience similar to [Jdbi](https://jdbi.org).
+
 ## Why?
 
 JDBC is [showing its age](docs/is-jdbc-showing-its-age.md) and (hence) does not allow pipelining
 which is available
 in [Postgres 14+](https://www.postgresql.org/docs/current/libpq-pipeline-mode.html)
-and [MySQL 5.7.12+](https://dev.mysql.com/blog-archive/mysql-5-7-12-part-2-improving-the-mysql-protocol/).
+and to some extent (TODO: add documentation for this) in [MySQL 5.7.12+](https://dev.mysql.com/blog-archive/mysql-5-7-12-part-2-improving-the-mysql-protocol/).
 
 Vert.x (`vertx-sql-client`) does support pipelines (for these databases) —it does not use JDBC—
-but forces [reactive/async programming](docs/why-not-write-all-code-reactive.md).
+but forces reactive/async programming and
+[this style of programming comes at a cost](docs/why-not-write-all-code-reactive.md).
 
-Bpdbi gives you pipelining with straightforward blocking code — ideal for **Java 21+ virtual threads,
-where blocking is inexpensive and readability of the code matters more than maximum throughput.
+Bpdbi provides pipelining for straightforward blocking code — ideal for **Java 21+ virtual threads**,
+which made blocking a lot more performant.
 
 Bpdbi provides a better developer experience than JDBC alone, it can be compared to Jdbi's DX.
 
@@ -29,25 +33,29 @@ something like Jdbi are needed (easily several MB of libraries), where Bpdbi is 
 
 Pipelining sends multiple statements to the database in a single network write and reads all
 responses back at once.
-Reducing the number of db roundtrips per HTTP request cycle significantly improves performance:
+
+It can be used to reduce the number of db roundtrips: this is a great way to improve the performance
+of, say, an HTTP request cycle.
+
+For example: queries for which we are not interested in the result (like starting a transaction,
+setting the JWT which is needed if you want to use Supabase's RLS, or other settings)
+can usually be sent alongside the first query that we **are** interested in the result of.
 
 ```java
 // 4 statements, 1 roundtrip
-conn.enqueue("SET search_path TO myschema");
-conn.enqueue("SET statement_timeout TO '5s'");
-conn.enqueue("CREATE TEMP TABLE IF NOT EXISTS _cache (id int, data text)");
-RowSet result = conn.query("SELECT * FROM my_table WHERE id = $1", 42);
+conn.enqueue("begin");
+conn.enqueue("set statement_timeout to '5s'");
+conn.enqueue("set local role authenticated");
+conn.enqueue("select set_config('request.jwt.claims', json_build_object('sub', ...)::text, true)");
+RowSet result = conn.query("select * from my_table where id = $1", 42);
 ```
 
 Without pipelining each of those would be a separate db roundtrip.
-Over a network with 1ms latency, that's 4ms saved on every request — and it adds up.
+Over a network with 1ms latency, that means at least 4ms is saved on every HTTP request
+as you likely do more than just one query.
 
-**Dependency minimalism.** Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
-the Postgres JDBC driver (~1.1MB), or MySQL Connector/J (~2.5MB). It also provides named parameters,
-row mapping, and type binding commonly found in libraries like Jdbi (~1MB) or Spring Data JDBC (~
-3MB) —
-without pulling in those dependencies. Bpdbi does not use the JVM reflection API out of the box
-(some optional mapper modules use it).
+Multiple db queries for which you **do** want results can also be combined in a pipeline.
+TODO: refer to the place that explains how we return placeholders/proxies/futures(?) in those cases.
 
 ## Design Principles
 
@@ -60,15 +68,31 @@ a pipeline sends N arbitrary statements (different SQL, different parameter coun
 in a single network write. Anything you'd do with batch, you can do with pipeline —
 plus mix in SETs, DDL, transactions, and different queries in the same roundtrip.
 
-**Binary protocol for parameterized queries** — Both the Postgres and MySQL drivers use the
-database's binary wire protocol for parameterized query results. Binary encoding is more compact
-on the wire, avoids text parsing overhead for numeric and temporal types, and simplifies decoding
-(no locale-dependent formatting). Parameterless queries use the simple query protocol (text format)
-because neither database supports all SQL commands via their prepared-statement protocol:
-MySQL's `COM_STMT_PREPARE` rejects `BEGIN`, `COMMIT`, `ROLLBACK`, `SET`, and other session
-commands; Postgres's extended query protocol forbids multi-statement strings (`SELECT 1; SELECT 2`).
-Text format also makes `getString()` work naturally for types that lack a dedicated binary codec
-(geometric, network, array, and interval types in Postgres).
+**Binary protocol everywhere** — The Postgres driver uses the extended query protocol
+(Parse/Bind/Execute) with binary result format for **all** queries, including parameterless ones
+like `BEGIN`, `COMMIT`, `SET`, and plain `SELECT`s. This is a deliberate departure from
+pgjdbc and most other drivers, which use the *simple query protocol* (text format) for
+parameterless statements. The always-binary design has three significant consequences:
+
+1. **Uniform pipelining.** Because every statement uses the same wire protocol,
+   `enqueue("BEGIN")` + `enqueue("SELECT ... WHERE id = $1", 42)` + `enqueue("COMMIT")`
+   + `flush()` goes through a single `executePipelinedBatch` → one TCP write → one Sync →
+   **one roundtrip**. Drivers that use the simple protocol for `BEGIN`/`COMMIT` cannot
+   pipeline them with extended-protocol queries — they need separate roundtrips.
+   This is why `conn.begin()` enqueues `BEGIN` lazily instead of flushing it immediately,
+   saving one roundtrip on every transaction.
+
+2. **Binary results for all queries.** Even `SELECT count(*) FROM t` (no parameters)
+   returns integers in binary (4 raw bytes) rather than text (`"12345"`), avoiding
+   text parsing overhead. Numeric, temporal, and UUID types benefit most.
+
+3. **No multi-statement strings.** Postgres's extended protocol rejects
+   `"SELECT 1; SELECT 2"` — use `enqueue()`/`flush()` instead, which is both
+   more explicit and faster.
+
+The MySQL driver uses `COM_STMT_EXECUTE` (binary) for parameterized queries and
+`COM_QUERY` (text) for parameterless queries, because MySQL's `COM_STMT_PREPARE`
+rejects `BEGIN`, `COMMIT`, `ROLLBACK`, `SET`, and other session commands.
 
 **Lazy decoding with column-oriented storage** — `Row` stores raw bytes from the wire and decodes
 them only when you call a typed getter (`getInteger`, `getString`, etc.).
@@ -104,9 +128,11 @@ write one integration test per SQL query that exercises it against a real databa
 These tests are straightforward to generate with AI assistance and catch schema mismatches,
 typos, and type errors at test time rather than compile time — with far less machinery.
 
-**Minimal dependencies** — Just `java.net.Socket`, a tiny SCRAM library (Postgres only),
-and JSpecify annotations (a single 3KB jar).
-No Netty, no reactive runtime, no reflection by default — ideal for GraalVM native images.
+**Dependency minimalism** Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
+the Postgres JDBC driver (~1.1MB), or MySQL Connector/J (~2.5MB). It also provides named parameters,
+row mapping, and type binding commonly found in libraries like Jdbi (~1MB) or Spring Data JDBC (~
+3MB). Bpdbi can be used without the JVM reflection API, some optional mapper modules do use it.
+Mind you that libraries like Hibernate and jOOQ weigh in at about 15MB as well.
 
 **GraalVM native-image ready** — The core library and drivers (`bpdbi-core`, `bpdbi-pg-client`,
 `bpdbi-mysql-client`, `bpdbi-pool`) use zero reflection and work out of the box with
@@ -330,7 +356,7 @@ val bobId   = results[bob].first().getLong("id")
 
 </details>
 
-Errors in one pipelined statement don't poison the others:
+Errors in one pipelined statement don't poison the others (each statement gets its own result):
 
 ```java
 conn.enqueue("SELECT 1");
@@ -520,40 +546,6 @@ conn.begin().use { tx ->
 
 This keeps tests isolated without requiring database cleanup or schema resets between runs.
 
-### Cursors
-
-For large result sets, use a cursor to read rows in batches (requires a transaction):
-
-```java
-conn.query("BEGIN");
-try (var cursor = conn.cursor("SELECT * FROM big_table WHERE category = $1", "active")) {
-    while (cursor.hasMore()) {
-        RowSet batch = cursor.read(100);  // fetch 100 rows at a time
-        for (Row row : batch) {
-            process(row);
-        }
-    }
-}
-conn.query("COMMIT");
-```
-
-<details><summary>Kotlin equivalent</summary>
-
-```kotlin
-conn.query("BEGIN")
-conn.cursor("SELECT * FROM big_table WHERE category = \$1", "active").use { cursor ->
-    while (cursor.hasMore()) {
-        val batch = cursor.read(100)  // fetch 100 rows at a time
-        for (row in batch) {
-            process(row)
-        }
-    }
-}
-conn.query("COMMIT")
-```
-
-</details>
-
 ### Streaming
 
 For large result sets where you don't need all rows in memory at once, use the streaming API.
@@ -628,8 +620,66 @@ conn.stream("SELECT * FROM big_table WHERE active").use { rows ->
 to drain remaining server messages and keep the connection usable. Closing early is safe — unread
 rows are discarded.
 
-Unlike cursors, streaming does not require a transaction. Compared to cursors, streaming is simpler
-(no batch size management) but only supports a single forward pass.
+### Cursors
+
+Cursors read rows in batches via server-side portals (requires a transaction):
+
+```java
+conn.query("BEGIN");
+try (var cursor = conn.cursor("SELECT * FROM big_table WHERE category = $1", "active")) {
+    while (cursor.hasMore()) {
+        RowSet batch = cursor.read(100);  // fetch 100 rows at a time
+        for (Row row : batch) {
+            process(row);
+        }
+    }
+}
+conn.query("COMMIT");
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+conn.query("BEGIN")
+conn.cursor("SELECT * FROM big_table WHERE category = \$1", "active").use { cursor ->
+    while (cursor.hasMore()) {
+        val batch = cursor.read(100)  // fetch 100 rows at a time
+        for (row in batch) {
+            process(row)
+        }
+    }
+}
+conn.query("COMMIT")
+```
+
+</details>
+
+### Streaming vs Cursors
+
+Both streaming and cursors avoid loading an entire result set into memory at once.
+Use streaming by default — it is simpler and significantly faster. Cursors exist for the
+few cases where streaming doesn't fit.
+
+**Use streaming** (`stream()` / `queryStream()`) when:
+- You want constant-memory iteration over a large result — this is the common case.
+- You process rows in a single forward pass (filter, transform, aggregate, write to a file, etc.).
+- You don't need a transaction for anything else.
+
+**Use cursors** (`cursor()`) when:
+- You need to **pause and resume** reading — e.g. read 100 rows, do external I/O, read the next 100.
+  With streaming, the server sends all rows immediately and the client must consume them.
+- You need **bounded memory per batch** with access to complete `RowSet` objects (column-oriented
+  storage, random access within the batch, `mapTo()`, etc.). Streaming yields one `Row` at a time.
+- You are already in a transaction and the cursor is a natural fit.
+
+**Why the performance difference?** Streaming reads all rows from a single server response — one
+network round-trip for the entire result. Cursors issue a `FETCH <n>` command per batch, each
+requiring its own round-trip. With 1ms network latency and a fetch size of 100, reading 1000 rows
+via a cursor adds ~20ms of round-trip overhead (10 fetches x 2ms) that streaming avoids entirely.
+In benchmarks, streaming is roughly **8x faster** than cursors for the same 1000-row result.
+
+For most workloads — ETL pipelines, report generation, data export — streaming is the right choice.
+Cursors are a specialized tool for interactive or externally-paced consumption patterns.
 
 ### Data Types
 
@@ -642,18 +692,18 @@ row.getLong("big_id");           // int8
 row.getDouble("price");          // float8
 row.getBigDecimal("amount");     // numeric, decimal
 row.getBoolean("active");        // boolean
-row.getLocalDate("created");     // date
+row.getInstant("created_at");    // timestamptz → java.time.Instant
+row.getLocalDate("issued_on");   // date
 row.getLocalTime("start_time");  // time
-row.getLocalDateTime("updated"); // timestamp
-row.getOffsetDateTime("ts");     // timestamptz
-row.getInstant("ts");            // timestamptz → java.time.Instant
-row.getOffsetTime("t");          // timetz (Postgres only)
-row.getUUID("ref");              // uuid
+row.getLocalDateTime("start");   // timestamp
+row.getOffsetTime("from_time");  // timetz (Postgres only)
+row.getOffsetDateTime("t");      // timestamptz
+row.getUUID("user_uuid");        // uuid
 row.getBytes("data");            // bytea
 ```
 
 All getters accept either a column index (`int`) or column name (`String`).
-NULL values return `null` — check with `row.isNull("col")`.
+NULL values return `null` — check  `row.isNull(columnIndex)` or `row.isNull("columnName")`.
 
 #### Postgres-specific types
 

@@ -2,6 +2,7 @@ package io.github.bpdbi.benchmark.scenario;
 
 import io.github.bpdbi.benchmark.infra.DatabaseState;
 import io.vertx.sqlclient.Tuple;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -30,6 +31,9 @@ public class PipelinedLookupBenchmark {
   private static final int BATCH_SIZE = 20;
   private static final String SQL = "SELECT id, username, email FROM users WHERE id = $1";
   private static final String JDBC_SQL = "SELECT id, username, email FROM users WHERE id = ?";
+  private static final String INSERT_SQL =
+      "INSERT INTO bench_orders (user_id, total, status) VALUES ($1, $2, $3)";
+  private static final String DELETE_SQL = "DELETE FROM bench_orders WHERE user_id = $1";
 
   // --- bpdbi: pipelined (enqueue + flush) ---
 
@@ -84,7 +88,7 @@ public class PipelinedLookupBenchmark {
 
   // --- Vert.x: sequential via pool ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void vertx_sequential(DatabaseState db, Blackhole bh) {
     for (int i = 1; i <= BATCH_SIZE; i++) {
       var rows =
@@ -104,7 +108,7 @@ public class PipelinedLookupBenchmark {
 
   // --- Vert.x: batch (pipelined) ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void vertx_batch(DatabaseState db, Blackhole bh) {
     var tuples = new ArrayList<Tuple>(BATCH_SIZE);
     for (int i = 1; i <= BATCH_SIZE; i++) {
@@ -124,6 +128,32 @@ public class PipelinedLookupBenchmark {
         bh.consume(row.getString("email"));
       }
       result = result.next();
+    }
+  }
+
+  // --- bpdbi: pipelined mixed reads + writes ---
+
+  @Benchmark
+  public void bpdbi_pipelinedMixed(DatabaseState db, Blackhole bh) {
+    try (var conn = db.bpdbiPool().acquire()) {
+      // Pipeline: insert + select + delete in one flush
+      for (int i = 1; i <= BATCH_SIZE / 2; i++) {
+        conn.enqueue(INSERT_SQL, i, new BigDecimal("49.99"), "pending");
+      }
+      for (int i = 1; i <= BATCH_SIZE / 2; i++) {
+        conn.enqueue(SQL, i);
+      }
+      for (int i = 1; i <= BATCH_SIZE / 2; i++) {
+        conn.enqueue(DELETE_SQL, i);
+      }
+      var results = conn.flush();
+      for (var rs : results) {
+        if (rs.size() > 0) {
+          var row = rs.first();
+          bh.consume(row.getInteger("id"));
+        }
+        bh.consume(rs.rowsAffected());
+      }
     }
   }
 }

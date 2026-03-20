@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Registry of {@link ColumnMapper}s for converting database text values to Java types.
@@ -45,15 +46,9 @@ public final class ColumnMapperRegistry {
   @SuppressWarnings("unchecked")
   @NonNull
   public <T> T map(@NonNull Class<T> type, @NonNull String value, @NonNull String columnName) {
-    ColumnMapper<T> mapper = (ColumnMapper<T>) mappers.get(type);
+    ColumnMapper<T> mapper = (ColumnMapper<T>) findMapper(type);
     if (mapper != null) {
       return mapper.map(value, columnName);
-    }
-    // Check supertypes
-    for (var entry : mappers.entrySet()) {
-      if (entry.getKey().isAssignableFrom(type)) {
-        return ((ColumnMapper<T>) entry.getValue()).map(value, columnName);
-      }
     }
     // Enum fallback: match by constant name
     if (type.isEnum()) {
@@ -70,15 +65,21 @@ public final class ColumnMapperRegistry {
   }
 
   public boolean hasMapper(@NonNull Class<?> type) {
-    if (mappers.containsKey(type)) {
-      return true;
+    return findMapper(type) != null || type.isEnum();
+  }
+
+  /** Find a mapper for the given type, checking exact match first then supertypes. */
+  private @Nullable ColumnMapper<?> findMapper(@NonNull Class<?> type) {
+    ColumnMapper<?> mapper = mappers.get(type);
+    if (mapper != null) {
+      return mapper;
     }
-    for (var key : mappers.keySet()) {
-      if (key.isAssignableFrom(type)) {
-        return true;
+    for (var entry : mappers.entrySet()) {
+      if (entry.getKey().isAssignableFrom(type)) {
+        return entry.getValue();
       }
     }
-    return type.isEnum();
+    return null;
   }
 
   /** Create a registry with built-in mappers for common types. */

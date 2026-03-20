@@ -143,7 +143,7 @@ public class SingleRowLookupBenchmark {
 
   // --- Vert.x ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void vertx_raw(DatabaseState db, Blackhole bh) {
     var rows =
         db.vertxPool()

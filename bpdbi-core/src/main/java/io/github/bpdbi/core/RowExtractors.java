@@ -18,9 +18,9 @@ import org.jspecify.annotations.Nullable;
  * <p>Each entry maps a Java type to a {@code BiFunction<Row, Integer, Object>} that calls the
  * appropriate typed getter on {@link Row}. Primitive types use null-safe defaults (0, false).
  *
- * <p>This class lives in djb-core so that all mapper modules can share it. If the mapper modules
+ * <p>This class lives in bpdbi-core so that all mapper modules can share it. If the mapper modules
  * are ever split into a separate repository, this class should move to a shared {@code
- * djb-mapper-common} module.
+ * bpdbi-mapper-common} module.
  */
 public final class RowExtractors {
 

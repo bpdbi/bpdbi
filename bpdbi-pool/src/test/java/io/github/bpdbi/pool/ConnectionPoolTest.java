@@ -106,9 +106,7 @@ class ConnectionPoolTest {
 
     @Override
     public void queryStream(
-        @NonNull String sql,
-        java.util.function.@NonNull Consumer<Row> consumer,
-        Object... params) {}
+        @NonNull String sql, Object[] params, java.util.function.@NonNull Consumer<Row> consumer) {}
 
     @Override
     public @NonNull RowStream stream(@NonNull String sql, Object... params) {
@@ -129,7 +127,7 @@ class ConnectionPoolTest {
     }
 
     @Override
-    public void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry) {}
+    public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {}
 
     @Override
     public @NonNull ColumnMapperRegistry mapperRegistry() {
@@ -845,27 +843,27 @@ class ConnectionPoolTest {
   }
 
   @Test
-  void beforeRecycleHookIsCalled() {
+  void beforeReturnHookIsCalled() {
     var hookCalls = new AtomicInteger();
     var counter = new AtomicInteger();
-    var config = new PoolConfig().maxSize(2).beforeRecycle(conn -> hookCalls.incrementAndGet());
+    var config = new PoolConfig().maxSize(2).beforeReturn(conn -> hookCalls.incrementAndGet());
     var pool = new ConnectionPool(() -> new StubConnection(counter.incrementAndGet()), config);
 
     var c1 = pool.acquire();
     assertEquals(0, hookCalls.get());
-    c1.close(); // triggers beforeRecycle
+    c1.close(); // triggers beforeReturn
     assertEquals(1, hookCalls.get());
     assertEquals(1, pool.idleCount());
     pool.close();
   }
 
   @Test
-  void beforeRecycleHookFailureDiscardsConnection() {
+  void beforeReturnHookFailureDiscardsConnection() {
     var counter = new AtomicInteger();
     var config =
         new PoolConfig()
             .maxSize(2)
-            .beforeRecycle(
+            .beforeReturn(
                 conn -> {
                   throw new RuntimeException("recycle failed");
                 });
@@ -873,9 +871,54 @@ class ConnectionPoolTest {
 
     var c1 = pool.acquire();
     assertEquals(1, pool.totalCount());
-    c1.close(); // triggers beforeRecycle, which throws — connection discarded
+    c1.close(); // triggers beforeReturn, which throws — connection discarded
     assertEquals(0, pool.totalCount());
     assertEquals(0, pool.idleCount());
+    pool.close();
+  }
+
+  @Test
+  void releaseNonPooledConnectionClosesIt() {
+    var counter = new AtomicInteger();
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(2));
+
+    // Directly call release with a non-pooled connection
+    var rawConn = new StubConnection(99);
+    pool.release(rawConn);
+    assertTrue(rawConn.closed);
+    assertEquals(0, pool.totalCount()); // pool unaffected
+    pool.close();
+  }
+
+  @Test
+  void pooledConnectionDelegatesQuery() {
+    var counter = new AtomicInteger();
+    var pool =
+        new ConnectionPool(
+            () -> new StubConnection(counter.incrementAndGet()), new PoolConfig().maxSize(1));
+
+    var conn = pool.acquire();
+    // StubConnection.query() returns null, but the delegation should work without error
+    conn.query("SELECT 1");
+    conn.enqueue("SELECT 2");
+    conn.flush();
+    conn.ping();
+    conn.parameters();
+
+    conn.close();
+    pool.close();
+  }
+
+  @Test
+  void singleArgConstructorUsesDefaultConfig() {
+    var counter = new AtomicInteger();
+    var pool = new ConnectionPool(() -> new StubConnection(counter.incrementAndGet()));
+
+    var c1 = pool.acquire();
+    assertNotNull(c1);
+    c1.close();
     pool.close();
   }
 }

@@ -19,6 +19,7 @@ public final class ByteCharSequence implements CharSequence {
   private final int off;
   private final int len;
   private final boolean ascii;
+  // Lazily decoded full String for non-ASCII content. Once set, all methods use this cached value.
   private String decoded;
 
   public ByteCharSequence(byte[] buf, int off, int len) {
@@ -42,6 +43,8 @@ public final class ByteCharSequence implements CharSequence {
     if (ascii) {
       return len;
     }
+    // Non-ASCII: decode to String (cached) and delegate — multi-byte UTF-8 chars mean
+    // byte count != char count, so we must decode to get the correct character length.
     return toString().length();
   }
 
@@ -53,6 +56,7 @@ public final class ByteCharSequence implements CharSequence {
       }
       return (char) buf[off + index];
     }
+    // Non-ASCII: delegate to the cached decoded String
     return toString().charAt(index);
   }
 
@@ -61,6 +65,7 @@ public final class ByteCharSequence implements CharSequence {
     if (ascii) {
       return new ByteCharSequence(buf, off + start, end - start);
     }
+    // Non-ASCII: delegate to the cached decoded String
     return toString().subSequence(start, end);
   }
 

@@ -52,8 +52,10 @@
 
 - **Pipelining-first**: `enqueue()` + `flush()` batches statements in one TCP write
 - **Lazy decoding**: Row stores raw `byte[][]`, decodes on getter access
-- **Binary protocol**: Parameterized queries use binary results (PG via Bind, MySQL via COM_STMT_EXECUTE),
-  parameterless queries use simple/text protocol for compatibility
+- **Binary protocol**: Postgres uses the extended query protocol with binary results for all
+  queries (including parameterless ones). Multi-statement strings (`SELECT 1; SELECT 2`) are
+  not supported on Postgres. MySQL uses COM_STMT_EXECUTE (binary) for parameterized queries
+  and COM_QUERY (text) for parameterless queries
 - **BaseConnection**: Abstract class with shared pipeline logic; PG/MySQL extend it
 - **No Netty**: Plain `java.net.Socket` + `BufferedInputStream`/`BufferedOutputStream`
 - **Java 21+**: Works especially well with virtual threads, has optional mapper for records,
@@ -64,12 +66,16 @@
 - JSpecify `@Nullable` annotations on all public API
 - `DbException` is the base for all database errors (unchecked)
 - Parameters: text-encoded via `BinderRegistry.bind()`, sent as text format codes
-- Results: PG uses binary format (via Bind result format codes), MySQL binary via prepared
-  statements
+- Results: PG always uses binary format via the extended query protocol (even for
+  parameterless queries). MySQL uses binary format for prepared statements, text for
+  simple queries
 - Tests use Testcontainers (Postgres 16-alpine, MySQL 8.0)
-- No ORM — SQL-first, explicit queries
-- Postgres is **not** referred to as " PostgreSQL" anywhere in the project
+- Postgres is **not** referred to as "PostgreSQL" anywhere in the project, just "Postgres"
 - Do **not** use asterisk `import` statements
 - All `@SuppressWarnings` and `@Suppress` (Kotlin) annotations should come with a comment explaining
   why it's needed
 - Do **not** use `@NullMarked` in `package-info.java` files but explicitly mark types `@NonNull` or `@Nullable`
+
+## Postgres vs MySQL
+
+This codebase

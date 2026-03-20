@@ -30,7 +30,7 @@ public final class MD5Authentication {
     try {
       md = MessageDigest.getInstance("MD5");
     } catch (NoSuchAlgorithmException e) {
-      throw new RuntimeException(e);
+      throw new IllegalStateException("MD5 algorithm not available", e);
     }
     md.update(password.getBytes(UTF_8));
     md.update(username.getBytes(UTF_8));

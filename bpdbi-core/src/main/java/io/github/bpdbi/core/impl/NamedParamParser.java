@@ -49,71 +49,9 @@ public final class NamedParamParser {
     for (int i = 0; i < len; i++) {
       char c = sql.charAt(i);
 
-      // Line comment: -- until end of line
-      if (c == '-' && i + 1 < len && sql.charAt(i + 1) == '-') {
-        int end = sql.indexOf('\n', i);
-        if (end == -1) {
-          end = len;
-        }
-        result.append(sql, i, end);
-        i = end - 1;
-        continue;
-      }
-
-      // Block comment: /* ... */
-      if (c == '/' && i + 1 < len && sql.charAt(i + 1) == '*') {
-        int end = sql.indexOf("*/", i + 2);
-        if (end == -1) {
-          end = len - 2;
-        }
-        end += 2;
-        result.append(sql, i, end);
-        i = end - 1;
-        continue;
-      }
-
-      // Single-quoted string literal (with '' escape)
-      if (c == '\'') {
-        result.append(c);
-        i++;
-        while (i < len) {
-          char sc = sql.charAt(i);
-          result.append(sc);
-          if (sc == '\'') {
-            if (i + 1 < len && sql.charAt(i + 1) == '\'') {
-              i++;
-              result.append(sql.charAt(i));
-            } else {
-              break;
-            }
-          } else if (sc == '\\') {
-            if (i + 1 < len) {
-              i++;
-              result.append(sql.charAt(i));
-            }
-          }
-          i++;
-        }
-        continue;
-      }
-
-      // Double-quoted identifier
-      if (c == '"') {
-        result.append(c);
-        i++;
-        while (i < len) {
-          char dc = sql.charAt(i);
-          result.append(dc);
-          if (dc == '"') {
-            if (i + 1 < len && sql.charAt(i + 1) == '"') {
-              i++;
-              result.append(sql.charAt(i));
-            } else {
-              break;
-            }
-          }
-          i++;
-        }
+      int skip = skipLiteral(sql, i, len, result);
+      if (skip >= 0) {
+        i = skip - 1; // -1 because loop will i++
         continue;
       }
 
@@ -178,74 +116,9 @@ public final class NamedParamParser {
     for (int i = 0; i < len; i++) {
       char c = sql.charAt(i);
 
-      // Line comment: -- until end of line
-      if (c == '-' && i + 1 < len && sql.charAt(i + 1) == '-') {
-        int end = sql.indexOf('\n', i);
-        if (end == -1) {
-          end = len;
-        }
-        result.append(sql, i, end);
-        i = end - 1; // loop will i++
-        continue;
-      }
-
-      // Block comment: /* ... */
-      if (c == '/' && i + 1 < len && sql.charAt(i + 1) == '*') {
-        int end = sql.indexOf("*/", i + 2);
-        if (end == -1) {
-          end = len - 2; // unterminated comment: consume rest
-        }
-        end += 2; // include the */
-        result.append(sql, i, end);
-        i = end - 1; // loop will i++
-        continue;
-      }
-
-      // Single-quoted string literal (with '' escape)
-      if (c == '\'') {
-        result.append(c);
-        i++;
-        while (i < len) {
-          char sc = sql.charAt(i);
-          result.append(sc);
-          if (sc == '\'') {
-            // Check for escaped quote ''
-            if (i + 1 < len && sql.charAt(i + 1) == '\'') {
-              i++;
-              result.append(sql.charAt(i));
-            } else {
-              break; // end of string
-            }
-          } else if (sc == '\\') {
-            // Backslash escape: copy next char too
-            if (i + 1 < len) {
-              i++;
-              result.append(sql.charAt(i));
-            }
-          }
-          i++;
-        }
-        continue;
-      }
-
-      // Double-quoted identifier
-      if (c == '"') {
-        result.append(c);
-        i++;
-        while (i < len) {
-          char dc = sql.charAt(i);
-          result.append(dc);
-          if (dc == '"') {
-            // Check for escaped quote ""
-            if (i + 1 < len && sql.charAt(i + 1) == '"') {
-              i++;
-              result.append(sql.charAt(i));
-            } else {
-              break; // end of identifier
-            }
-          }
-          i++;
-        }
+      int skip = skipLiteral(sql, i, len, result);
+      if (skip >= 0) {
+        i = skip - 1; // -1 because loop will i++
         continue;
       }
 
@@ -320,6 +193,87 @@ public final class NamedParamParser {
       result[i] = params.get(name);
     }
     return result;
+  }
+
+  /**
+   * Skip past a comment, string literal, or quoted identifier starting at position {@code i}.
+   * Appends the skipped content to {@code result}. Returns the new position (index of the next char
+   * to process), or {@code -1} if the character at position {@code i} is not the start of such a
+   * token.
+   */
+  private static int skipLiteral(String sql, int i, int len, StringBuilder result) {
+    char c = sql.charAt(i);
+
+    // Line comment: -- until end of line
+    if (c == '-' && i + 1 < len && sql.charAt(i + 1) == '-') {
+      int end = sql.indexOf('\n', i);
+      if (end == -1) {
+        end = len;
+      }
+      result.append(sql, i, end);
+      return end;
+    }
+
+    // Block comment: /* ... */
+    if (c == '/' && i + 1 < len && sql.charAt(i + 1) == '*') {
+      int end = sql.indexOf("*/", i + 2);
+      if (end == -1) {
+        end = len - 2; // unterminated comment: consume rest
+      }
+      end += 2; // include the */
+      result.append(sql, i, end);
+      return end;
+    }
+
+    // Single-quoted string literal (with '' escape)
+    if (c == '\'') {
+      result.append(c);
+      i++;
+      while (i < len) {
+        char sc = sql.charAt(i);
+        result.append(sc);
+        if (sc == '\'') {
+          // Check for escaped quote ''
+          if (i + 1 < len && sql.charAt(i + 1) == '\'') {
+            i++;
+            result.append(sql.charAt(i));
+          } else {
+            break; // end of string
+          }
+        } else if (sc == '\\') {
+          // Backslash escape: copy next char too
+          if (i + 1 < len) {
+            i++;
+            result.append(sql.charAt(i));
+          }
+        }
+        i++;
+      }
+      return i + 1;
+    }
+
+    // Double-quoted identifier
+    if (c == '"') {
+      result.append(c);
+      i++;
+      while (i < len) {
+        char dc = sql.charAt(i);
+        result.append(dc);
+        if (dc == '"') {
+          // Check for escaped quote ""
+          if (i + 1 < len && sql.charAt(i + 1) == '"') {
+            i++;
+            result.append(sql.charAt(i));
+          } else {
+            break; // end of identifier
+          }
+        }
+        i++;
+      }
+      return i + 1;
+    }
+
+    return -1;
   }
 
   /** Convert a value to a Collection if it is a Collection or array; return null otherwise. */

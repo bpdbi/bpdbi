@@ -1,6 +1,8 @@
 package io.github.bpdbi.core;
 
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
@@ -51,6 +53,13 @@ public final class ConnectionConfig {
   /** SQL strings longer than this are not cached (likely one-off dynamic queries). */
   private int preparedStatementCacheSqlLimit = 2048;
 
+  /**
+   * Maximum bytes to buffer per cursor fetch. When set, cursor.read(count) adjusts the actual fetch
+   * count based on observed average row size so that one batch does not exceed this limit. 0 =
+   * disabled (use explicit fetch count). Default: 0.
+   */
+  private int maxResultBufferBytes = 0;
+
   public ConnectionConfig() {}
 
   public ConnectionConfig(
@@ -94,13 +103,15 @@ public final class ConnectionConfig {
       }
     }
 
-    String query = parsed.getQuery();
+    String query = parsed.getRawQuery();
     if (query != null && !query.isEmpty()) {
       config.properties = new LinkedHashMap<>();
       for (String param : query.split("&", -1)) {
         int eq = param.indexOf('=');
         if (eq >= 0) {
-          config.properties.put(param.substring(0, eq), param.substring(eq + 1));
+          String key = URLDecoder.decode(param.substring(0, eq), StandardCharsets.UTF_8);
+          String value = URLDecoder.decode(param.substring(eq + 1), StandardCharsets.UTF_8);
+          config.properties.put(key, value);
         }
       }
     }
@@ -305,6 +316,23 @@ public final class ConnectionConfig {
   public @NonNull ConnectionConfig preparedStatementCacheSqlLimit(
       int preparedStatementCacheSqlLimit) {
     this.preparedStatementCacheSqlLimit = preparedStatementCacheSqlLimit;
+    return this;
+  }
+
+  /**
+   * Maximum bytes to buffer per cursor fetch. When set, cursor.read(count) adjusts the actual fetch
+   * count based on observed average row size so that one batch does not exceed this limit. 0 =
+   * disabled (use explicit fetch count). Default: 0.
+   */
+  public int maxResultBufferBytes() {
+    return maxResultBufferBytes;
+  }
+
+  public @NonNull ConnectionConfig maxResultBufferBytes(int maxResultBufferBytes) {
+    if (maxResultBufferBytes < 0) {
+      throw new IllegalArgumentException("maxResultBufferBytes must be >= 0");
+    }
+    this.maxResultBufferBytes = maxResultBufferBytes;
     return this;
   }
 }

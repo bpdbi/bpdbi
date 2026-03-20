@@ -7,7 +7,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.testcontainers.containers.PostgreSQLContainer
 
-/** Integration tests for djb-kotlin with a real Postgres database. */
+/** Integration tests for bpdbi-kotlin with a real Postgres database. */
 class PgIntegrationTest {
 
     companion object {

@@ -388,4 +388,49 @@ class RowDecoderTest {
             result
         )
     }
+
+    // --- Null handling for non-nullable primitives ---
+
+    @Test
+    fun `null for non-nullable int throws`() {
+        @Serializable
+        data class IntHolder(val value: Int)
+
+        val r = row(null)
+        assertThrows<SerializationException> {
+            serializer<IntHolder>().deserialize(RowDecoder(r))
+        }
+    }
+
+    @Test
+    fun `null for non-nullable boolean throws`() {
+        @Serializable
+        data class BoolHolder(val value: Boolean)
+
+        val r = row(null)
+        assertThrows<SerializationException> {
+            serializer<BoolHolder>().deserialize(RowDecoder(r))
+        }
+    }
+
+    @Test
+    fun `null for non-nullable string throws`() {
+        @Serializable
+        data class StrHolder(val value: String)
+
+        val r = row(null)
+        assertThrows<SerializationException> {
+            serializer<StrHolder>().deserialize(RowDecoder(r))
+        }
+    }
+
+    @Test
+    fun `decode single char`() {
+        @Serializable
+        data class CharHolder(val value: Char)
+
+        val r = row("A")
+        val result = serializer<CharHolder>().deserialize(RowDecoder(r))
+        assertEquals('A', result.value)
+    }
 }

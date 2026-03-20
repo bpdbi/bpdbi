@@ -29,17 +29,29 @@ public sealed interface BackendMessage {
 
   record DataRow(byte @NonNull [][] values) implements BackendMessage {}
 
+  /** Sentinel returned by readMessageIntoBuffers when a DataRow was written directly to buffers. */
+  DataRow DATA_ROW_SENTINEL = new DataRow(new byte[0][]);
+
   record CommandComplete(int rowsAffected) implements BackendMessage {}
 
   record EmptyQueryResponse() implements BackendMessage {}
 
   record ParseComplete() implements BackendMessage {}
 
+  /** Singleton — avoids allocation on every pipelined query response. */
+  ParseComplete PARSE_COMPLETE = new ParseComplete();
+
   record BindComplete() implements BackendMessage {}
+
+  /** Singleton — avoids allocation on every pipelined query response. */
+  BindComplete BIND_COMPLETE = new BindComplete();
 
   record CloseComplete() implements BackendMessage {}
 
   record NoData() implements BackendMessage {}
+
+  /** Singleton — avoids allocation on every pipelined query response. */
+  NoData NO_DATA = new NoData();
 
   record PortalSuspended() implements BackendMessage {}
 

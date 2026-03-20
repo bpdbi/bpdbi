@@ -71,7 +71,9 @@ public class ManyBindingsBenchmark {
     "click", "purchase", "signup", "logout", "page_view", "search"
   };
   private static final String[] SOURCES = {"web", "mobile", "api", "webhook", "import"};
-  private static final String[] CATEGORIES = {"marketing", "billing", "auth", "analytics", "system"};
+  private static final String[] CATEGORIES = {
+    "marketing", "billing", "auth", "analytics", "system"
+  };
 
   private List<Object[]> paramSets;
   private int selectUserId;
@@ -229,14 +231,26 @@ public class ManyBindingsBenchmark {
 
   // --- Vert.x batch ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void insert_vertx_batch(DatabaseState db, Blackhole bh) {
     var tuples = new ArrayList<Tuple>(BATCH_SIZE);
     for (var params : paramSets) {
       tuples.add(
           Tuple.of(
-              params[0], params[1], params[2], params[3], params[4], params[5], params[6],
-              params[7], params[8], params[9], params[10], params[11], params[12], params[13],
+              params[0],
+              params[1],
+              params[2],
+              params[3],
+              params[4],
+              params[5],
+              params[6],
+              params[7],
+              params[8],
+              params[9],
+              params[10],
+              params[11],
+              params[12],
+              params[13],
               params[14]));
     }
     var result =
@@ -283,7 +297,8 @@ public class ManyBindingsBenchmark {
   @Benchmark
   public void select_bpdbi_record(DatabaseState db, Blackhole bh) {
     try (var conn = db.bpdbiPool().acquire()) {
-      var events = conn.query(SELECT_SQL, selectUserId).mapTo(RecordRowMapper.of(EventRecord.class));
+      var events =
+          conn.query(SELECT_SQL, selectUserId).mapTo(RecordRowMapper.of(EventRecord.class));
       bh.consume(events);
     }
   }
@@ -364,7 +379,7 @@ public class ManyBindingsBenchmark {
 
   // --- Vert.x ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void select_vertx_raw(DatabaseState db, Blackhole bh) {
     var rows =
         db.vertxPool()

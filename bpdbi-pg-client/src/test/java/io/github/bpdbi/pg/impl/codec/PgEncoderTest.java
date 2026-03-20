@@ -32,7 +32,7 @@ class PgEncoderTest {
   @Test
   void startupMessageWithProperties() throws IOException {
     var encoder = new PgEncoder();
-    encoder.writeStartupMessage("u", "d", Map.of("application_name", "djb-test"));
+    encoder.writeStartupMessage("u", "d", Map.of("application_name", "bpdbi-test"));
     byte[] bytes = flush(encoder);
 
     var buf = ByteBuffer.wrap(bytes);
@@ -44,7 +44,7 @@ class PgEncoderTest {
     assertEquals("database", buf.readCString());
     assertEquals("d", buf.readCString());
     assertEquals("application_name", buf.readCString());
-    assertEquals("djb-test", buf.readCString());
+    assertEquals("bpdbi-test", buf.readCString());
     assertEquals(0, buf.readByte());
   }
 
@@ -296,6 +296,35 @@ class PgEncoderTest {
     byte[] bytes = flush(encoder);
     var buf = ByteBuffer.wrap(bytes);
     assertEquals('Q', buf.readByte());
+  }
+
+  @Test
+  void bindBinaryMessage() throws IOException {
+    var encoder = new PgEncoder();
+    byte[][] params = {PgBinaryCodec.encodeInt4(42), null, PgBinaryCodec.encodeBool(true)};
+    encoder.writeBindBinary("", "", params);
+    byte[] bytes = flush(encoder);
+
+    var buf = ByteBuffer.wrap(bytes);
+    assertEquals('B', buf.readByte());
+    int length = buf.readInt();
+    assertEquals(bytes.length - 1, length);
+    assertEquals(0, buf.readByte()); // portal
+    assertEquals(0, buf.readByte()); // statement
+    assertEquals(1, buf.readShort()); // 1 format code
+    assertEquals(1, buf.readShort()); // binary
+    assertEquals(3, buf.readShort()); // 3 params
+    // param 0: int4 = 42
+    assertEquals(4, buf.readInt());
+    assertEquals(0, buf.readByte());
+    assertEquals(0, buf.readByte());
+    assertEquals(0, buf.readByte());
+    assertEquals(42, buf.readByte());
+    // param 1: NULL
+    assertEquals(-1, buf.readInt());
+    // param 2: bool = true
+    assertEquals(1, buf.readInt());
+    assertEquals(1, buf.readByte());
   }
 
   private byte[] flush(PgEncoder encoder) throws IOException {

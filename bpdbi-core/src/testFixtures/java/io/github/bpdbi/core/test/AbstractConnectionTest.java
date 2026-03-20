@@ -132,7 +132,7 @@ public abstract class AbstractConnectionTest {
   }
 
   @Test
-  void pipelineErrorDoesNotPoisonSubsequent() {
+  protected void pipelineErrorDoesNotPoisonSubsequent() {
     try (var conn = connect()) {
       conn.enqueue("SELECT 1");
       conn.enqueue("SELECT * FROM nonexistent_table_xyz");
@@ -316,7 +316,7 @@ public abstract class AbstractConnectionTest {
   }
 
   @Test
-  void pipelineMultipleErrorsAndRecovery() {
+  protected void pipelineMultipleErrorsAndRecovery() {
     try (var conn = connect()) {
       conn.enqueue("SELECT 1");
       conn.enqueue("SELECT * FROM no_such_table_aaa");

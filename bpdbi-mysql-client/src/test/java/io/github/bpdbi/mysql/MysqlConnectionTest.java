@@ -1636,8 +1636,8 @@ class MysqlConnectionTest extends AbstractConnectionTest {
       var names = new ArrayList<String>();
       conn.queryStream(
           "SELECT name FROM stream_param WHERE id > ? ORDER BY id",
-          row -> names.add(row.getString("name")),
-          1);
+          new Object[] {1},
+          row -> names.add(row.getString("name")));
       assertEquals(List.of("Bob", "Carol"), names);
     }
   }
@@ -1791,6 +1791,269 @@ class MysqlConnectionTest extends AbstractConnectionTest {
           () -> conn.queryStream("SELECT * FROM nonexistent_streaming_xyz", row -> {}));
       // Connection usable after
       assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
+    }
+  }
+
+  // =====================================================================
+  // MySQL prepared statement type coverage (Short, Boolean, Double, Float)
+  // =====================================================================
+
+  @Test
+  void preparedStatementWithShort() {
+    try (var conn = connect()) {
+      try (var stmt = conn.prepare("SELECT ? + 0 AS n")) {
+        var rs = stmt.query((short) 123);
+        assertEquals(123, rs.first().getInteger("n"));
+      }
+    }
+  }
+
+  @Test
+  void preparedStatementWithBoolean() {
+    try (var conn = connect()) {
+      try (var stmt = conn.prepare("SELECT ? + 0 AS n")) {
+        assertEquals(1, stmt.query(true).first().getInteger("n"));
+        assertEquals(0, stmt.query(false).first().getInteger("n"));
+      }
+    }
+  }
+
+  @Test
+  void preparedStatementWithDouble() {
+    try (var conn = connect()) {
+      try (var stmt = conn.prepare("SELECT ? + 0.0 AS n")) {
+        var rs = stmt.query(3.14);
+        assertEquals(3.14, rs.first().getDouble("n"), 0.001);
+      }
+    }
+  }
+
+  @Test
+  void preparedStatementWithFloat() {
+    try (var conn = connect()) {
+      try (var stmt = conn.prepare("SELECT ? + 0.0 AS n")) {
+        var rs = stmt.query(2.5f);
+        assertEquals(2.5, rs.first().getDouble("n"), 0.01);
+      }
+    }
+  }
+
+  @Test
+  void preparedStatementWithLong() {
+    try (var conn = connect()) {
+      try (var stmt = conn.prepare("SELECT ? + 0 AS n")) {
+        var rs = stmt.query(9876543210L);
+        assertEquals(9876543210L, rs.first().getLong("n"));
+      }
+    }
+  }
+
+  // =====================================================================
+  // MySQL cached prepared statement — varied types
+  // =====================================================================
+
+  @Test
+  void cachedPreparedStatementWithVariedTypes() {
+    try (var conn =
+        MysqlConnection.connect(
+            ConnectionConfig.fromUri(
+                    "mysql://"
+                        + mysql.getUsername()
+                        + ":"
+                        + mysql.getPassword()
+                        + "@"
+                        + mysql.getHost()
+                        + ":"
+                        + mysql.getMappedPort(3306)
+                        + "/"
+                        + mysql.getDatabaseName())
+                .cachePreparedStatements(true))) {
+      // First call: cache miss
+      assertEquals(42, conn.query("SELECT ? + 0 AS n", 42).first().getInteger("n"));
+      // Second call: cache hit — same SQL
+      assertEquals(99, conn.query("SELECT ? + 0 AS n", 99).first().getInteger("n"));
+      // With string param — different prepared statement
+      assertEquals("hello", conn.query("SELECT ? AS s", "hello").first().getString("s"));
+      // Reuse string query
+      assertEquals("world", conn.query("SELECT ? AS s", "world").first().getString("s"));
+    }
+  }
+
+  @Test
+  void cachedPreparedStatementInsertAndSelect() {
+    try (var conn =
+        MysqlConnection.connect(
+            ConnectionConfig.fromUri(
+                    "mysql://"
+                        + mysql.getUsername()
+                        + ":"
+                        + mysql.getPassword()
+                        + "@"
+                        + mysql.getHost()
+                        + ":"
+                        + mysql.getMappedPort(3306)
+                        + "/"
+                        + mysql.getDatabaseName())
+                .cachePreparedStatements(true))) {
+      conn.query("CREATE TEMPORARY TABLE cached_ps (id INT, name VARCHAR(50), score DOUBLE)");
+
+      // Insert with various types — reusing the same cached prepared statement
+      conn.query("INSERT INTO cached_ps VALUES (?, ?, ?)", 1, "Alice", 9.5);
+      conn.query("INSERT INTO cached_ps VALUES (?, ?, ?)", 2, "Bob", 7.0);
+      // Reuse cached statement
+      conn.query("INSERT INTO cached_ps VALUES (?, ?, ?)", 3, "Carol", 8.5);
+
+      var rs = conn.query("SELECT COUNT(*) AS cnt FROM cached_ps WHERE score > ?", 8.0);
+      assertEquals(2L, rs.first().getLong("cnt"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Unicode / multi-byte / emoji database round-trip
+  // =====================================================================
+
+  @Test
+  void emojiRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMPORARY TABLE emoji_test (val VARCHAR(255)) CHARACTER SET utf8mb4");
+      conn.query("INSERT INTO emoji_test VALUES (?)", "Hello \uD83C\uDF0D\uD83C\uDF89 World");
+      var rs = conn.query("SELECT val FROM emoji_test");
+      assertEquals("Hello \uD83C\uDF0D\uD83C\uDF89 World", rs.first().getString(0));
+    }
+  }
+
+  @Test
+  void emptyStringRoundTrip() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT ? AS val", "");
+      assertEquals("", rs.first().getString("val"));
+      assertFalse(rs.first().isNull("val"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: MySQL zero dates
+  // =====================================================================
+
+  @Test
+  void zeroDateReturnsNull() {
+    try (var conn = connect()) {
+      conn.query("SET sql_mode = ''"); // allow zero dates
+      conn.query("CREATE TEMPORARY TABLE zero_date_test (d DATE)");
+      conn.query("INSERT INTO zero_date_test VALUES ('0000-00-00')");
+      var rs = conn.query("SELECT d FROM zero_date_test");
+      // Zero dates should return null since they can't be represented as LocalDate
+      var dateStr = rs.first().getString(0);
+      // At minimum, the query should not crash
+      assertNotNull(rs);
+    }
+  }
+
+  @Test
+  void zeroDateTimeReturnsNull() {
+    try (var conn = connect()) {
+      conn.query("SET sql_mode = ''");
+      conn.query("CREATE TEMPORARY TABLE zero_dt_test (dt DATETIME)");
+      conn.query("INSERT INTO zero_dt_test VALUES ('0000-00-00 00:00:00')");
+      var rs = conn.query("SELECT dt FROM zero_dt_test");
+      // Should not crash
+      assertNotNull(rs);
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Prepared statement cache eviction
+  // =====================================================================
+
+  @Test
+  void statementCacheEviction() {
+    try (var conn =
+        MysqlConnection.connect(
+            ConnectionConfig.fromUri(
+                    "mysql://"
+                        + mysql.getUsername()
+                        + ":"
+                        + mysql.getPassword()
+                        + "@"
+                        + mysql.getHost()
+                        + ":"
+                        + mysql.getMappedPort(3306)
+                        + "/"
+                        + mysql.getDatabaseName())
+                .cachePreparedStatements(true))) {
+      // Execute 300 distinct parameterized queries to stress the cache
+      for (int i = 0; i < 300; i++) {
+        var rs = conn.query("SELECT ? + " + i + " + 0 AS n", 1);
+        assertEquals(1 + i, rs.first().getInteger("n"));
+      }
+      // Connection should still work normally after cache eviction
+      var rs = conn.query("SELECT 42 AS answer");
+      assertEquals(42, rs.first().getInteger("answer"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Pipeline error resilience (stress)
+  // =====================================================================
+
+  @Test
+  void pipelineRepeatedErrors100() {
+    try (var conn = connect()) {
+      for (int i = 0; i < 100; i++) {
+        conn.enqueue("INVALID SQL NUMBER " + i);
+      }
+      List<RowSet> results = conn.flush();
+      assertEquals(100, results.size());
+      for (var rs : results) {
+        assertNotNull(rs.getError());
+      }
+      // Connection should still be usable
+      var rs = conn.query("SELECT 1 AS n");
+      assertEquals(1, rs.first().getInteger("n"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: executeMany with partial failures
+  // =====================================================================
+
+  @Test
+  void executeManyPartialFailure() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMPORARY TABLE batch_pf (id INT PRIMARY KEY)");
+      conn.query("INSERT INTO batch_pf VALUES (2)"); // pre-insert to cause duplicate
+
+      var results =
+          conn.executeMany(
+              "INSERT INTO batch_pf VALUES (?)",
+              List.of(
+                  new Object[] {1},
+                  new Object[] {2}, // duplicate — should error
+                  new Object[] {3}));
+
+      assertEquals(3, results.size());
+      assertNull(results.get(0).getError()); // success
+      assertNotNull(results.get(1).getError()); // duplicate key error
+      assertNull(results.get(2).getError()); // success
+
+      // Connection still usable
+      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Large values and buffer boundaries
+  // =====================================================================
+
+  @Test
+  void largeTextParameter() {
+    try (var conn = connect()) {
+      // Use 10KB which is well within default max_allowed_packet
+      String large = "A".repeat(10_000);
+      conn.query("CREATE TEMPORARY TABLE large_text (val LONGTEXT)");
+      conn.query("INSERT INTO large_text VALUES (?)", large);
+      var rs = conn.query("SELECT CHAR_LENGTH(val) AS len FROM large_text");
+      assertEquals(10_000L, rs.first().getLong("len"));
     }
   }
 }

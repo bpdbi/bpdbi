@@ -1,6 +1,9 @@
 package io.github.bpdbi.core.impl;
 
 import io.github.bpdbi.core.ColumnData;
+import java.io.IOException;
+import java.io.InputStream;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -48,6 +51,42 @@ public final class ColumnBuffer implements ColumnData {
       dataPos += value.length;
       totalValueBytes += value.length;
     }
+    rowCount++;
+  }
+
+  /** Append a SQL NULL value for the next row. */
+  public void appendNull() {
+    if (rowCount == offsets.length) {
+      grow();
+    }
+    offsets[rowCount] = dataPos;
+    lengths[rowCount] = -1;
+    rowCount++;
+  }
+
+  /**
+   * Append a column value by reading directly from an InputStream into the backing array. Avoids
+   * allocating an intermediate byte[] — the data goes straight from the stream into the buffer.
+   */
+  public void appendFromStream(@NonNull InputStream in, int length) throws IOException {
+    if (rowCount == offsets.length) {
+      grow();
+    }
+    ensureDataCapacity(length);
+    offsets[rowCount] = dataPos;
+    lengths[rowCount] = length;
+    int pos = dataPos;
+    int end = pos + length;
+    while (pos < end) {
+      int read = in.read(data, pos, end - pos);
+      if (read == -1) {
+        throw new IOException(
+            "Unexpected end of stream (needed " + length + " bytes, got " + (pos - dataPos) + ")");
+      }
+      pos += read;
+    }
+    dataPos += length;
+    totalValueBytes += length;
     rowCount++;
   }
 

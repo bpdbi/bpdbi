@@ -15,6 +15,9 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PgEncoder {
 
+  /** Pre-encoded empty C string (just a null terminator). Used for unnamed portals/statements. */
+  public static final byte[] EMPTY_CSTRING = {0};
+
   private final ByteBuffer buf = new ByteBuffer(1024);
 
   // --- Startup / Auth messages (no type byte prefix) ---
@@ -107,20 +110,29 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
-  /** Write Bind message with text parameters and binary results. */
+  /** Write Bind message with text parameters and binary results (unnamed portal and statement). */
   public void writeBind(@Nullable String @Nullable [] paramValues) {
-    writeBind("", "", paramValues);
+    writeBindBytes(EMPTY_CSTRING, EMPTY_CSTRING, paramValues);
   }
 
+  /** Write Bind with String names (convenience, allocates byte[] for names). */
   public void writeBind(
       @NonNull String portal,
       @NonNull String statementName,
       @Nullable String @Nullable [] paramValues) {
+    writeBindBytes(toCString(portal), toCString(statementName), paramValues);
+  }
+
+  /** Write Bind with pre-encoded C string names (zero-allocation for names on the hot path). */
+  public void writeBindBytes(
+      byte @NonNull [] portal,
+      byte @NonNull [] statementName,
+      @Nullable String @Nullable [] paramValues) {
     int pos = buf.writerIndex();
     buf.writeByte(PgProtocolConstants.BIND);
     buf.writeInt(0); // length placeholder
-    buf.writeCString(portal);
-    buf.writeCString(statementName);
+    buf.writeCStringBytes(portal);
+    buf.writeCStringBytes(statementName);
     // Parameter format codes: all text (0) — text params for now
     buf.writeShort(0); // 0 = use default (text) for all
     // Parameter values
@@ -141,8 +153,49 @@ public final class PgEncoder {
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
+  /**
+   * Write Bind message with binary parameter encoding. Parameters are pre-encoded as byte arrays.
+   */
+  public void writeBindBinary(
+      @NonNull String portal, @NonNull String statementName, byte @Nullable [][] binaryParams) {
+    writeBindBinaryBytes(toCString(portal), toCString(statementName), binaryParams);
+  }
+
+  /** Write Bind (binary params) with pre-encoded C string names. */
+  public void writeBindBinaryBytes(
+      byte @NonNull [] portal, byte @NonNull [] statementName, byte @Nullable [][] binaryParams) {
+    int pos = buf.writerIndex();
+    buf.writeByte(PgProtocolConstants.BIND);
+    buf.writeInt(0); // length placeholder
+    buf.writeCStringBytes(portal);
+    buf.writeCStringBytes(statementName);
+    // Parameter format codes: all binary (1)
+    buf.writeShort(1); // 1 format code for all params
+    buf.writeShort(1); // binary format
+    // Parameter values
+    int paramCount = binaryParams == null ? 0 : binaryParams.length;
+    buf.writeShort(paramCount);
+    for (int i = 0; i < paramCount; i++) {
+      if (binaryParams[i] == null) {
+        buf.writeInt(-1); // NULL
+      } else {
+        buf.writeInt(binaryParams[i].length);
+        buf.writeBytes(binaryParams[i]);
+      }
+    }
+    // Result format codes: request all binary (1)
+    buf.writeShort(1);
+    buf.writeShort(1); // binary format
+    buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
+  }
+
   public void writeDescribePortal() {
-    writeDescribePortal("");
+    int pos = buf.writerIndex();
+    buf.writeByte(PgProtocolConstants.DESCRIBE);
+    buf.writeInt(0);
+    buf.writeByte('P');
+    buf.writeCStringBytes(EMPTY_CSTRING);
+    buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
   public void writeDescribePortal(@NonNull String portalName) {
@@ -155,7 +208,12 @@ public final class PgEncoder {
   }
 
   public void writeExecute() {
-    writeExecute("", 0);
+    int pos = buf.writerIndex();
+    buf.writeByte(PgProtocolConstants.EXECUTE);
+    buf.writeInt(0);
+    buf.writeCStringBytes(EMPTY_CSTRING);
+    buf.writeInt(0);
+    buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 
   public void writeExecute(@NonNull String portal, int maxRows) {
@@ -215,10 +273,10 @@ public final class PgEncoder {
    * Estimate the byte size of an extended query sequence (Parse + Bind + Describe + Execute) for a
    * single statement. Used to pre-size the buffer before encoding a pipelined batch.
    *
-   * <p>Overhead per message: type byte (1) + length int (4) = 5 bytes. Parse has statement name
-   * (1 null byte) + SQL + null + param count (2). Bind has portal (1) + statement (1) + format
-   * codes (2) + param count (2) + per-param (4 length + value bytes) + result format (4).
-   * DescribePortal is 7 bytes. Execute is 10 bytes.
+   * <p>Overhead per message: type byte (1) + length int (4) = 5 bytes. Parse has statement name (1
+   * null byte) + SQL + null + param count (2). Bind has portal (1) + statement (1) + format codes
+   * (2) + param count (2) + per-param (4 length + value bytes) + result format (4). DescribePortal
+   * is 7 bytes. Execute is 10 bytes.
    */
   public static int estimateExtendedQuerySize(String sql, String[] params) {
     // Parse: type(1) + len(4) + stmtName(1) + sql_bytes + null(1) + paramCount(2)
@@ -254,5 +312,17 @@ public final class PgEncoder {
 
   public void clear() {
     buf.clear();
+  }
+
+  /** Convert a String to a null-terminated C string byte array. */
+  private static byte[] toCString(@NonNull String s) {
+    if (s.isEmpty()) {
+      return EMPTY_CSTRING;
+    }
+    byte[] bytes = s.getBytes(UTF_8);
+    byte[] cstring = new byte[bytes.length + 1];
+    System.arraycopy(bytes, 0, cstring, 0, bytes.length);
+    // cstring[bytes.length] is already 0 (null terminator)
+    return cstring;
   }
 }

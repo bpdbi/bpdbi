@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class BaseConnection implements Connection {
 
-  private final List<PendingStatement> pending = new ArrayList<>();
+  private List<PendingStatement> pending = new ArrayList<>();
   private BinderRegistry binderRegistry = BinderRegistry.defaults();
   private ColumnMapperRegistry mapperRegistry = ColumnMapperRegistry.defaults();
   private @Nullable JsonMapper jsonMapper;
@@ -48,7 +48,7 @@ public abstract class BaseConnection implements Connection {
   }
 
   @Override
-  public void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry) {
+  public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {
     this.mapperRegistry = registry;
   }
 
@@ -158,10 +158,16 @@ public abstract class BaseConnection implements Connection {
 
   @Override
   public @NonNull List<RowSet> executeMany(@NonNull String sql, @NonNull List<Object[]> paramSets) {
+    int offset = pending.size(); // skip any pre-existing pending statements (e.g. lazy BEGIN)
     for (Object[] params : paramSets) {
       enqueue(sql, params);
     }
-    return flush();
+    List<RowSet> allResults = flush();
+    // Return only the results for the paramSets we enqueued, not pre-existing pending statements
+    if (offset == 0) {
+      return allResults;
+    }
+    return allResults.subList(offset, allResults.size());
   }
 
   @Override
@@ -170,8 +176,9 @@ public abstract class BaseConnection implements Connection {
       return List.of();
     }
 
-    List<PendingStatement> toFlush = new ArrayList<>(pending);
-    pending.clear();
+    // Swap instead of copying — avoids O(n) ArrayList copy on every flush
+    List<PendingStatement> toFlush = pending;
+    pending = new ArrayList<>();
 
     List<RowSet> results = executePipelinedBatch(toFlush);
     for (int i = 0; i < results.size(); i++) {
@@ -205,7 +212,7 @@ public abstract class BaseConnection implements Connection {
 
   @Override
   public void queryStream(
-      @NonNull String sql, @NonNull Consumer<Row> consumer, @Nullable Object... params) {
+      @NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer) {
     if (!pending.isEmpty()) {
       flush();
     }
@@ -246,8 +253,26 @@ public abstract class BaseConnection implements Connection {
   }
 
   /**
-   * Create a Row for text-format results (no binary decoding). Used for parameterless queries where
-   * both Postgres and MySQL return text-format data via their simple query protocols.
+   * Create a Row with a pre-built column name index. Use this when creating many rows from the same
+   * column set (e.g. streaming) to share the map across rows.
+   */
+  protected @NonNull Row createRow(
+      @NonNull ColumnDescriptor[] columns,
+      @NonNull Map<String, Integer> columnNameIndex,
+      byte @NonNull [][] values) {
+    return new Row(
+        columns,
+        columnNameIndex,
+        values,
+        binaryCodec(),
+        mapperRegistry,
+        jsonMapper,
+        binderRegistry.jsonTypes());
+  }
+
+  /**
+   * Create a Row for text-format results (no binary decoding). Used by the MySQL driver for
+   * parameterless queries (COM_QUERY), which return text-format data.
    */
   protected @NonNull Row createTextRow(
       @NonNull ColumnDescriptor[] columns, byte @NonNull [][] values) {
@@ -271,8 +296,28 @@ public abstract class BaseConnection implements Connection {
   }
 
   /**
-   * Create a buffered Row for text-format results (no binary decoding). Used for parameterless
-   * queries where both Postgres and MySQL return text-format data via their simple query protocols.
+   * Create a buffered Row with a pre-built column name index. Use this when creating many rows from
+   * the same column set to share the map across rows.
+   */
+  protected @NonNull Row createBufferedRow(
+      @NonNull ColumnDescriptor[] columns,
+      @NonNull Map<String, Integer> columnNameIndex,
+      @NonNull ColumnBuffer[] buffers,
+      int rowIndex) {
+    return new Row(
+        columns,
+        columnNameIndex,
+        buffers,
+        rowIndex,
+        binaryCodec(),
+        mapperRegistry,
+        jsonMapper,
+        binderRegistry.jsonTypes());
+  }
+
+  /**
+   * Create a buffered Row for text-format results (no binary decoding). Used by the MySQL driver
+   * for parameterless queries (COM_QUERY), which return text-format data.
    */
   protected @NonNull Row createTextBufferedRow(
       @NonNull ColumnDescriptor[] columns, @NonNull ColumnBuffer[] buffers, int rowIndex) {
@@ -376,9 +421,11 @@ public abstract class BaseConnection implements Connection {
     if (columns == null) {
       return new RowSet(List.of(), List.of(), rowsAffected);
     }
+    // Build the column name index once and share it across all rows
+    Map<String, Integer> nameIndex = Row.buildColumnNameIndex(columns);
     List<Row> rows = new ArrayList<>(rowCount);
     for (int i = 0; i < rowCount; i++) {
-      rows.add(createBufferedRow(columns, buffers, i));
+      rows.add(createBufferedRow(columns, nameIndex, buffers, i));
     }
     return new RowSet(rows, List.of(columns), rowsAffected);
   }

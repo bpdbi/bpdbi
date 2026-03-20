@@ -15,6 +15,8 @@ import io.github.bpdbi.core.impl.BaseConnection;
 import io.github.bpdbi.core.impl.ColumnBuffer;
 import io.github.bpdbi.core.impl.NamedParamParser;
 import io.github.bpdbi.core.impl.PreparedStatementCache;
+import io.github.bpdbi.core.impl.UnsyncBufferedInputStream;
+import io.github.bpdbi.core.impl.UnsyncBufferedOutputStream;
 import io.github.bpdbi.pg.impl.auth.MD5Authentication;
 import io.github.bpdbi.pg.impl.codec.BackendMessage;
 import io.github.bpdbi.pg.impl.codec.BackendMessage.AuthenticationSasl;
@@ -23,8 +25,6 @@ import io.github.bpdbi.pg.impl.codec.BackendMessage.AuthenticationSaslFinal;
 import io.github.bpdbi.pg.impl.codec.PgBinaryCodec;
 import io.github.bpdbi.pg.impl.codec.PgDecoder;
 import io.github.bpdbi.pg.impl.codec.PgEncoder;
-import java.io.BufferedInputStream;
-import io.github.bpdbi.core.impl.UnsyncBufferedOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -68,8 +68,9 @@ public final class PgConnection extends BaseConnection {
   private final List<PgNotification> notifications = new ArrayList<>();
   private int processId;
   private int secretKey;
-  private int stmtCounter = 0;
+  private long stmtCounter = 0;
   private int deallocateEpoch = 0;
+  private int maxResultBufferBytes = 0;
 
   /**
    * Conservative estimate of TCP receive buffer size. If the estimated server response exceeds
@@ -140,14 +141,17 @@ public final class PgConnection extends BaseConnection {
       }
 
       var out = new UnsyncBufferedOutputStream(socket.getOutputStream(), 8192);
-      var in = new BufferedInputStream(socket.getInputStream(), 8192);
+      var in = new UnsyncBufferedInputStream(socket.getInputStream(), 8192);
       var encoder = new PgEncoder();
       var decoder = new PgDecoder(in);
 
       var conn = new PgConnection(socket, out, encoder, decoder);
       conn.initCache(config);
+      conn.maxResultBufferBytes = config.maxResultBufferBytes();
       conn.performStartup(
           config.username(), config.database(), config.password(), config.properties());
+      // Ensure full double precision in text-format float8 results
+      conn.query("SET extra_float_digits = 3");
       return conn;
     } catch (IOException e) {
       throw new DbConnectionException(
@@ -330,7 +334,8 @@ public final class PgConnection extends BaseConnection {
       }
     }
 
-    String stmtName = "_djb_s" + (stmtCounter++);
+    byte[] stmtNameCString = nextStatementNameCString();
+    String stmtName = cstringToString(stmtNameCString);
     final List<String> paramNames = parameterNames;
     try {
       encoder.writeParse(stmtName, sqlToSend, null);
@@ -352,7 +357,7 @@ public final class PgConnection extends BaseConnection {
             if (isCacheable(sql)) {
               var cached =
                   new PreparedStatementCache.CachedStatement(
-                      sql, stmtName, -1, columns, null, paramNames);
+                      sql, stmtName, stmtNameCString, -1, columns, null, paramNames);
               handleEvicted(psCache.cache(sql, cached));
               return new CachedPgPreparedStatement(cached);
             }
@@ -482,6 +487,17 @@ public final class PgConnection extends BaseConnection {
    * values are converted to Postgres array literal format ({v1,v2,...}) so they can be used with
    * {@code = ANY(:param)} syntax.
    */
+  private static String @Nullable [] toTextParams(Object @Nullable [] params) {
+    if (params == null || params.length == 0) {
+      return null;
+    }
+    String[] textParams = new String[params.length];
+    for (int i = 0; i < params.length; i++) {
+      textParams[i] = params[i] == null ? null : params[i].toString();
+    }
+    return textParams;
+  }
+
   private static Object[] convertPgParams(Object[] params) {
     for (int i = 0; i < params.length; i++) {
       params[i] = toPgValue(params[i]);
@@ -581,13 +597,7 @@ public final class PgConnection extends BaseConnection {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
-      String[] textParams = null;
-      if (params != null && params.length > 0) {
-        textParams = new String[params.length];
-        for (int i = 0; i < params.length; i++) {
-          textParams[i] = params[i] == null ? null : params[i].toString();
-        }
-      }
+      String[] textParams = toTextParams(params);
       try {
         encoder.writeBind("", name, textParams);
         encoder.writeDescribePortal();
@@ -649,15 +659,10 @@ public final class PgConnection extends BaseConnection {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
-      String[] textParams = null;
-      if (params != null && params.length > 0) {
-        textParams = new String[params.length];
-        for (int i = 0; i < params.length; i++) {
-          textParams[i] = params[i] == null ? null : params[i].toString();
-        }
-      }
+      String[] textParams = toTextParams(params);
       try {
-        encoder.writeBind("", cached.pgStatementName(), textParams);
+        encoder.writeBindBytes(
+            PgEncoder.EMPTY_CSTRING, cached.pgStatementNameCString(), textParams);
         encoder.writeDescribePortal();
         encoder.writeExecute();
         encoder.writeSync();
@@ -711,8 +716,19 @@ public final class PgConnection extends BaseConnection {
       if (!hasMore) {
         return new RowSet(List.of(), columns != null ? List.of(columns) : List.of(), 0);
       }
+      // Adaptive fetch size: limit count so estimated batch bytes stay within budget
+      int adjustedCount = count;
+      if (maxResultBufferBytes > 0 && prevBuffers != null && prevBuffers.length > 0) {
+        int avgRowSize = 0;
+        for (ColumnBuffer b : prevBuffers) {
+          avgRowSize += b.averageValueSize();
+        }
+        if (avgRowSize > 0) {
+          adjustedCount = Math.max(1, Math.min(count, maxResultBufferBytes / avgRowSize));
+        }
+      }
       try {
-        encoder.writeExecute(portalName, count);
+        encoder.writeExecute(portalName, adjustedCount);
         encoder.writeSync();
         encoder.flush(out);
 
@@ -796,20 +812,14 @@ public final class PgConnection extends BaseConnection {
 
   @Override
   protected @NonNull RowSet executeExtendedQuery(@NonNull String sql, @NonNull String[] params) {
-    // Parameterless queries use the simple query protocol (text-format results) because:
-    // 1. The extended protocol rejects multi-statement strings ("SELECT 1; SELECT 2")
-    // 2. Text format lets getString() work for types without a binary decoder (geometric,
-    //    network, array, interval) — binary format for these is raw packed bytes, not UTF-8
-    if (params.length == 0) {
-      return executeSimpleQuery(sql);
-    }
+    invalidateCacheIfNeeded(sql);
 
     if (isCacheable(sql)) {
       var cached = psCache.get(sql);
       if (cached != null) {
-        // Cache hit: skip Parse, bind to cached named statement
-        encoder.writeBind("", cached.pgStatementName(), params);
-        encoder.writeDescribePortal();
+        // Cache hit: skip Parse and DescribePortal — the server already knows this statement,
+        // and we have the column metadata cached from the first execution.
+        encoder.writeBindBytes(PgEncoder.EMPTY_CSTRING, cached.pgStatementNameCString(), params);
         encoder.writeExecute();
         encoder.writeSync();
         try {
@@ -817,10 +827,18 @@ public final class PgConnection extends BaseConnection {
         } catch (IOException e) {
           throw new DbConnectionException("I/O error during flush", e);
         }
-        return readExtendedQueryResponse();
+        RowSet result = readExtendedQueryResponse(cached.columns());
+        if (result.getError() != null && isStalePlanError(result.getError())) {
+          // Evict this specific stale statement and re-execute
+          closeCachedStatement(cached);
+          psCache.remove(sql);
+          return executeExtendedQuery(sql, params);
+        }
+        return result;
       } else {
         // Cache miss: use named statement so we can cache it
-        String stmtName = "_djb_s" + (stmtCounter++);
+        byte[] stmtNameCString = nextStatementNameCString();
+        String stmtName = cstringToString(stmtNameCString);
         encoder.writeParse(stmtName, sql, null);
         encoder.writeBind("", stmtName, params);
         encoder.writeDescribePortal();
@@ -832,9 +850,14 @@ public final class PgConnection extends BaseConnection {
           throw new DbConnectionException("I/O error during flush", e);
         }
         RowSet result = readExtendedQueryResponse();
-        // Cache after successful execution
+        // Cache after successful execution, including column metadata for future Describe skipping
         if (result.getError() == null) {
-          var stmt = new PreparedStatementCache.CachedStatement(sql, stmtName, -1, null, null);
+          List<ColumnDescriptor> colList = result.columnDescriptors();
+          ColumnDescriptor[] resultColumns =
+              colList.isEmpty() ? null : colList.toArray(new ColumnDescriptor[0]);
+          var stmt =
+              new PreparedStatementCache.CachedStatement(
+                  sql, stmtName, stmtNameCString, -1, resultColumns, null);
           handleEvicted(psCache.cache(sql, stmt));
         }
         return result;
@@ -864,13 +887,6 @@ public final class PgConnection extends BaseConnection {
       return super.executePipelinedBatch(statements);
     }
 
-    // Fall back to sequential if any statement is parameterless (uses simple protocol)
-    for (PendingStatement stmt : statements) {
-      if (stmt.paramValues().length == 0) {
-        return super.executePipelinedBatch(statements);
-      }
-    }
-
     // Pre-size the encoder buffer to avoid resizing during batch encoding
     int estimatedBytes = 5; // Sync message at the end
     for (PendingStatement stmt : statements) {
@@ -887,23 +903,28 @@ public final class PgConnection extends BaseConnection {
     int chunkStart = 0;
     List<RowSet> allResults = new ArrayList<>(statements.size());
 
-    // Phase 1: Write messages, flushing when response estimate gets risky
+    // Phase 1: Write messages, flushing when response estimate gets risky.
+    // Optimization: skip Parse when SQL matches the previous statement (server reuses unnamed
+    // statement), and skip Describe when SQL matches (column metadata is identical — the response
+    // reader carries forward the last RowDescription).
     String lastParsedSql = null;
     for (int i = 0; i < statements.size(); i++) {
       PendingStatement stmt = statements.get(i);
       estimatedResponseBytes += ESTIMATED_RESPONSE_BYTES_PER_QUERY;
 
-      if (!stmt.sql().equals(lastParsedSql)) {
+      boolean sqlChanged = !stmt.sql().equals(lastParsedSql);
+      if (sqlChanged) {
         encoder.writeParse(stmt.sql(), null);
         lastParsedSql = stmt.sql();
       }
       encoder.writeBind(stmt.paramValues());
-      encoder.writeDescribePortal();
+      if (sqlChanged) {
+        encoder.writeDescribePortal();
+      }
       encoder.writeExecute();
 
       // Flush and drain mid-pipeline if approaching TCP buffer limit
-      if (estimatedResponseBytes >= MAX_BUFFERED_RECV_BYTES
-          && i < statements.size() - 1) {
+      if (estimatedResponseBytes >= MAX_BUFFERED_RECV_BYTES && i < statements.size() - 1) {
         int chunkSize = i - chunkStart + 1;
         encoder.writeSync();
         flushToNetwork();
@@ -926,29 +947,51 @@ public final class PgConnection extends BaseConnection {
   private List<RowSet> readPipelinedResponses(int count) {
     try {
       List<RowSet> results = new ArrayList<>(count);
+      // lastColumns carries forward column metadata from the most recent RowDescription.
+      // When Describe is skipped for repeated SQL, the server won't send RowDescription,
+      // so we reuse the previous metadata for SELECT results.
+      ColumnDescriptor[] lastColumns = null;
       ColumnDescriptor[] columns = null;
       ColumnBuffer[] buffers = null;
       int rowCount = 0;
       int rowsAffected = 0;
 
       while (true) {
-        BackendMessage msg = decoder.readMessage();
-        switch (msg) {
-          case BackendMessage.ParseComplete pc -> {}
-          case BackendMessage.BindComplete bc -> {}
-          case BackendMessage.RowDescription rd -> {
-            columns = rd.columns();
+        BackendMessage msg = decoder.readMessageIntoBuffers(buffers);
+        // Reference equality for high-frequency singletons — avoids pattern-matching overhead
+        // on the hottest path of pipelined response decoding.
+        if (msg == BackendMessage.DATA_ROW_SENTINEL) {
+          if (columns == null && lastColumns != null) {
+            // Describe was skipped — reuse previous column metadata
+            columns = lastColumns;
             buffers = newColumnBuffers(columns.length);
           }
-          case BackendMessage.NoData nd -> {}
+          rowCount++;
+          continue;
+        }
+        if (msg == BackendMessage.PARSE_COMPLETE
+            || msg == BackendMessage.BIND_COMPLETE
+            || msg == BackendMessage.NO_DATA) {
+          continue;
+        }
+        switch (msg) {
+          case BackendMessage.RowDescription rd -> {
+            columns = rd.columns();
+            lastColumns = columns;
+            buffers = newColumnBuffers(columns.length);
+          }
           case BackendMessage.DataRow dr -> {
+            if (buffers == null && lastColumns != null) {
+              columns = lastColumns;
+              buffers = newColumnBuffers(columns.length);
+            }
             appendToBuffers(buffers, dr.values());
             rowCount++;
           }
           case BackendMessage.CommandComplete cc -> {
             rowsAffected = cc.rowsAffected();
             results.add(buildRowSet(columns, buffers, rowCount, rowsAffected));
-            // Reset accumulators for next statement
+            // Reset per-statement accumulators but keep lastColumns for reuse
             columns = null;
             buffers = null;
             rowCount = 0;
@@ -984,31 +1027,21 @@ public final class PgConnection extends BaseConnection {
     }
   }
 
-  // --- Simple query protocol (parameterless queries, text format results) ---
-
-  private RowSet executeSimpleQuery(String sql) {
-    // Detect statements that may invalidate cached prepared statements.
-    // search_path changes cause table/function names to resolve differently,
-    // so cached Parse results may become stale. DEALLOCATE ALL and DISCARD ALL
-    // explicitly destroy all prepared statements. Like pgjdbc, we detect this
-    // by inspecting the SQL text since Postgres does not send ParameterStatus
-    // for search_path changes.
+  /**
+   * Detect statements that may invalidate cached prepared statements. search_path changes cause
+   * table/function names to resolve differently, so cached Parse results may become stale.
+   * DEALLOCATE ALL and DISCARD ALL explicitly destroy all prepared statements. Like pgjdbc, we
+   * detect this by inspecting the SQL text since Postgres does not send ParameterStatus for
+   * search_path changes.
+   */
+  private void invalidateCacheIfNeeded(String sql) {
     if (psCache != null && !psCache.isEmpty()) {
-      if ((sql.regionMatches(true, 0, "SET", 0, 3)
-              && containsIgnoreCase(sql, "search_path"))
+      if ((sql.regionMatches(true, 0, "SET", 0, 3) && containsIgnoreCase(sql, "search_path"))
           || sql.regionMatches(true, 0, "DEALLOCATE", 0, 10)
           || sql.regionMatches(true, 0, "DISCARD", 0, 7)) {
         invalidatePreparedStatementCache();
       }
     }
-
-    encoder.writeQuery(sql);
-    try {
-      encoder.flush(out);
-    } catch (IOException e) {
-      throw new DbConnectionException("I/O error during flush", e);
-    }
-    return readSimpleQueryResponse();
   }
 
   private static boolean containsIgnoreCase(String haystack, String needle) {
@@ -1022,24 +1055,64 @@ public final class PgConnection extends BaseConnection {
     return false;
   }
 
-  private RowSet readSimpleQueryResponse() {
+  /**
+   * Generate the next statement name as a null-terminated C string byte array. Uses hex encoding
+   * like Vert.x — avoids String allocation and getBytes() on the wire-write hot path. Format:
+   * "0000000\0", "0000001\0", ..., "000FFFF\0", etc. (minimum 7 hex digits).
+   */
+  private byte[] nextStatementNameCString() {
+    long n = stmtCounter++;
+    int hexDigits = Math.max(7, (64 - Long.numberOfLeadingZeros(n) + 3) / 4);
+    byte[] name = new byte[hexDigits + 1]; // +1 for null terminator
+    for (int i = hexDigits - 1; i >= 0; i--) {
+      int digit = (int) (n & 0xF);
+      name[i] = (byte) (digit < 10 ? '0' + digit : 'A' + digit - 10);
+      n >>>= 4;
+    }
+    // name[hexDigits] is already 0 (null terminator)
+    return name;
+  }
+
+  /** Convert a C string byte[] (with null terminator) to a String (without null terminator). */
+  private static String cstringToString(byte[] cstring) {
+    return new String(cstring, 0, cstring.length - 1, StandardCharsets.UTF_8);
+  }
+
+  @Override
+  protected void flushToNetwork() {
     try {
-      ColumnDescriptor[] columns = null;
-      ColumnBuffer[] buffers = null;
+      encoder.flush(out);
+    } catch (IOException e) {
+      throw new DbConnectionException("I/O error during flush", e);
+    }
+  }
+
+  /**
+   * Read an extended query response when column metadata is already known (cache hit with Describe
+   * skipped). The server won't send RowDescription, so we pre-allocate buffers using the cached
+   * columns.
+   */
+  private RowSet readExtendedQueryResponse(ColumnDescriptor @Nullable [] cachedColumns) {
+    if (cachedColumns == null) {
+      return readExtendedQueryResponse();
+    }
+    try {
+      ColumnBuffer[] buffers = newColumnBuffers(cachedColumns.length);
       int rowCount = 0;
       int rowsAffected = 0;
 
       while (true) {
-        BackendMessage msg = decoder.readMessage();
+        BackendMessage msg = decoder.readMessageIntoBuffers(buffers);
+        // Reference equality for high-frequency singletons — avoids pattern-matching overhead
+        // on the hottest path of query response decoding.
+        if (msg == BackendMessage.DATA_ROW_SENTINEL) {
+          rowCount++;
+          continue;
+        }
+        if (msg == BackendMessage.BIND_COMPLETE) {
+          continue;
+        }
         switch (msg) {
-          case BackendMessage.RowDescription rd -> {
-            columns = rd.columns();
-            buffers = newColumnBuffers(columns.length);
-          }
-          case BackendMessage.DataRow dr -> {
-            appendToBuffers(buffers, dr.values());
-            rowCount++;
-          }
           case BackendMessage.CommandComplete cc -> rowsAffected = cc.rowsAffected();
           case BackendMessage.EmptyQueryResponse eq -> {}
           case BackendMessage.ErrorResponse err -> {
@@ -1052,116 +1125,13 @@ public final class PgConnection extends BaseConnection {
                   new PgNotification(notif.processId(), notif.channel(), notif.payload()));
           case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ReadyForQuery rq -> {
-            return buildTextRowSet(columns, buffers, rowCount, rowsAffected);
-          }
-          default -> {}
-}
-      }
-    } catch (IOException e) {
-      throw new DbConnectionException("I/O error reading response", e);
-    }
-  }
-
-  private RowSet buildTextRowSet(
-      ColumnDescriptor[] columns, ColumnBuffer[] buffers, int rowCount, int rowsAffected) {
-    if (columns == null) {
-      return new RowSet(List.of(), List.of(), rowsAffected);
-    }
-    List<Row> rows = new ArrayList<>(rowCount);
-    for (int i = 0; i < rowCount; i++) {
-      rows.add(createTextBufferedRow(columns, buffers, i));
-    }
-    return new RowSet(rows, List.of(columns), rowsAffected);
-  }
-
-  private void readSimpleQueryStreaming(Consumer<Row> consumer) {
-    try {
-      ColumnDescriptor[] columns = null;
-      while (true) {
-        BackendMessage msg = decoder.readMessage();
-        switch (msg) {
-          case BackendMessage.RowDescription rd -> columns = rd.columns();
-          case BackendMessage.DataRow dr -> consumer.accept(createTextRow(columns, dr.values()));
-          case BackendMessage.CommandComplete cc -> {}
-          case BackendMessage.EmptyQueryResponse eq -> {}
-          case BackendMessage.ErrorResponse err -> {
-            drainUntilReady();
-            throw PgException.fromErrorResponse(err);
-          }
-          case BackendMessage.NoticeResponse notice -> {}
-          case BackendMessage.NotificationResponse notif ->
-              notifications.add(
-                  new PgNotification(notif.processId(), notif.channel(), notif.payload()));
-          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
-          case BackendMessage.ReadyForQuery rq -> {
-            return;
+            return buildRowSet(cachedColumns, buffers, rowCount, rowsAffected);
           }
           default -> {}
         }
       }
     } catch (IOException e) {
-      throw new DbConnectionException("I/O error reading streaming response", e);
-    }
-  }
-
-  private RowStream createSimpleQueryRowStream() {
-    var columns = new ColumnDescriptor[1][];
-    var exhausted = new AtomicBoolean(false);
-
-    return new RowStream(
-        () -> {
-          if (exhausted.get()) {
-            return null;
-          }
-          try {
-            while (true) {
-              BackendMessage msg = decoder.readMessage();
-              switch (msg) {
-                case BackendMessage.RowDescription rd -> columns[0] = rd.columns();
-                case BackendMessage.DataRow dr -> {
-                  return createTextRow(columns[0], dr.values());
-                }
-                case BackendMessage.CommandComplete cc -> {}
-                case BackendMessage.EmptyQueryResponse eq -> {}
-                case BackendMessage.ErrorResponse err -> {
-                  drainUntilReady();
-                  exhausted.set(true);
-                  throw PgException.fromErrorResponse(err);
-                }
-                case BackendMessage.NoticeResponse notice -> {}
-                case BackendMessage.NotificationResponse notif ->
-                    notifications.add(
-                        new PgNotification(notif.processId(), notif.channel(), notif.payload()));
-                case BackendMessage.ReadyForQuery rq -> {
-                  exhausted.set(true);
-                  return null;
-                }
-                default -> {}
-              }
-            }
-          } catch (IOException e) {
-            exhausted.set(true);
-            throw new DbConnectionException("I/O error reading streaming response", e);
-          }
-        },
-        () -> {
-          if (!exhausted.get()) {
-            try {
-              drainUntilReady();
-            } catch (IOException e) {
-              // best effort drain on close
-            }
-            exhausted.set(true);
-          }
-        });
-  }
-
-  @Override
-  protected void flushToNetwork() {
-    try {
-      encoder.flush(out);
-    } catch (IOException e) {
-      throw new DbConnectionException("I/O error during flush", e);
+      throw new DbConnectionException("I/O error reading response", e);
     }
   }
 
@@ -1173,16 +1143,27 @@ public final class PgConnection extends BaseConnection {
       int rowsAffected = 0;
 
       while (true) {
-        BackendMessage msg = decoder.readMessage();
+        // Use readMessageIntoBuffers to write DataRow values directly into ColumnBuffers,
+        // skipping the intermediate byte[][] allocation per row.
+        BackendMessage msg = decoder.readMessageIntoBuffers(buffers);
+        // Reference equality for high-frequency singletons — avoids pattern-matching overhead
+        // on the hottest path of query response decoding.
+        if (msg == BackendMessage.DATA_ROW_SENTINEL) {
+          rowCount++;
+          continue;
+        }
+        if (msg == BackendMessage.PARSE_COMPLETE
+            || msg == BackendMessage.BIND_COMPLETE
+            || msg == BackendMessage.NO_DATA) {
+          continue;
+        }
         switch (msg) {
-          case BackendMessage.ParseComplete pc -> {}
-          case BackendMessage.BindComplete bc -> {}
           case BackendMessage.RowDescription rd -> {
             columns = rd.columns();
             buffers = newColumnBuffers(columns.length);
           }
-          case BackendMessage.NoData nd -> {}
           case BackendMessage.DataRow dr -> {
+            // Fallback for DataRow before RowDescription (buffers not yet allocated)
             appendToBuffers(buffers, dr.values());
             rowCount++;
           }
@@ -1221,21 +1202,21 @@ public final class PgConnection extends BaseConnection {
     }
   }
 
+  /** Check if an error indicates a stale cached plan that should trigger re-preparation. */
+  private static boolean isStalePlanError(DbException error) {
+    String code = error.sqlState();
+    String msg = error.getMessage();
+    if (code == null || msg == null) return false;
+    // "cached plan must not change result type" (0A000)
+    if ("0A000".equals(code) && msg.contains("cached plan")) return true;
+    // "prepared statement X does not exist" (26000)
+    if ("26000".equals(code)) return true;
+    return false;
+  }
+
   @Override
   protected void executeExtendedQueryStreaming(
       @NonNull String sql, @NonNull String[] params, @NonNull Consumer<Row> consumer) {
-    if (params.length == 0) {
-      encoder.writeQuery(sql);
-      try {
-        encoder.flush(out);
-      } catch (IOException e) {
-        throw new DbConnectionException("I/O error during flush", e);
-      }
-      readSimpleQueryStreaming(consumer);
-      return;
-    }
-
-    // Encode extended query, then read streaming
     encoder.writeParse(sql, null);
     encoder.writeBind(params);
     encoder.writeDescribePortal();
@@ -1252,14 +1233,26 @@ public final class PgConnection extends BaseConnection {
   private void readExtendedQueryStreaming(Consumer<Row> consumer) {
     try {
       ColumnDescriptor[] columns = null;
+      Map<String, Integer> columnNameIndex = null;
+      Row recyclableRow = null;
       while (true) {
         BackendMessage msg = decoder.readMessage();
         switch (msg) {
           case BackendMessage.ParseComplete pc -> {}
           case BackendMessage.BindComplete bc -> {}
-          case BackendMessage.RowDescription rd -> columns = rd.columns();
+          case BackendMessage.RowDescription rd -> {
+            columns = rd.columns();
+            columnNameIndex = Row.buildColumnNameIndex(columns);
+          }
           case BackendMessage.NoData nd -> {}
-          case BackendMessage.DataRow dr -> consumer.accept(createRow(columns, dr.values()));
+          case BackendMessage.DataRow dr -> {
+            if (recyclableRow == null) {
+              recyclableRow = createRow(columns, columnNameIndex, dr.values());
+            } else {
+              recyclableRow.resetForStreaming(dr.values());
+            }
+            consumer.accept(recyclableRow);
+          }
           case BackendMessage.CommandComplete cc -> {}
           case BackendMessage.EmptyQueryResponse eq -> {}
           case BackendMessage.PortalSuspended ps -> {}
@@ -1286,17 +1279,6 @@ public final class PgConnection extends BaseConnection {
   @Override
   protected @NonNull RowStream createExtendedQueryRowStream(
       @NonNull String sql, @NonNull String[] params) {
-    if (params.length == 0) {
-      encoder.writeQuery(sql);
-      try {
-        encoder.flush(out);
-      } catch (IOException e) {
-        throw new DbConnectionException("I/O error during flush", e);
-      }
-      return createSimpleQueryRowStream();
-    }
-
-    // Send extended query protocol messages
     encoder.writeParse(sql, null);
     encoder.writeBind(params);
     encoder.writeDescribePortal();
@@ -1309,6 +1291,8 @@ public final class PgConnection extends BaseConnection {
     }
 
     var columns = new ColumnDescriptor[1][];
+    @SuppressWarnings({"unchecked", "rawtypes"}) // generic array creation for closure capture
+    Map<String, Integer>[] columnNameIndex = new Map[1];
     var exhausted = new AtomicBoolean(false);
 
     return new RowStream(
@@ -1322,10 +1306,13 @@ public final class PgConnection extends BaseConnection {
               switch (msg) {
                 case BackendMessage.ParseComplete pc -> {}
                 case BackendMessage.BindComplete bc -> {}
-                case BackendMessage.RowDescription rd -> columns[0] = rd.columns();
+                case BackendMessage.RowDescription rd -> {
+                  columns[0] = rd.columns();
+                  columnNameIndex[0] = Row.buildColumnNameIndex(rd.columns());
+                }
                 case BackendMessage.NoData nd -> {}
                 case BackendMessage.DataRow dr -> {
-                  return createRow(columns[0], dr.values());
+                  return createRow(columns[0], columnNameIndex[0], dr.values());
                 }
                 case BackendMessage.CommandComplete cc -> {}
                 case BackendMessage.EmptyQueryResponse eq -> {}

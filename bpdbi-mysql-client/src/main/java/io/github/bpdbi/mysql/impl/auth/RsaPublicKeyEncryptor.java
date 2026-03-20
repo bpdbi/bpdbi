@@ -39,7 +39,7 @@ public final class RsaPublicKeyEncryptor {
         serverRsaPublicKey
             .replace("-----BEGIN PUBLIC KEY-----", "")
             .replace("-----END PUBLIC KEY-----", "")
-            .replaceAll("\\n", "");
+            .replace("\n", "");
     byte[] keyBytes =
         Base64.getDecoder().decode(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);

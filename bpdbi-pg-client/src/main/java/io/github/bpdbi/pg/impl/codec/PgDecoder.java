@@ -7,8 +7,10 @@ import io.github.bpdbi.pg.impl.codec.BackendMessage.AuthenticationSaslContinue;
 import io.github.bpdbi.pg.impl.codec.BackendMessage.AuthenticationSaslFinal;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decodes Postgres backend (server → client) protocol messages from an InputStream. Blocking: each
@@ -17,6 +19,16 @@ import org.jspecify.annotations.NonNull;
 public final class PgDecoder {
 
   private final InputStream in;
+
+  // Reusable buffer for reading int/short values — avoids allocating byte[4] per call
+  private final byte[] intBuf = new byte[4];
+
+  /**
+   * Per-connection cache for column names. Column names repeat across queries on the same
+   * connection, so interning them reduces String allocation and improves HashMap lookup performance
+   * in Row's columnNameIndex (interned strings share identity, speeding up equals()).
+   */
+  private final Map<String, String> columnNameCache = new HashMap<>();
 
   public PgDecoder(@NonNull InputStream in) {
     this.in = in;
@@ -29,6 +41,36 @@ public final class PgDecoder {
       throw new IOException("Connection closed by server");
     }
     int length = readInt();
+    // Fast path: decode DataRow directly from stream to avoid intermediate byte[] payload copy
+    if (type == PgProtocolConstants.DATA_ROW) {
+      return new BackendMessage.DataRow(readDataRowValues());
+    }
+    byte[] payload = readExactly(length - 4);
+    ByteBuffer buf = ByteBuffer.wrap(payload);
+    return decode((byte) type, buf);
+  }
+
+  /**
+   * Read the next backend message. If it is a DataRow, read column values directly into the given
+   * ColumnBuffers and return {@link BackendMessage.DataRow} with null values (as a sentinel). For
+   * all other message types, behaves like {@link #readMessage()}.
+   *
+   * <p>This eliminates the intermediate byte[][] allocation for DataRow in the buffered query path.
+   */
+  public @NonNull BackendMessage readMessageIntoBuffers(
+      io.github.bpdbi.core.impl.ColumnBuffer @Nullable [] buffers) throws IOException {
+    int type = readByte();
+    if (type == -1) {
+      throw new IOException("Connection closed by server");
+    }
+    int length = readInt();
+    if (type == PgProtocolConstants.DATA_ROW && buffers != null) {
+      readDataRowIntoBuffers(buffers);
+      return BackendMessage.DATA_ROW_SENTINEL;
+    }
+    if (type == PgProtocolConstants.DATA_ROW) {
+      return new BackendMessage.DataRow(readDataRowValues());
+    }
     byte[] payload = readExactly(length - 4);
     ByteBuffer buf = ByteBuffer.wrap(payload);
     return decode((byte) type, buf);
@@ -51,10 +93,10 @@ public final class PgDecoder {
       case PgProtocolConstants.EMPTY_QUERY_RESPONSE -> new BackendMessage.EmptyQueryResponse();
       case PgProtocolConstants.ERROR_RESPONSE -> decodeErrorResponse(buf);
       case PgProtocolConstants.NOTICE_RESPONSE -> decodeNoticeResponse(buf);
-      case PgProtocolConstants.PARSE_COMPLETE -> new BackendMessage.ParseComplete();
-      case PgProtocolConstants.BIND_COMPLETE -> new BackendMessage.BindComplete();
+      case PgProtocolConstants.PARSE_COMPLETE -> BackendMessage.PARSE_COMPLETE;
+      case PgProtocolConstants.BIND_COMPLETE -> BackendMessage.BIND_COMPLETE;
       case PgProtocolConstants.CLOSE_COMPLETE -> new BackendMessage.CloseComplete();
-      case PgProtocolConstants.NO_DATA -> new BackendMessage.NoData();
+      case PgProtocolConstants.NO_DATA -> BackendMessage.NO_DATA;
       case PgProtocolConstants.PORTAL_SUSPENDED -> new BackendMessage.PortalSuspended();
       case PgProtocolConstants.PARAMETER_DESCRIPTION -> decodeParameterDescription(buf);
       case PgProtocolConstants.NOTIFICATION_RESPONSE -> decodeNotificationResponse(buf);
@@ -128,7 +170,7 @@ public final class PgDecoder {
     int columnCount = buf.readUnsignedShort();
     ColumnDescriptor[] columns = new ColumnDescriptor[columnCount];
     for (int i = 0; i < columnCount; i++) {
-      String name = buf.readCString();
+      String name = internColumnName(buf.readCString());
       int tableOID = buf.readInt();
       short colAttr = buf.readShort();
       int typeOID = buf.readInt();
@@ -138,6 +180,19 @@ public final class PgDecoder {
       columns[i] = new ColumnDescriptor(name, tableOID, colAttr, typeOID, typeSize, typeMod);
     }
     return new BackendMessage.RowDescription(columns);
+  }
+
+  /**
+   * Intern a column name so that repeated queries on the same connection share String instances.
+   * Reduces allocation and speeds up HashMap lookups via identity-equal keys.
+   */
+  private String internColumnName(String name) {
+    String cached = columnNameCache.get(name);
+    if (cached != null) {
+      return cached;
+    }
+    columnNameCache.put(name, name);
+    return name;
   }
 
   private BackendMessage decodeDataRow(ByteBuffer buf) {
@@ -155,27 +210,30 @@ public final class PgDecoder {
     return new BackendMessage.DataRow(values);
   }
 
+  /**
+   * Parse CommandComplete tag directly from raw bytes without intermediate String allocation. Tag
+   * format: "INSERT 0 5", "UPDATE 3", "DELETE 1", "SELECT 10", etc. We want the last number.
+   */
   private BackendMessage decodeCommandComplete(ByteBuffer buf) {
-    // Tag format: "INSERT 0 5", "UPDATE 3", "DELETE 1", "SELECT 10", etc.
-    // We want the last number
-    byte[] raw = new byte[buf.readableBytes()];
-    buf.readBytes(raw);
-    // Remove trailing null
-    int end = raw.length;
-    if (end > 0 && raw[end - 1] == 0) {
+    int start = buf.readerIndex();
+    int readable = buf.readableBytes();
+    byte[] data = buf.array();
+    int end = start + readable;
+    // Skip trailing null terminator
+    if (end > start && data[end - 1] == 0) {
       end--;
     }
-    String tag = new String(raw, 0, end, StandardCharsets.UTF_8);
+    buf.skipBytes(readable);
 
     int rows = 0;
     boolean afterSpace = false;
-    for (int i = 0; i < tag.length(); i++) {
-      char c = tag.charAt(i);
-      if (c == ' ') {
+    for (int i = start; i < end; i++) {
+      byte b = data[i];
+      if (b == ' ') {
         afterSpace = true;
         rows = 0;
-      } else if (afterSpace && c >= '0' && c <= '9') {
-        rows = rows * 10 + (c - '0');
+      } else if (afterSpace && b >= '0' && b <= '9') {
+        rows = rows * 10 + (b - '0');
       } else {
         afterSpace = false;
       }
@@ -268,21 +326,70 @@ public final class PgDecoder {
   }
 
   private int readInt() throws IOException {
-    byte[] b = readExactly(4);
-    return (b[0] & 0xFF) << 24 | (b[1] & 0xFF) << 16 | (b[2] & 0xFF) << 8 | (b[3] & 0xFF);
+    readFully(intBuf, 0, 4);
+    return (intBuf[0] & 0xFF) << 24
+        | (intBuf[1] & 0xFF) << 16
+        | (intBuf[2] & 0xFF) << 8
+        | (intBuf[3] & 0xFF);
+  }
+
+  private int readShort() throws IOException {
+    readFully(intBuf, 0, 2);
+    return (intBuf[0] & 0xFF) << 8 | (intBuf[1] & 0xFF);
+  }
+
+  /**
+   * Decode DataRow column values directly from the InputStream. Avoids allocating an intermediate
+   * byte[] for the entire message payload — reads each column value straight from the stream.
+   */
+  private byte[][] readDataRowValues() throws IOException {
+    int columnCount = readShort();
+    byte[][] values = new byte[columnCount][];
+    for (int i = 0; i < columnCount; i++) {
+      int len = readInt();
+      if (len == -1) {
+        values[i] = null; // SQL NULL
+      } else {
+        values[i] = new byte[len];
+        readFully(values[i], 0, len);
+      }
+    }
+    return values;
+  }
+
+  /**
+   * Read a DataRow directly into ColumnBuffer arrays, skipping the intermediate byte[][]
+   * allocation. Each column value is read from the stream straight into the ColumnBuffer's backing
+   * array.
+   */
+  public void readDataRowIntoBuffers(io.github.bpdbi.core.impl.ColumnBuffer @NonNull [] buffers)
+      throws IOException {
+    int columnCount = readShort();
+    for (int i = 0; i < columnCount; i++) {
+      int len = readInt();
+      if (len == -1) {
+        buffers[i].appendNull();
+      } else {
+        buffers[i].appendFromStream(in, len);
+      }
+    }
   }
 
   private byte[] readExactly(int n) throws IOException {
     byte[] buf = new byte[n];
-    int offset = 0;
-    while (offset < n) {
-      int read = in.read(buf, offset, n - offset);
+    readFully(buf, 0, n);
+    return buf;
+  }
+
+  private void readFully(byte[] buf, int offset, int n) throws IOException {
+    int end = offset + n;
+    while (offset < end) {
+      int read = in.read(buf, offset, end - offset);
       if (read == -1) {
         throw new IOException(
-            "Unexpected end of stream (needed " + n + " bytes, got " + offset + ")");
+            "Unexpected end of stream (needed " + n + " bytes, got " + (offset - (end - n)) + ")");
       }
       offset += read;
     }
-    return buf;
   }
 }

@@ -6,6 +6,7 @@ import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.CLIENT_CON
 import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.CLIENT_DEPRECATE_EOF;
 import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.CLIENT_SSL;
 import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.CLIENT_SUPPORTED_FLAGS;
+import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.COLLATION_UTF8MB4_GENERAL_CI;
 import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.EOF_PACKET;
 import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.ERR_PACKET;
 import static io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants.NONCE_LENGTH;
@@ -27,6 +28,8 @@ import io.github.bpdbi.core.impl.BaseConnection;
 import io.github.bpdbi.core.impl.ColumnBuffer;
 import io.github.bpdbi.core.impl.NamedParamParser;
 import io.github.bpdbi.core.impl.PreparedStatementCache;
+import io.github.bpdbi.core.impl.UnsyncBufferedInputStream;
+import io.github.bpdbi.core.impl.UnsyncBufferedOutputStream;
 import io.github.bpdbi.mysql.impl.auth.CachingSha2Authenticator;
 import io.github.bpdbi.mysql.impl.auth.Native41Authenticator;
 import io.github.bpdbi.mysql.impl.auth.RsaPublicKeyEncryptor;
@@ -34,8 +37,6 @@ import io.github.bpdbi.mysql.impl.codec.MysqlBinaryCodec;
 import io.github.bpdbi.mysql.impl.codec.MysqlDecoder;
 import io.github.bpdbi.mysql.impl.codec.MysqlEncoder;
 import io.github.bpdbi.mysql.impl.codec.MysqlProtocolConstants;
-import java.io.BufferedInputStream;
-import io.github.bpdbi.core.impl.UnsyncBufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -68,9 +69,12 @@ public final class MysqlConnection extends BaseConnection {
   private Socket socket;
   private OutputStream out;
   private final MysqlEncoder encoder;
-  private MysqlDecoder decoder;
+  private volatile MysqlDecoder decoder;
   private final Map<String, String> parameters = new HashMap<>();
-  private final Charset charset = StandardCharsets.UTF_8;
+
+  /** Always UTF-8: bpdbi uses UTF-8 for all communication with MySQL (collation utf8mb4). */
+  private static final Charset CHARSET = StandardCharsets.UTF_8;
+
   private int connectionId;
   private byte @Nullable [] authPluginData; // nonce from handshake, needed for RSA full auth
   private SslMode sslMode = SslMode.DISABLE;
@@ -115,7 +119,7 @@ public final class MysqlConnection extends BaseConnection {
       socket.setTcpNoDelay(true);
       var out = new UnsyncBufferedOutputStream(socket.getOutputStream(), 8192);
 
-      var in = new BufferedInputStream(socket.getInputStream(), 8192);
+      var in = new UnsyncBufferedInputStream(socket.getInputStream(), 8192);
       var encoder = new MysqlEncoder();
       var decoder = new MysqlDecoder(in);
 
@@ -172,7 +176,7 @@ public final class MysqlConnection extends BaseConnection {
     try {
       // Send COM_STMT_PREPARE
       encoder.resetSequenceId();
-      encoder.writeComStmtPrepare(sqlToSend, charset);
+      encoder.writeComStmtPrepare(sqlToSend, CHARSET);
       encoder.flush(out);
 
       // Read prepare response
@@ -208,7 +212,7 @@ public final class MysqlConnection extends BaseConnection {
       if (isCacheable(sql)) {
         var cached =
             new PreparedStatementCache.CachedStatement(
-                sql, null, prepResult.statementId(), columns, columnTypes, paramNames);
+                sql, null, null, prepResult.statementId(), columns, columnTypes, paramNames);
         handleEvicted(psCache.cache(sql, cached));
         return new CachedMysqlPreparedStmt(cached);
       }
@@ -288,6 +292,9 @@ public final class MysqlConnection extends BaseConnection {
     return connectionId;
   }
 
+  /** OK packets in MySQL are always small; large packets with an OK header byte are result sets. */
+  private static final int MAX_OK_PACKET_SIZE = 9_000_000;
+
   private static void rejectCollections(Object[] params) {
     for (Object val : params) {
       if (val instanceof Collection<?> || (val != null && val.getClass().isArray())) {
@@ -297,6 +304,55 @@ public final class MysqlConnection extends BaseConnection {
                 + "= ANY(:param) with array parameters.");
       }
     }
+  }
+
+  private static byte[] encodeLengthPrefixed(byte[] data) {
+    if (data.length < 251) {
+      byte[] result = new byte[1 + data.length];
+      result[0] = (byte) data.length;
+      System.arraycopy(data, 0, result, 1, data.length);
+      return result;
+    } else if (data.length <= 0xFFFF) {
+      byte[] result = new byte[3 + data.length];
+      result[0] = (byte) 0xFC;
+      result[1] = (byte) (data.length & 0xFF);
+      result[2] = (byte) ((data.length >> 8) & 0xFF);
+      System.arraycopy(data, 0, result, 3, data.length);
+      return result;
+    } else {
+      byte[] result = new byte[4 + data.length];
+      result[0] = (byte) 0xFD;
+      result[1] = (byte) (data.length & 0xFF);
+      result[2] = (byte) ((data.length >> 8) & 0xFF);
+      result[3] = (byte) ((data.length >> 16) & 0xFF);
+      System.arraycopy(data, 0, result, 4, data.length);
+      return result;
+    }
+  }
+
+  private static Result encodeTextParams(String[] params) {
+    int numParams = params == null ? 0 : params.length;
+    byte[] paramTypeBytes = null;
+    byte[][] paramValues = null;
+
+    if (numParams > 0) {
+      paramTypeBytes = new byte[numParams * 2];
+      paramValues = new byte[numParams][];
+      for (int i = 0; i < numParams; i++) {
+        if (params[i] == null) {
+          paramTypeBytes[i * 2] = 0x06; // NULL
+          paramTypeBytes[i * 2 + 1] = 0x00;
+          paramValues[i] = null;
+        } else {
+          // Encode all as VARCHAR (text) for pipeline path
+          paramTypeBytes[i * 2] = (byte) 0xFD; // VAR_STRING
+          paramTypeBytes[i * 2 + 1] = 0x00;
+          byte[] strBytes = params[i].getBytes(StandardCharsets.UTF_8);
+          paramValues[i] = encodeLengthPrefixed(strBytes);
+        }
+      }
+    }
+    return new Result(paramTypeBytes, paramValues);
   }
 
   private record Result(byte[] paramTypeBytes, byte[][] paramValues) {}
@@ -359,27 +415,7 @@ public final class MysqlConnection extends BaseConnection {
         types[idx * 2] = (byte) 0xFD;
         types[idx * 2 + 1] = 0x00;
         byte[] strBytes = val.toString().getBytes(StandardCharsets.UTF_8);
-        if (strBytes.length < 251) {
-          byte[] result = new byte[1 + strBytes.length];
-          result[0] = (byte) strBytes.length;
-          System.arraycopy(strBytes, 0, result, 1, strBytes.length);
-          values[idx] = result;
-        } else if (strBytes.length <= 0xFFFF) {
-          byte[] result = new byte[3 + strBytes.length];
-          result[0] = (byte) 0xFC;
-          result[1] = (byte) (strBytes.length & 0xFF);
-          result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
-          System.arraycopy(strBytes, 0, result, 3, strBytes.length);
-          values[idx] = result;
-        } else {
-          byte[] result = new byte[4 + strBytes.length];
-          result[0] = (byte) 0xFD;
-          result[1] = (byte) (strBytes.length & 0xFF);
-          result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
-          result[3] = (byte) ((strBytes.length >> 16) & 0xFF);
-          System.arraycopy(strBytes, 0, result, 4, strBytes.length);
-          values[idx] = result;
-        }
+        values[idx] = encodeLengthPrefixed(strBytes);
       }
     }
   }
@@ -410,76 +446,9 @@ public final class MysqlConnection extends BaseConnection {
         encoder.writeComStmtExecute(statementId, result.paramTypeBytes(), result.paramValues());
         encoder.flush(out);
 
-        return readBinaryQueryResponse();
+        return readBinaryQueryResponse(true);
       } catch (IOException e) {
         throw new DbConnectionException("I/O error executing prepared statement", e);
-      }
-    }
-
-    private void encodeParam(int idx, Object val, byte[] types, byte[][] values) {
-      switch (val) {
-        case Integer v -> {
-          types[idx * 2] = 0x03; // MYSQL_TYPE_LONG
-          types[idx * 2 + 1] = 0x00;
-          values[idx] = MysqlBinaryCodec.encodeInt4LE(v);
-        }
-        case Long v -> {
-          types[idx * 2] = 0x08; // MYSQL_TYPE_LONGLONG
-          types[idx * 2 + 1] = 0x00;
-          values[idx] = MysqlBinaryCodec.encodeInt8LE(v);
-        }
-        case Double v -> {
-          types[idx * 2] = 0x05; // MYSQL_TYPE_DOUBLE
-          types[idx * 2 + 1] = 0x00;
-          values[idx] = MysqlBinaryCodec.encodeFloat8LE(v);
-        }
-        case Float v -> {
-          types[idx * 2] = 0x04; // MYSQL_TYPE_FLOAT
-          types[idx * 2 + 1] = 0x00;
-          values[idx] = MysqlBinaryCodec.encodeFloat4LE(v);
-        }
-        case Short v -> {
-          types[idx * 2] = 0x02; // MYSQL_TYPE_SHORT
-          types[idx * 2 + 1] = 0x00;
-          values[idx] = MysqlBinaryCodec.encodeInt2LE(v);
-        }
-        case Boolean v -> {
-          types[idx * 2] = 0x01; // MYSQL_TYPE_TINY
-          types[idx * 2 + 1] = 0x00;
-          values[idx] = MysqlBinaryCodec.encodeInt1(v ? 1 : 0);
-        }
-        default -> {
-          // Everything else as length-encoded string (VARCHAR)
-          types[idx * 2] = (byte) 0xFD; // MYSQL_TYPE_VAR_STRING
-          types[idx * 2 + 1] = 0x00;
-          byte[] strBytes = val.toString().getBytes(StandardCharsets.UTF_8);
-          // Length-encoded: length prefix + data
-          values[idx] = encodeLengthPrefixed(strBytes);
-        }
-      }
-    }
-
-    private byte[] encodeLengthPrefixed(byte[] data) {
-      if (data.length < 251) {
-        byte[] result = new byte[1 + data.length];
-        result[0] = (byte) data.length;
-        System.arraycopy(data, 0, result, 1, data.length);
-        return result;
-      } else if (data.length <= 0xFFFF) {
-        byte[] result = new byte[3 + data.length];
-        result[0] = (byte) 0xFC;
-        result[1] = (byte) (data.length & 0xFF);
-        result[2] = (byte) ((data.length >> 8) & 0xFF);
-        System.arraycopy(data, 0, result, 3, data.length);
-        return result;
-      } else {
-        byte[] result = new byte[4 + data.length];
-        result[0] = (byte) 0xFD;
-        result[1] = (byte) (data.length & 0xFF);
-        result[2] = (byte) ((data.length >> 8) & 0xFF);
-        result[3] = (byte) ((data.length >> 16) & 0xFF);
-        System.arraycopy(data, 0, result, 4, data.length);
-        return result;
       }
     }
 
@@ -506,68 +475,6 @@ public final class MysqlConnection extends BaseConnection {
         } catch (IOException e) {
           // best effort
         }
-      }
-    }
-
-    private RowSet readBinaryQueryResponse() throws IOException {
-      byte[] payload = decoder.readPacket();
-      int header = payload[0] & 0xFF;
-
-      if (header == ERR_PACKET) {
-        return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(payload)));
-      }
-      if (header == OK_PACKET) {
-        var ok = decoder.readOkPacket(payload);
-        if ((ok.serverStatus() & SERVER_MORE_RESULTS_EXISTS) != 0) {
-          return readRemainingResults(ok.affectedRows());
-        }
-        return new RowSet(List.of(), List.of(), ok.affectedRows());
-      }
-
-      // Binary result set
-      int columnCount = decoder.readColumnCount(payload);
-
-      // Re-read column definitions (may differ from prepare response)
-      ColumnDescriptor[] resultColumns = new ColumnDescriptor[columnCount];
-      int[] resultTypes = new int[columnCount];
-      for (int i = 0; i < columnCount; i++) {
-        byte[] colDef = decoder.readPacket();
-        resultColumns[i] = decoder.readColumnDefinition(colDef);
-        resultTypes[i] = resultColumns[i].typeOID();
-      }
-      if (!decoder.isDeprecateEof()) {
-        decoder.readPacket(); // EOF
-      }
-
-      // Read binary rows
-      List<Row> rows = new ArrayList<>();
-      while (true) {
-        byte[] rowPayload = decoder.readPacket();
-        int first = rowPayload[0] & 0xFF;
-
-        if (first == ERR_PACKET) {
-          return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(rowPayload)));
-        }
-        if (first == EOF_PACKET
-            && rowPayload.length < MysqlProtocolConstants.PACKET_PAYLOAD_LIMIT) {
-          int serverStatus;
-          int affected = 0;
-          if (decoder.isDeprecateEof()) {
-            var ok = decoder.readOkPacket(rowPayload);
-            serverStatus = ok.serverStatus();
-            affected = ok.affectedRows();
-          } else {
-            serverStatus = decoder.readEofPacket(rowPayload).serverStatus();
-          }
-          if ((serverStatus & SERVER_MORE_RESULTS_EXISTS) != 0) {
-            readRemainingResults(0);
-          }
-          return new RowSet(rows, List.of(resultColumns), affected);
-        }
-
-        // Binary row (starts with 0x00 header)
-        byte[][] values = decoder.readBinaryRow(rowPayload, columnCount, resultTypes);
-        rows.add(createRow(resultColumns, values));
       }
     }
   }
@@ -598,58 +505,9 @@ public final class MysqlConnection extends BaseConnection {
             cached.mysqlStatementId(), result.paramTypeBytes(), result.paramValues());
         encoder.flush(out);
 
-        return readCachedBinaryQueryResponse();
+        return readBinaryQueryResponse(false);
       } catch (IOException e) {
         throw new DbConnectionException("I/O error executing prepared statement", e);
-      }
-    }
-
-    private RowSet readCachedBinaryQueryResponse() throws IOException {
-      byte[] payload = decoder.readPacket();
-      int header = payload[0] & 0xFF;
-
-      if (header == ERR_PACKET) {
-        return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(payload)));
-      }
-      if (header == OK_PACKET) {
-        var ok = decoder.readOkPacket(payload);
-        return new RowSet(List.of(), List.of(), ok.affectedRows());
-      }
-
-      int columnCount = decoder.readColumnCount(payload);
-      ColumnDescriptor[] resultColumns = new ColumnDescriptor[columnCount];
-      int[] resultTypes = new int[columnCount];
-      for (int i = 0; i < columnCount; i++) {
-        byte[] colDef = decoder.readPacket();
-        resultColumns[i] = decoder.readColumnDefinition(colDef);
-        resultTypes[i] = resultColumns[i].typeOID();
-      }
-      if (!decoder.isDeprecateEof()) {
-        decoder.readPacket(); // EOF
-      }
-
-      List<Row> rows = new ArrayList<>();
-      while (true) {
-        byte[] rowPayload = decoder.readPacket();
-        int first = rowPayload[0] & 0xFF;
-
-        if (first == ERR_PACKET) {
-          return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(rowPayload)));
-        }
-        if (first == EOF_PACKET
-            && rowPayload.length < MysqlProtocolConstants.PACKET_PAYLOAD_LIMIT) {
-          int affected = 0;
-          if (decoder.isDeprecateEof()) {
-            var ok = decoder.readOkPacket(rowPayload);
-            affected = ok.affectedRows();
-          } else {
-            decoder.readEofPacket(rowPayload);
-          }
-          return new RowSet(rows, List.of(resultColumns), affected);
-        }
-
-        byte[][] values = decoder.readBinaryRow(rowPayload, columnCount, resultTypes);
-        rows.add(createRow(resultColumns, values));
       }
     }
 
@@ -673,6 +531,67 @@ public final class MysqlConnection extends BaseConnection {
         }
         closeCachedStatement(cached);
       }
+    }
+  }
+
+  private RowSet readBinaryQueryResponse(boolean handleMultiResult) throws IOException {
+    byte[] payload = decoder.readPacket();
+    int header = payload[0] & 0xFF;
+
+    if (header == ERR_PACKET) {
+      return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(payload)));
+    }
+    if (header == OK_PACKET) {
+      var ok = decoder.readOkPacket(payload);
+      if (handleMultiResult && (ok.serverStatus() & SERVER_MORE_RESULTS_EXISTS) != 0) {
+        return readRemainingResults(ok.affectedRows());
+      }
+      return new RowSet(List.of(), List.of(), ok.affectedRows());
+    }
+
+    // Binary result set
+    int columnCount = decoder.readColumnCount(payload);
+
+    // Re-read column definitions (may differ from prepare response)
+    ColumnDescriptor[] resultColumns = new ColumnDescriptor[columnCount];
+    int[] resultTypes = new int[columnCount];
+    for (int i = 0; i < columnCount; i++) {
+      byte[] colDef = decoder.readPacket();
+      resultColumns[i] = decoder.readColumnDefinition(colDef);
+      resultTypes[i] = resultColumns[i].typeOID();
+    }
+    if (!decoder.isDeprecateEof()) {
+      decoder.readPacket(); // EOF
+    }
+
+    // Read binary rows
+    List<Row> rows = new ArrayList<>();
+    while (true) {
+      byte[] rowPayload = decoder.readPacket();
+      int first = rowPayload[0] & 0xFF;
+
+      if (first == ERR_PACKET) {
+        return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(rowPayload)));
+      }
+      if (first == EOF_PACKET && rowPayload.length < MysqlProtocolConstants.PACKET_PAYLOAD_LIMIT) {
+        int serverStatus;
+        int affected = 0;
+        if (decoder.isDeprecateEof()) {
+          var ok = decoder.readOkPacket(rowPayload);
+          serverStatus = ok.serverStatus();
+          affected = ok.affectedRows();
+        } else {
+          serverStatus = decoder.readEofPacket(rowPayload).serverStatus();
+        }
+        if (handleMultiResult && (serverStatus & SERVER_MORE_RESULTS_EXISTS) != 0) {
+          readRemainingResults(0);
+        }
+        return new RowSet(rows, List.of(resultColumns), affected);
+      }
+
+      // Binary row (starts with 0x00 header)
+      byte[][] values = decoder.readBinaryRow(rowPayload, columnCount, resultTypes);
+      rows.add(createRow(resultColumns, values));
     }
   }
 
@@ -710,7 +629,7 @@ public final class MysqlConnection extends BaseConnection {
     // Prepare the statement
     try {
       encoder.resetSequenceId();
-      encoder.writeComStmtPrepare(sql, charset);
+      encoder.writeComStmtPrepare(sql, CHARSET);
       encoder.flush(out);
 
       byte[] payload = decoder.readPacket();
@@ -750,7 +669,7 @@ public final class MysqlConnection extends BaseConnection {
       if (shouldCache && result.getError() == null) {
         var stmt =
             new PreparedStatementCache.CachedStatement(
-                sql, null, prepResult.statementId(), columns, columnTypes);
+                sql, null, null, prepResult.statementId(), columns, columnTypes);
         handleEvicted(psCache.cache(sql, stmt));
       }
 
@@ -767,42 +686,10 @@ public final class MysqlConnection extends BaseConnection {
       int[] columnTypes,
       boolean closeAfter) {
     try {
-      int numParams = params == null ? 0 : params.length;
-      byte[] paramTypeBytes = null;
-      byte[][] paramValues = null;
-
-      if (numParams > 0) {
-        paramTypeBytes = new byte[numParams * 2];
-        paramValues = new byte[numParams][];
-        for (int i = 0; i < numParams; i++) {
-          if (params[i] == null) {
-            paramTypeBytes[i * 2] = 0x06; // NULL
-            paramTypeBytes[i * 2 + 1] = 0x00;
-            paramValues[i] = null;
-          } else {
-            // Encode all as VARCHAR (text) for pipeline path
-            paramTypeBytes[i * 2] = (byte) 0xFD; // VAR_STRING
-            paramTypeBytes[i * 2 + 1] = 0x00;
-            byte[] strBytes = params[i].getBytes(StandardCharsets.UTF_8);
-            byte[] result;
-            if (strBytes.length < 251) {
-              result = new byte[1 + strBytes.length];
-              result[0] = (byte) strBytes.length;
-              System.arraycopy(strBytes, 0, result, 1, strBytes.length);
-            } else {
-              result = new byte[3 + strBytes.length];
-              result[0] = (byte) 0xFC;
-              result[1] = (byte) (strBytes.length & 0xFF);
-              result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
-              System.arraycopy(strBytes, 0, result, 3, strBytes.length);
-            }
-            paramValues[i] = result;
-          }
-        }
-      }
+      Result encoded = encodeTextParams(params);
 
       encoder.resetSequenceId();
-      encoder.writeComStmtExecute(statementId, paramTypeBytes, paramValues);
+      encoder.writeComStmtExecute(statementId, encoded.paramTypeBytes(), encoded.paramValues());
       encoder.flush(out);
 
       RowSet result = readBinaryExecuteResponse(columns, columnTypes);
@@ -827,7 +714,7 @@ public final class MysqlConnection extends BaseConnection {
     if (header == ERR_PACKET) {
       return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(payload)));
     }
-    if (header == OK_PACKET && payload.length < 9_000_000) {
+    if (header == OK_PACKET && payload.length < MAX_OK_PACKET_SIZE) {
       var ok = decoder.readOkPacket(payload);
       return new RowSet(List.of(), List.of(), ok.affectedRows());
     }
@@ -879,7 +766,7 @@ public final class MysqlConnection extends BaseConnection {
   private RowSet executeComQuery(String sql) {
     try {
       encoder.resetSequenceId();
-      encoder.writeComQuery(sql, charset);
+      encoder.writeComQuery(sql, CHARSET);
       encoder.flush(out);
       return readComQueryResponse();
     } catch (IOException e) {
@@ -895,7 +782,7 @@ public final class MysqlConnection extends BaseConnection {
       return new RowSet(MysqlException.fromErrPacket(decoder.readErrPacket(payload)));
     }
 
-    if (header == OK_PACKET && payload.length < 9_000_000) {
+    if (header == OK_PACKET && payload.length < MAX_OK_PACKET_SIZE) {
       var ok = decoder.readOkPacket(payload);
       if ((ok.serverStatus() & SERVER_MORE_RESULTS_EXISTS) != 0) {
         return readRemainingResults(ok.affectedRows());
@@ -977,7 +864,7 @@ public final class MysqlConnection extends BaseConnection {
 
   private void streamComQuery(String sql, Consumer<Row> consumer) throws IOException {
     encoder.resetSequenceId();
-    encoder.writeComQuery(sql, charset);
+    encoder.writeComQuery(sql, CHARSET);
     encoder.flush(out);
 
     byte[] payload = decoder.readPacket();
@@ -985,7 +872,7 @@ public final class MysqlConnection extends BaseConnection {
     if (header == ERR_PACKET) {
       throw MysqlException.fromErrPacket(decoder.readErrPacket(payload));
     }
-    if (header == OK_PACKET && payload.length < 9_000_000) {
+    if (header == OK_PACKET && payload.length < MAX_OK_PACKET_SIZE) {
       return;
     }
 
@@ -1014,7 +901,7 @@ public final class MysqlConnection extends BaseConnection {
   private RowStream createComQueryRowStream(String sql) {
     try {
       encoder.resetSequenceId();
-      encoder.writeComQuery(sql, charset);
+      encoder.writeComQuery(sql, CHARSET);
       encoder.flush(out);
 
       byte[] payload = decoder.readPacket();
@@ -1022,7 +909,7 @@ public final class MysqlConnection extends BaseConnection {
       if (header == ERR_PACKET) {
         throw MysqlException.fromErrPacket(decoder.readErrPacket(payload));
       }
-      if (header == OK_PACKET && payload.length < 9_000_000) {
+      if (header == OK_PACKET && payload.length < MAX_OK_PACKET_SIZE) {
         return new RowStream(() -> null, () -> {});
       }
 
@@ -1109,7 +996,7 @@ public final class MysqlConnection extends BaseConnection {
     // Prepare the statement
     try {
       encoder.resetSequenceId();
-      encoder.writeComStmtPrepare(sql, charset);
+      encoder.writeComStmtPrepare(sql, CHARSET);
       encoder.flush(out);
 
       byte[] payload = decoder.readPacket();
@@ -1156,41 +1043,10 @@ public final class MysqlConnection extends BaseConnection {
       int[] columnTypes,
       Consumer<Row> consumer)
       throws IOException {
-    int numParams = params == null ? 0 : params.length;
-    byte[] paramTypeBytes = null;
-    byte[][] paramValues = null;
-
-    if (numParams > 0) {
-      paramTypeBytes = new byte[numParams * 2];
-      paramValues = new byte[numParams][];
-      for (int i = 0; i < numParams; i++) {
-        if (params[i] == null) {
-          paramTypeBytes[i * 2] = 0x06;
-          paramTypeBytes[i * 2 + 1] = 0x00;
-          paramValues[i] = null;
-        } else {
-          paramTypeBytes[i * 2] = (byte) 0xFD;
-          paramTypeBytes[i * 2 + 1] = 0x00;
-          byte[] strBytes = params[i].getBytes(StandardCharsets.UTF_8);
-          byte[] result;
-          if (strBytes.length < 251) {
-            result = new byte[1 + strBytes.length];
-            result[0] = (byte) strBytes.length;
-            System.arraycopy(strBytes, 0, result, 1, strBytes.length);
-          } else {
-            result = new byte[3 + strBytes.length];
-            result[0] = (byte) 0xFC;
-            result[1] = (byte) (strBytes.length & 0xFF);
-            result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
-            System.arraycopy(strBytes, 0, result, 3, strBytes.length);
-          }
-          paramValues[i] = result;
-        }
-      }
-    }
+    Result encoded = encodeTextParams(params);
 
     encoder.resetSequenceId();
-    encoder.writeComStmtExecute(statementId, paramTypeBytes, paramValues);
+    encoder.writeComStmtExecute(statementId, encoded.paramTypeBytes(), encoded.paramValues());
     encoder.flush(out);
 
     streamBinaryExecuteResponse(columns, columnTypes, consumer);
@@ -1205,7 +1061,7 @@ public final class MysqlConnection extends BaseConnection {
     if (header == ERR_PACKET) {
       throw MysqlException.fromErrPacket(decoder.readErrPacket(payload));
     }
-    if (header == OK_PACKET && payload.length < 9_000_000) {
+    if (header == OK_PACKET && payload.length < MAX_OK_PACKET_SIZE) {
       return;
     }
 
@@ -1245,7 +1101,7 @@ public final class MysqlConnection extends BaseConnection {
     // For MySQL, prepare + execute + return a RowStream reading binary results
     try {
       encoder.resetSequenceId();
-      encoder.writeComStmtPrepare(sql, charset);
+      encoder.writeComStmtPrepare(sql, CHARSET);
       encoder.flush(out);
 
       byte[] payload = decoder.readPacket();
@@ -1273,40 +1129,11 @@ public final class MysqlConnection extends BaseConnection {
       }
 
       // Execute
-      int numParams = params == null ? 0 : params.length;
-      byte[] paramTypeBytes = null;
-      byte[][] paramValues = null;
-      if (numParams > 0) {
-        paramTypeBytes = new byte[numParams * 2];
-        paramValues = new byte[numParams][];
-        for (int i = 0; i < numParams; i++) {
-          if (params[i] == null) {
-            paramTypeBytes[i * 2] = 0x06;
-            paramTypeBytes[i * 2 + 1] = 0x00;
-            paramValues[i] = null;
-          } else {
-            paramTypeBytes[i * 2] = (byte) 0xFD;
-            paramTypeBytes[i * 2 + 1] = 0x00;
-            byte[] strBytes = params[i].getBytes(StandardCharsets.UTF_8);
-            byte[] result;
-            if (strBytes.length < 251) {
-              result = new byte[1 + strBytes.length];
-              result[0] = (byte) strBytes.length;
-              System.arraycopy(strBytes, 0, result, 1, strBytes.length);
-            } else {
-              result = new byte[3 + strBytes.length];
-              result[0] = (byte) 0xFC;
-              result[1] = (byte) (strBytes.length & 0xFF);
-              result[2] = (byte) ((strBytes.length >> 8) & 0xFF);
-              System.arraycopy(strBytes, 0, result, 3, strBytes.length);
-            }
-            paramValues[i] = result;
-          }
-        }
-      }
+      Result encoded = encodeTextParams(params);
 
       encoder.resetSequenceId();
-      encoder.writeComStmtExecute(prepResult.statementId(), paramTypeBytes, paramValues);
+      encoder.writeComStmtExecute(
+          prepResult.statementId(), encoded.paramTypeBytes(), encoded.paramValues());
       encoder.flush(out);
 
       // Read response header
@@ -1315,7 +1142,7 @@ public final class MysqlConnection extends BaseConnection {
       if (hdr == ERR_PACKET) {
         throw MysqlException.fromErrPacket(decoder.readErrPacket(payload));
       }
-      if (hdr == OK_PACKET && payload.length < 9_000_000) {
+      if (hdr == OK_PACKET && payload.length < MAX_OK_PACKET_SIZE) {
         // Close statement, return empty stream
         encoder.resetSequenceId();
         encoder.writeComStmtClose(prepResult.statementId());
@@ -1448,7 +1275,7 @@ public final class MysqlConnection extends BaseConnection {
       clientFlags |= CLIENT_SSL;
       // Send SSL request packet (short handshake response with just flags)
       encoder.setSequenceId(decoder.lastSequenceId() + 1);
-      encoder.writeSslRequest(clientFlags, handshake.charset());
+      encoder.writeSslRequest(clientFlags, COLLATION_UTF8MB4_GENERAL_CI);
       encoder.flush(out);
       // Upgrade socket to SSL
       upgradeToSsl();
@@ -1463,7 +1290,7 @@ public final class MysqlConnection extends BaseConnection {
     // Step 2: Send handshake response
     encoder.setSequenceId(decoder.lastSequenceId() + 1);
     encoder.writeHandshakeResponse(
-        clientFlags, user, authResponse, database, authPlugin, handshake.charset(), null);
+        clientFlags, user, authResponse, database, authPlugin, COLLATION_UTF8MB4_GENERAL_CI, null);
     encoder.flush(out);
 
     // Step 3: Read auth result
@@ -1501,7 +1328,8 @@ public final class MysqlConnection extends BaseConnection {
       this.socket = sslSocket;
       this.out = new UnsyncBufferedOutputStream(sslSocket.getOutputStream(), 8192);
       boolean wasDeprecateEof = decoder.isDeprecateEof();
-      this.decoder = new MysqlDecoder(new BufferedInputStream(sslSocket.getInputStream(), 8192));
+      this.decoder =
+          new MysqlDecoder(new UnsyncBufferedInputStream(sslSocket.getInputStream(), 8192));
       if (wasDeprecateEof) {
         decoder.setDeprecateEof(true);
       }

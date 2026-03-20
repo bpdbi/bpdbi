@@ -31,7 +31,7 @@ public final class PoolConfig {
   private boolean validateOnBorrow = false;
   private long leakDetectionThresholdMillis = 0; // 0 = disabled
   private @Nullable Consumer<Connection> afterAcquire;
-  private @Nullable Consumer<Connection> beforeRecycle;
+  private @Nullable Consumer<Connection> beforeReturn;
 
   public PoolConfig() {}
 
@@ -172,12 +172,12 @@ public final class PoolConfig {
    * session state (e.g. rolling back uncommitted transactions, resetting session variables). If the
    * callback throws, the connection is discarded instead of returned. Default: null (no hook).
    */
-  public @Nullable Consumer<Connection> beforeRecycle() {
-    return beforeRecycle;
+  public @Nullable Consumer<Connection> beforeReturn() {
+    return beforeReturn;
   }
 
-  public @NonNull PoolConfig beforeRecycle(@Nullable Consumer<Connection> beforeRecycle) {
-    this.beforeRecycle = beforeRecycle;
+  public @NonNull PoolConfig beforeReturn(@Nullable Consumer<Connection> beforeReturn) {
+    this.beforeReturn = beforeReturn;
     return this;
   }
 }

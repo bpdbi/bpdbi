@@ -28,14 +28,23 @@ final class PooledConnection implements Connection {
 
   private final Connection delegate;
   private final ConnectionPool pool;
-  final long createdAt;
-  volatile long acquiredAt;
-  volatile long returnedAt;
+  final long createdAtNanos;
+  volatile long acquiredAtNanos;
+  volatile long returnedAtNanos;
 
-  PooledConnection(Connection delegate, ConnectionPool pool, long createdAt) {
+  /**
+   * Per-connection max lifetime (in nanos) with random variance applied. Prevents all connections
+   * created around the same time from expiring simultaneously (thundering herd). A value of 0 means
+   * no lifetime limit.
+   */
+  final long effectiveMaxLifetimeNanos;
+
+  PooledConnection(
+      Connection delegate, ConnectionPool pool, long createdAtNanos, long effectiveMaxLifetimeNanos) {
     this.delegate = delegate;
     this.pool = pool;
-    this.createdAt = createdAt;
+    this.createdAtNanos = createdAtNanos;
+    this.effectiveMaxLifetimeNanos = effectiveMaxLifetimeNanos;
   }
 
   /** Return the underlying real connection (for tests and pool internals). */
@@ -61,7 +70,7 @@ final class PooledConnection implements Connection {
     pool.release(this);
   }
 
-  // --- Delegation ---
+  // --- Delegation: all Connection methods forward to the underlying connection ---
 
   @Override
   public @NonNull RowSet query(@NonNull String sql) {
@@ -135,8 +144,8 @@ final class PooledConnection implements Connection {
 
   @Override
   public void queryStream(
-      @NonNull String sql, @NonNull Consumer<Row> consumer, @Nullable Object... params) {
-    delegate.queryStream(sql, consumer, params);
+      @NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer) {
+    delegate.queryStream(sql, params, consumer);
   }
 
   @Override
@@ -160,8 +169,8 @@ final class PooledConnection implements Connection {
   }
 
   @Override
-  public void setColumnMapperRegistry(@NonNull ColumnMapperRegistry registry) {
-    delegate.setColumnMapperRegistry(registry);
+  public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {
+    delegate.setMapperRegistry(registry);
   }
 
   @Override

@@ -86,7 +86,7 @@ public class PreparedStatementReuseBenchmark {
 
   // --- Vert.x ---
 
-  @Benchmark
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void vertx_loop(DatabaseState db, Blackhole bh) {
     for (int i = 1; i <= ITERATIONS; i++) {
       var rows =

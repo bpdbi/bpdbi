@@ -129,17 +129,15 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   @Test
-  void multiStatementSimpleQuery() {
+  void multiStatementQueryIsRejected() {
     try (var conn = connect()) {
-      // Simple query protocol supports multiple statements
-      var rs =
-          conn.query(
-              "CREATE TEMP TABLE multi_test (id int); INSERT INTO multi_test VALUES (1); SELECT * FROM multi_test");
-      // The result should be from the last statement
-      // (simple protocol sends multiple CommandComplete/RowDescription, but we read until
-      // ReadyForQuery)
-      // Our implementation returns the last result
-      assertNotNull(rs);
+      // Multi-statement strings are not supported with the extended query protocol.
+      // Postgres rejects them at the Parse step.
+      assertThrows(
+          PgException.class,
+          () ->
+              conn.query(
+                  "CREATE TEMP TABLE multi_test (id int); INSERT INTO multi_test VALUES (1)"));
     }
   }
 
@@ -986,6 +984,9 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void pipelineMultipleErrors() {
     try (var conn = connect()) {
+      // With the extended protocol, an error cancels all subsequent statements in the same
+      // Sync boundary. Statements before the error succeed; the failing one and all after it
+      // carry errors.
       conn.enqueue("SELECT 1");
       conn.enqueue("BAD SQL");
       conn.enqueue("SELECT 2");
@@ -995,10 +996,11 @@ class PgConnectionTest extends AbstractConnectionTest {
 
       assertEquals(5, results.size());
       assertEquals(1, results.get(0).first().getInteger(0));
-      assertTrue(results.get(1).getError() != null);
-      assertEquals(2, results.get(2).first().getInteger(0));
-      assertTrue(results.get(3).getError() != null);
-      assertEquals(3, results.get(4).first().getInteger(0));
+      assertNotNull(results.get(1).getError());
+      // Statements 2-4 are skipped due to the error at index 1
+      assertNotNull(results.get(2).getError());
+      assertNotNull(results.get(3).getError());
+      assertNotNull(results.get(4).getError());
     }
   }
 
@@ -1960,8 +1962,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   void dataTypeIntArray() {
     try (var conn = connect()) {
       var rs = conn.query("SELECT ARRAY[1,2,3] AS arr");
-      String arrStr = rs.first().getString("arr");
-      assertEquals("{1,2,3}", arrStr);
+      assertEquals(List.of(1, 2, 3), rs.first().getIntegerArray("arr"));
     }
   }
 
@@ -1969,8 +1970,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   void dataTypeTextArray() {
     try (var conn = connect()) {
       var rs = conn.query("SELECT ARRAY['hello','world'] AS arr");
-      String arrStr = rs.first().getString("arr");
-      assertEquals("{hello,world}", arrStr);
+      assertEquals(List.of("hello", "world"), rs.first().getStringArray("arr"));
     }
   }
 
@@ -1978,8 +1978,11 @@ class PgConnectionTest extends AbstractConnectionTest {
   void dataTypeNullInArray() {
     try (var conn = connect()) {
       var rs = conn.query("SELECT ARRAY[1,NULL,3] AS arr");
-      String arrStr = rs.first().getString("arr");
-      assertEquals("{1,NULL,3}", arrStr);
+      var arr = rs.first().getIntegerArray("arr");
+      assertEquals(3, arr.size());
+      assertEquals(1, arr.get(0));
+      assertNull(arr.get(1));
+      assertEquals(3, arr.get(2));
     }
   }
 
@@ -2005,6 +2008,43 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("INSERT INTO json_op VALUES (1, '{\"name\":\"Alice\"}'::jsonb)");
       var rs = conn.query("SELECT data->>'name' AS name FROM json_op WHERE id = 1");
       assertEquals("Alice", rs.first().getString("name"));
+    }
+  }
+
+  // ===== PG array literal quoting (named params with array values) =====
+
+  @Test
+  void pgArrayLiteralWithSpecialChars() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE arr_special (vals text[])");
+      // Use named params with a List → PG array literal conversion
+      conn.query(
+          "INSERT INTO arr_special VALUES ($1)",
+          "{\"hello world\",\"with,comma\",\"with\\\"quote\"}");
+      var rs = conn.query("SELECT vals[1] AS v FROM arr_special");
+      assertEquals("hello world", rs.first().getString("v"));
+    }
+  }
+
+  @Test
+  void pgArrayLiteralWithNulls() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE arr_null (vals int[])");
+      conn.query("INSERT INTO arr_null VALUES ('{1,NULL,3}')");
+      var rs = conn.query("SELECT vals FROM arr_null");
+      var arr = rs.first().getIntegerArray("vals");
+      // The array should contain non-null elements
+      assertNotNull(arr);
+    }
+  }
+
+  @Test
+  void pgArrayLiteralEmptyString() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE arr_empty (vals text[])");
+      conn.query("INSERT INTO arr_empty VALUES ('{\"\"}'::text[])");
+      var rs = conn.query("SELECT vals[1] AS v FROM arr_empty");
+      assertEquals("", rs.first().getString("v"));
     }
   }
 
@@ -2059,7 +2099,8 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void columnMapperDefaultTypes() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT 42 AS n, 'hello' AS s, '2024-01-15' AS d");
+      // Cast to explicit types so Postgres uses the correct binary format
+      var rs = conn.query("SELECT 42 AS n, 'hello' AS s, '2024-01-15'::date AS d");
       var row = rs.first();
       assertEquals(42, row.get("n", Integer.class));
       assertEquals("hello", row.get("s", String.class));
@@ -2218,14 +2259,15 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void pipelineErrorAtStart() {
     try (var conn = connect()) {
+      // Error at the start cancels all subsequent statements in the pipeline
       conn.enqueue("BAD SQL");
       conn.enqueue("SELECT 1");
       conn.enqueue("SELECT 2");
       List<RowSet> results = conn.flush();
       assertEquals(3, results.size());
-      assertTrue(results.get(0).getError() != null);
-      assertEquals(1, results.get(1).first().getInteger(0));
-      assertEquals(2, results.get(2).first().getInteger(0));
+      assertNotNull(results.get(0).getError());
+      assertNotNull(results.get(1).getError());
+      assertNotNull(results.get(2).getError());
     }
   }
 
@@ -2379,9 +2421,7 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("DEALLOCATE ALL");
 
       int epochAfter = conn.deallocateEpoch();
-      assertTrue(
-          epochAfter > epochBefore,
-          "DEALLOCATE ALL should increment deallocate epoch");
+      assertTrue(epochAfter > epochBefore, "DEALLOCATE ALL should increment deallocate epoch");
 
       // Queries still work (re-prepared)
       var rs = conn.query("SELECT $1::int AS n", 99);
@@ -2649,8 +2689,8 @@ class PgConnectionTest extends AbstractConnectionTest {
       var names = new ArrayList<String>();
       conn.queryStream(
           "SELECT name FROM stream_test WHERE id > $1 ORDER BY id",
-          row -> names.add(row.getString("name")),
-          1);
+          new Object[] {1},
+          row -> names.add(row.getString("name")));
       assertEquals(List.of("Bob", "Carol"), names);
     }
   }
@@ -2756,6 +2796,33 @@ class PgConnectionTest extends AbstractConnectionTest {
           assertThrows(PgException.class, () -> conn.query("INSERT INTO nn_test VALUES (1, NULL)"));
       assertEquals("23502", ex.sqlState());
       assertNotNull(ex.column());
+    }
+  }
+
+  @Test
+  void pgExceptionDetailAndTable() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE detail_test (id int PRIMARY KEY)");
+      conn.query("INSERT INTO detail_test VALUES (1)");
+      var ex =
+          assertThrows(PgException.class, () -> conn.query("INSERT INTO detail_test VALUES (1)"));
+      assertNotNull(ex.detail()); // "Key (id)=(1) already exists."
+      assertNotNull(ex.table()); // "detail_test"
+      assertNotNull(ex.schema());
+      assertEquals("detail_test", ex.table());
+    }
+  }
+
+  @Test
+  void pgExceptionToStringIncludesDetail() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE tostr_test (id int PRIMARY KEY)");
+      conn.query("INSERT INTO tostr_test VALUES (1)");
+      var ex =
+          assertThrows(PgException.class, () -> conn.query("INSERT INTO tostr_test VALUES (1)"));
+      String s = ex.toString();
+      assertTrue(s.contains("Detail:"));
+      assertTrue(s.contains("SQL:"));
     }
   }
 
@@ -3041,8 +3108,8 @@ class PgConnectionTest extends AbstractConnectionTest {
       List<String> vals = new ArrayList<>();
       conn.queryStream(
           "SELECT val FROM qs_param WHERE id >= $1 ORDER BY id",
-          row -> vals.add(row.getString("val")),
-          2);
+          new Object[] {2},
+          row -> vals.add(row.getString("val")));
 
       assertEquals(2, vals.size());
       assertEquals("y", vals.get(0));
@@ -3114,5 +3181,578 @@ class PgConnectionTest extends AbstractConnectionTest {
                 + pg.getDatabaseName()
                 + "?sslmode=require");
     assertThrows(DbConnectionException.class, () -> PgConnection.connect(config));
+  }
+
+  // ===== Feature 5: extra_float_digits =====
+
+  @Test
+  void extraFloatDigitsPreservesDoublePrecision() {
+    try (var conn = connect()) {
+      // Without extra_float_digits=3, Postgres may round this value
+      double precise = 1.0 / 3.0;
+      var rs = conn.query("SELECT " + precise + "::float8 AS val");
+      double result = rs.first().getDouble("val");
+      assertEquals(precise, result, 0.0, "float8 should round-trip without precision loss");
+    }
+  }
+
+  // ===== Feature 6: stale cached plan retry =====
+
+  @Test
+  void staleCachedPlanRetries() {
+    try (var conn =
+        PgConnection.connect(
+            new ConnectionConfig(
+                    pg.getHost(),
+                    pg.getMappedPort(5432),
+                    pg.getDatabaseName(),
+                    pg.getUsername(),
+                    pg.getPassword())
+                .cachePreparedStatements(true))) {
+      conn.query("CREATE TEMP TABLE stale_test (id int, name text)");
+      conn.query("INSERT INTO stale_test VALUES (1, 'Alice')");
+
+      // Cache the prepared statement
+      var rs1 = conn.query("SELECT id, name FROM stale_test WHERE id = $1", 1);
+      assertEquals("Alice", rs1.first().getString("name"));
+
+      // Alter the table -- changes result type, invalidating cached plan
+      conn.query("ALTER TABLE stale_test ADD COLUMN age int DEFAULT 0");
+
+      // This should succeed via automatic re-preparation
+      var rs2 = conn.query("SELECT id, name FROM stale_test WHERE id = $1", 1);
+      assertEquals("Alice", rs2.first().getString("name"));
+    }
+  }
+
+  // ===== Feature 7: adaptive cursor fetch size =====
+
+  @Test
+  void adaptiveCursorFetchSize() {
+    try (var conn =
+        PgConnection.connect(
+            new ConnectionConfig(
+                    pg.getHost(),
+                    pg.getMappedPort(5432),
+                    pg.getDatabaseName(),
+                    pg.getUsername(),
+                    pg.getPassword())
+                .maxResultBufferBytes(4096))) {
+      conn.query(
+          "CREATE TEMP TABLE adaptive_test AS"
+              + " SELECT generate_series(1, 500) AS id, repeat('x', 100) AS data");
+      conn.query("BEGIN");
+      try (var cursor = conn.cursor("SELECT * FROM adaptive_test")) {
+        // First read: adaptive sizing not yet active (no previous batch stats)
+        RowSet batch1 = cursor.read(10);
+        assertEquals(10, batch1.size());
+        assertTrue(cursor.hasMore());
+
+        // Second read: adaptive sizing kicks in based on observed row size from batch1
+        // With 4KB buffer and ~100+ byte rows per column, should limit below 1000
+        RowSet batch2 = cursor.read(1000);
+        assertTrue(batch2.size() > 0);
+        assertTrue(
+            batch2.size() < 500, "Adaptive fetch should limit batch size, got " + batch2.size());
+
+        // Keep reading until done
+        int total = batch1.size() + batch2.size();
+        while (cursor.hasMore()) {
+          total += cursor.read(1000).size();
+        }
+        assertEquals(500, total);
+      }
+      conn.query("COMMIT");
+    }
+  }
+
+  // ===== Feature 11: streaming row recycling =====
+
+  @Test
+  void streamingRowRecycling() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE recycle_test AS SELECT generate_series(1, 100) AS id");
+      var collected = new ArrayList<Integer>();
+      conn.queryStream(
+          "SELECT id FROM recycle_test ORDER BY id",
+          row -> {
+            collected.add(row.getInteger(0));
+          });
+      assertEquals(100, collected.size());
+      assertEquals(1, collected.get(0));
+      assertEquals(100, collected.get(99));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Special float/double values — NaN and Infinity
+  // =====================================================================
+
+  @Test
+  @SuppressWarnings({"NullAway", "DataFlowIssue"})
+  void floatNaNRoundTrip() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT $1::float4 AS val", Float.NaN);
+      assertTrue(Float.isNaN(rs.first().getFloat("val")));
+    }
+  }
+
+  @Test
+  @SuppressWarnings({"NullAway", "DataFlowIssue"})
+  void doubleNaNRoundTrip() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT $1::float8 AS val", Double.NaN);
+      assertTrue(Double.isNaN(rs.first().getDouble("val")));
+    }
+  }
+
+  @Test
+  @SuppressWarnings({"NullAway", "DataFlowIssue"})
+  void floatPositiveInfinityRoundTrip() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT $1::float4 AS val", Float.POSITIVE_INFINITY);
+      assertEquals(Float.POSITIVE_INFINITY, rs.first().getFloat("val"));
+    }
+  }
+
+  @Test
+  @SuppressWarnings({"NullAway", "DataFlowIssue"})
+  void doubleNegativeInfinityRoundTrip() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT $1::float8 AS val", Double.NEGATIVE_INFINITY);
+      assertEquals(Double.NEGATIVE_INFINITY, rs.first().getDouble("val"));
+    }
+  }
+
+  @Test
+  void numericNaNFromServer() {
+    try (var conn = connect()) {
+      // Binary protocol: Postgres NUMERIC NaN cannot be represented as BigDecimal
+      var rs = conn.query("SELECT 'NaN'::numeric AS val");
+      assertThrows(ArithmeticException.class, () -> rs.first().getBigDecimal("val"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Infinity dates and timestamps
+  // =====================================================================
+
+  @Test
+  void dateInfinity() {
+    try (var conn = connect()) {
+      // Insert infinity date, read back via extended query to get binary format
+      conn.query("CREATE TEMP TABLE inf_date (id int, d date)");
+      conn.query("INSERT INTO inf_date VALUES (1, 'infinity')");
+      var rs = conn.query("SELECT d FROM inf_date WHERE id = $1", 1);
+      assertEquals(java.time.LocalDate.MAX, rs.first().getLocalDate("d"));
+    }
+  }
+
+  @Test
+  void dateNegativeInfinity() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE ninf_date (id int, d date)");
+      conn.query("INSERT INTO ninf_date VALUES (1, '-infinity')");
+      var rs = conn.query("SELECT d FROM ninf_date WHERE id = $1", 1);
+      assertEquals(java.time.LocalDate.MIN, rs.first().getLocalDate("d"));
+    }
+  }
+
+  @Test
+  void timestampInfinity() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE inf_ts (id int, ts timestamp)");
+      conn.query("INSERT INTO inf_ts VALUES (1, 'infinity')");
+      var rs = conn.query("SELECT ts FROM inf_ts WHERE id = $1", 1);
+      assertEquals(java.time.LocalDateTime.MAX, rs.first().getLocalDateTime("ts"));
+    }
+  }
+
+  @Test
+  void timestamptzInfinity() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE inf_tstz (id int, ts timestamptz)");
+      conn.query("INSERT INTO inf_tstz VALUES (1, 'infinity')");
+      var rs = conn.query("SELECT ts FROM inf_tstz WHERE id = $1", 1);
+      assertEquals(java.time.OffsetDateTime.MAX, rs.first().getOffsetDateTime("ts"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Unicode / multi-byte / emoji database round-trip
+  // =====================================================================
+
+  @Test
+  void emojiRoundTrip() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT $1::text AS val", "Hello \uD83C\uDF0D\uD83C\uDF89 World");
+      assertEquals("Hello \uD83C\uDF0D\uD83C\uDF89 World", rs.first().getString("val"));
+    }
+  }
+
+  @Test
+  void supplementaryUnicodeRoundTrip() {
+    try (var conn = connect()) {
+      // U+1D11E = MUSICAL SYMBOL G CLEF (supplementary character, surrogate pair in Java)
+      var rs = conn.query("SELECT $1::text AS val", "\uD834\uDD1E music");
+      assertEquals("\uD834\uDD1E music", rs.first().getString("val"));
+    }
+  }
+
+  @Test
+  void emptyStringRoundTrip() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT $1::text AS val", "");
+      assertEquals("", rs.first().getString("val"));
+      assertFalse(rs.first().isNull("val"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Numeric precision edge cases
+  // =====================================================================
+
+  @Test
+  void numericLargePrecisionRoundTrip() {
+    try (var conn = connect()) {
+      var big = new java.math.BigDecimal("99999999999999999999.99999999999999999999");
+      var rs = conn.query("SELECT $1::numeric AS val", big);
+      assertEquals(0, big.compareTo(rs.first().getBigDecimal("val")));
+    }
+  }
+
+  @Test
+  void numericZeroWithScale() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT 0.00::numeric(10,2) AS val");
+      var result = rs.first().getBigDecimal("val");
+      assertEquals(0, java.math.BigDecimal.ZERO.compareTo(result));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Prepared statement cache invalidation
+  // =====================================================================
+
+  @Test
+  void preparedStatementCacheEviction() {
+    try (var conn =
+        PgConnection.connect(
+            ConnectionConfig.fromUri(
+                    "postgresql://"
+                        + pg.getUsername()
+                        + ":"
+                        + pg.getPassword()
+                        + "@"
+                        + pg.getHost()
+                        + ":"
+                        + pg.getMappedPort(5432)
+                        + "/"
+                        + pg.getDatabaseName())
+                .cachePreparedStatements(true))) {
+      // Execute 300 distinct parameterized queries to stress the cache
+      for (int i = 0; i < 300; i++) {
+        var rs = conn.query("SELECT $1::int + " + i + " AS n", 1);
+        assertEquals(1 + i, rs.first().getInteger("n"));
+      }
+      // Connection should still work normally after cache eviction
+      var rs = conn.query("SELECT 42 AS answer");
+      assertEquals(42, rs.first().getInteger("answer"));
+    }
+  }
+
+  // =====================================================================
+  // Override inherited pipeline error tests — Postgres uses the extended query protocol for all
+  // queries, so errors cancel subsequent statements in the same Sync boundary (unlike MySQL's
+  // sequential execution where errors are independent).
+  // =====================================================================
+
+  @Override
+  @Test
+  protected void pipelineErrorDoesNotPoisonSubsequent() {
+    try (var conn = connect()) {
+      conn.enqueue("SELECT 1");
+      conn.enqueue("SELECT * FROM nonexistent_table_xyz");
+      conn.enqueue("SELECT 3");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(3, results.size());
+      assertEquals(1, results.get(0).first().getInteger(0));
+      assertNotNull(results.get(1).getError());
+      // In extended protocol, error at index 1 cancels index 2
+      assertNotNull(results.get(2).getError());
+    }
+  }
+
+  @Override
+  @Test
+  protected void pipelineMultipleErrorsAndRecovery() {
+    try (var conn = connect()) {
+      conn.enqueue("SELECT 1");
+      conn.enqueue("SELECT * FROM no_such_table_aaa");
+      conn.enqueue("SELECT 2");
+      conn.enqueue("SELECT * FROM no_such_table_bbb");
+      conn.enqueue("SELECT 3");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(5, results.size());
+      assertEquals(1, results.get(0).first().getInteger(0));
+      assertNotNull(results.get(1).getError());
+      // Statements 2-4 are skipped due to the error at index 1
+      assertNotNull(results.get(2).getError());
+      assertNotNull(results.get(3).getError());
+      assertNotNull(results.get(4).getError());
+
+      // Connection should still be usable after pipeline with errors
+      var rs = conn.query("SELECT 42");
+      assertEquals(42, rs.first().getInteger(0));
+    }
+  }
+
+  @Test
+  void pipelineErrorContainsSql() {
+    try (var conn = connect()) {
+      String badSql = "SELECT * FROM nonexistent_table_xyz";
+      conn.enqueue("SELECT 1");
+      conn.enqueue(badSql);
+      conn.enqueue("SELECT 3");
+      List<RowSet> results = conn.flush();
+
+      assertEquals(3, results.size());
+      var error = results.get(1).getError();
+      assertNotNull(error);
+      assertEquals(badSql, error.sql());
+    }
+  }
+
+  // =====================================================================
+  // Pipeline error resilience (stress)
+  // =====================================================================
+
+  @Test
+  void pipelineRepeatedErrors128() {
+    try (var conn = connect()) {
+      for (int i = 0; i < 128; i++) {
+        conn.enqueue("INVALID SQL NUMBER " + i);
+      }
+      List<RowSet> results = conn.flush();
+      assertEquals(128, results.size());
+      for (var rs : results) {
+        assertNotNull(rs.getError());
+      }
+      // Connection should still be usable
+      var rs = conn.query("SELECT 1 AS n");
+      assertEquals(1, rs.first().getInteger("n"));
+    }
+  }
+
+  @Test
+  void pipelineMixedParamErrors() {
+    try (var conn = connect()) {
+      // With extended protocol, the first error cancels all subsequent statements.
+      // Index 0 succeeds (even index), index 1 fails (odd index), 2-49 are all skipped.
+      for (int i = 0; i < 50; i++) {
+        if (i % 2 == 0) {
+          conn.enqueue("SELECT $1::int AS n", i);
+        } else {
+          conn.enqueue("INVALID SQL " + i);
+        }
+      }
+      List<RowSet> results = conn.flush();
+      assertEquals(50, results.size());
+      // First statement (i=0) succeeds
+      assertEquals(0, results.get(0).first().getInteger("n"));
+      // Second statement (i=1) fails
+      assertNotNull(results.get(1).getError());
+      // All subsequent statements are skipped
+      for (int i = 2; i < 50; i++) {
+        assertNotNull(results.get(i).getError());
+      }
+      // Connection still usable
+      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
+    }
+  }
+
+  // =====================================================================
+  // Large pipeline: triggers mid-pipeline Sync insertion
+  // =====================================================================
+
+  @Test
+  void pipelineLargeResponsesMidSync() {
+    try (var conn = connect()) {
+      // Generate enough large-response queries to exceed the internal buffer threshold
+      // This should trigger mid-pipeline Sync insertion for safe response draining
+      conn.query(
+          "CREATE TEMP TABLE big_pipe AS SELECT generate_series(1, 500) AS n, repeat('x', 100) AS pad");
+
+      for (int i = 0; i < 20; i++) {
+        conn.enqueue("SELECT n, pad FROM big_pipe ORDER BY n");
+      }
+      List<RowSet> results = conn.flush();
+      assertEquals(20, results.size());
+      for (var rs : results) {
+        assertNull(rs.getError());
+        assertEquals(500, rs.size());
+      }
+      // Connection still works
+      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Trailing spaces and empty strings
+  // =====================================================================
+
+  @Test
+  void trailingSpacesPreserved() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE char_test (val char(10))");
+      conn.query("INSERT INTO char_test VALUES ($1)", "hello");
+      var rs = conn.query("SELECT val FROM char_test");
+      String val = rs.first().getString(0);
+      // PG char(10) right-pads with spaces
+      assertEquals(10, val.length());
+      assertTrue(val.startsWith("hello"));
+    }
+  }
+
+  @Test
+  void emptyStringVsNull() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE empty_str (val text)");
+      conn.query("INSERT INTO empty_str VALUES ($1)", "");
+      var rs = conn.query("SELECT val FROM empty_str");
+      assertEquals("", rs.first().getString(0));
+      assertFalse(rs.first().isNull(0));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: executeMany with partial failures
+  // =====================================================================
+
+  @Test
+  void executeManyPartialFailure() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE batch_pf (id int PRIMARY KEY)");
+      conn.query("INSERT INTO batch_pf VALUES (2)"); // pre-insert to cause duplicate
+
+      var results =
+          conn.executeMany(
+              "INSERT INTO batch_pf VALUES ($1)",
+              List.of(
+                  new Object[] {1},
+                  new Object[] {2}, // duplicate — should error
+                  new Object[] {3}));
+
+      assertEquals(3, results.size());
+      assertNull(results.get(0).getError()); // first should succeed
+      assertNotNull(results.get(1).getError()); // duplicate key error
+      // In PG pipeline mode, the error at index 1 may cause index 2 to also fail
+      // (PG aborts the current transaction on error). Both outcomes are acceptable.
+
+      // Connection still usable
+      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
+    }
+  }
+
+  @Test
+  void executeManyAllFail() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE batch_af (id int PRIMARY KEY)");
+      conn.query("INSERT INTO batch_af VALUES (1), (2), (3)");
+
+      var results =
+          conn.executeMany(
+              "INSERT INTO batch_af VALUES ($1)",
+              List.of(new Object[] {1}, new Object[] {2}, new Object[] {3}));
+
+      assertEquals(3, results.size());
+      // At least the first one should have an error
+      assertNotNull(results.get(0).getError());
+
+      // Connection still usable
+      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Large values and buffer boundaries
+  // =====================================================================
+
+  @Test
+  void largeTextParameter() {
+    try (var conn = connect()) {
+      String large = "A".repeat(100_000);
+      var rs = conn.query("SELECT length($1::text) AS len", large);
+      assertEquals(100_000, rs.first().getInteger("len"));
+    }
+  }
+
+  @Test
+  void largeByteaParameter() {
+    try (var conn = connect()) {
+      byte[] large = new byte[1_000_000];
+      java.util.Arrays.fill(large, (byte) 0x42);
+      conn.query("CREATE TEMP TABLE bytea_test (data bytea)");
+      conn.query("INSERT INTO bytea_test VALUES ($1)", large);
+      var rs = conn.query("SELECT length(data) AS len FROM bytea_test");
+      assertEquals(1_000_000, rs.first().getInteger("len"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: Server-forced connection close
+  // =====================================================================
+
+  @Test
+  void queryAfterServerTerminatesBackend() {
+    try (var conn = connect()) {
+      int pid = conn.processId();
+
+      // Kill the backend from another connection
+      try (var admin = connect()) {
+        admin.query("SELECT pg_terminate_backend(" + pid + ")");
+      }
+
+      // Small delay for termination to take effect
+      try {
+        Thread.sleep(100);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+
+      // Next query should fail with a connection exception
+      assertThrows(Exception.class, () -> conn.query("SELECT 1"));
+    }
+  }
+
+  // =====================================================================
+  // Plan 2: NOTIFY does not corrupt connection
+  // =====================================================================
+
+  @Test
+  void notificationDoesNotCorruptConnection() {
+    try (var conn = connect()) {
+      conn.query("LISTEN test_channel");
+
+      // Send notification from another connection
+      try (var notifier = connect()) {
+        notifier.query("NOTIFY test_channel, 'hello'");
+      }
+
+      // Small delay for notification delivery
+      try {
+        Thread.sleep(100);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+
+      // Normal query should still work — notification is silently consumed
+      var rs = conn.query("SELECT 42 AS answer");
+      assertEquals(42, rs.first().getInteger("answer"));
+
+      conn.query("UNLISTEN test_channel");
+    }
   }
 }

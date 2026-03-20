@@ -37,7 +37,7 @@ Results are written to `build/reports/jmh/results.json`.
 
 The Vert.x benchmarks call `.toCompletionStage().toCompletableFuture().join()` to block,
 since JMH is synchronous. This adds overhead from the async-to-sync hop that wouldn't exist
-in a native reactive pipeline — the numbers represent Vert.x used from blocking code (e.g.
+with a fully reactive code base — the numbers represent Vert.x used from blocking code (e.g.
 virtual threads), not its optimal async mode.
 
 ## Scenarios

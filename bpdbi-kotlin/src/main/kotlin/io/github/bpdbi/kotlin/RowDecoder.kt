@@ -18,9 +18,9 @@ import kotlinx.serialization.modules.SerializersModule
 private val defaultJson = Json { ignoreUnknownKeys = true }
 
 /**
- * A `kotlinx.serialization` [Decoder] that reads from Djb's [Row].
+ * A `kotlinx.serialization` [Decoder] that reads from bpdbi's [Row].
  *
- * Since djb stores values as raw bytes (text or binary format) and [Row] already
+ * Since bpdbi stores values as raw bytes (text or binary format) and [Row] already
  * provides typed getters, this is simpler than the JDBC-based version: no type
  * dispatch or `wasNull()` checks needed.
  *

@@ -4,7 +4,7 @@ import io.github.bpdbi.core.Connection;
 import io.github.bpdbi.pg.PgConnection;
 
 /**
- * Shows how to use djb with a simple hand-rolled connection pool. For production use, consider
+ * Shows how to use bpdbi with a simple hand-rolled connection pool. For production use, consider
  * Apache Commons Pool 2 (see README.md).
  *
  * <p>Run: ./gradlew :examples:run -PmainClass=io.github.bpdbi.examples.ConnectionPoolExample

@@ -86,7 +86,7 @@ public class StreamingFetchBenchmark {
     }
   }
 
-  // --- JDBC: ResultSet iteration ---
+  // --- JDBC: ResultSet iteration (fetch all at once) ---
 
   @Benchmark
   public void jdbc_raw(DatabaseState db, Blackhole bh) throws Exception {
@@ -106,9 +106,61 @@ public class StreamingFetchBenchmark {
     }
   }
 
-  // --- Vert.x: collect all rows ---
+  // --- JDBC: server-side cursor via setFetchSize ---
 
   @Benchmark
+  public void jdbc_fetchSize(DatabaseState db, Blackhole bh) throws Exception {
+    try (var jdbcConn = db.hikariDataSource().getConnection()) {
+      jdbcConn.setAutoCommit(false);
+      try (var ps = jdbcConn.prepareStatement(JDBC_SQL)) {
+        ps.setFetchSize(100);
+        try (var rs = ps.executeQuery()) {
+          while (rs.next()) {
+            bh.consume(rs.getInt("id"));
+            bh.consume(rs.getString("username"));
+            bh.consume(rs.getString("email"));
+            bh.consume(rs.getString("full_name"));
+            bh.consume(rs.getString("bio"));
+            bh.consume(rs.getBoolean("active"));
+            bh.consume(rs.getTimestamp("created_at"));
+          }
+        }
+      }
+      jdbcConn.commit();
+    }
+  }
+
+  // --- Jdbi: streaming via ResultIterator ---
+
+  @Benchmark
+  public void jdbc_jdbi_stream(DatabaseState db, Blackhole bh) {
+    db.jdbi()
+        .useHandle(
+            h -> {
+              try (var iter =
+                  h.createQuery(JDBC_SQL)
+                      .map(
+                          (rs, ctx) ->
+                              new Object[] {
+                                rs.getInt("id"),
+                                rs.getString("username"),
+                                rs.getString("email"),
+                                rs.getString("full_name"),
+                                rs.getString("bio"),
+                                rs.getBoolean("active"),
+                                rs.getTimestamp("created_at")
+                              })
+                      .iterator()) {
+                while (iter.hasNext()) {
+                  bh.consume(iter.next());
+                }
+              }
+            });
+  }
+
+  // --- Vert.x: collect all rows ---
+
+  // @Benchmark  // Vert.x disabled: not a meaningful comparison
   public void vertx_raw(DatabaseState db, Blackhole bh) {
     var rows =
         db.vertxPool()
