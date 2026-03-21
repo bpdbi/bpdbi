@@ -1092,27 +1092,39 @@ public final class PgConnection extends BaseConnection {
    * skipped). The server won't send RowDescription, so we pre-allocate buffers using the cached
    * columns.
    */
+  /**
+   * Read a single-statement response using the lightweight direct-row path instead of
+   * ColumnBuffers. This is used for the prepared statement cache-hit path where column metadata is
+   * already known.
+   *
+   * <p><b>Why not ColumnBuffers here?</b> ColumnBuffers are designed for multi-row result sets —
+   * they pack all values for each column into a contiguous byte array, reducing GC pressure for
+   * large result sets (100+ rows). But they pre-allocate capacity for 64 rows × 32 bytes per
+   * column = ~2.5 KB per column. For the most common case — a single-row lookup query with 7
+   * columns — that's ~18 KB of allocation for ~200 bytes of actual data. By reading DataRow values
+   * into a {@code byte[][]} per row (like pgjdbc's Tuple), we allocate only what's needed: one
+   * small array per column (~200 bytes total for a typical row). This reduces allocation pressure
+   * by ~80× for single-row results, which dominate prepared-statement workloads.
+   *
+   * <p>For queries that return many rows, this path still works correctly — it just allocates a
+   * {@code byte[][]} per row instead of packing into column-oriented buffers. The column-buffer
+   * path (used by the non-cached and pipelined paths) remains better for 100+ row result sets.
+   */
   private RowSet readExtendedQueryResponse(ColumnDescriptor @Nullable [] cachedColumns) {
     if (cachedColumns == null) {
       return readExtendedQueryResponse();
     }
     try {
-      ColumnBuffer[] buffers = newColumnBuffers(cachedColumns.length);
-      int rowCount = 0;
+      List<byte[][]> rows = new ArrayList<>();
       int rowsAffected = 0;
 
       while (true) {
-        BackendMessage msg = decoder.readMessageIntoBuffers(buffers);
-        // Reference equality for high-frequency singletons — avoids pattern-matching overhead
-        // on the hottest path of query response decoding.
-        if (msg == BackendMessage.DATA_ROW_SENTINEL) {
-          rowCount++;
-          continue;
-        }
+        BackendMessage msg = decoder.readMessage();
         if (msg == BackendMessage.BIND_COMPLETE) {
           continue;
         }
         switch (msg) {
+          case BackendMessage.DataRow dr -> rows.add(dr.values());
           case BackendMessage.CommandComplete cc -> rowsAffected = cc.rowsAffected();
           case BackendMessage.EmptyQueryResponse eq -> {}
           case BackendMessage.ErrorResponse err -> {
@@ -1125,7 +1137,7 @@ public final class PgConnection extends BaseConnection {
                   new PgNotification(notif.processId(), notif.channel(), notif.payload()));
           case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ReadyForQuery rq -> {
-            return buildRowSet(cachedColumns, buffers, rowCount, rowsAffected);
+            return buildDirectRowSet(cachedColumns, rows, rowsAffected);
           }
           default -> {}
         }
@@ -1133,6 +1145,23 @@ public final class PgConnection extends BaseConnection {
     } catch (IOException e) {
       throw new DbConnectionException("I/O error reading response", e);
     }
+  }
+
+  /**
+   * Build a RowSet from direct byte[][] row data (non-ColumnBuffer path). Each row is an
+   * independent byte[][] with one byte[] per column value. Used for the lightweight cache-hit
+   * response path.
+   */
+  private @NonNull RowSet buildDirectRowSet(
+      @NonNull ColumnDescriptor[] columns,
+      @NonNull List<byte[][]> rows,
+      int rowsAffected) {
+    Map<String, Integer> nameIndex = Row.buildColumnNameIndex(columns);
+    List<Row> rowList = new ArrayList<>(rows.size());
+    for (byte[][] values : rows) {
+      rowList.add(createRow(columns, nameIndex, values));
+    }
+    return new RowSet(rowList, List.of(columns), rowsAffected);
   }
 
   private RowSet readExtendedQueryResponse() {

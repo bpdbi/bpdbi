@@ -57,6 +57,30 @@ as you likely do more than just one query.
 Multiple db queries for which you **do** want results can also be combined in a pipeline.
 TODO: refer to the place that explains how we return placeholders/proxies/futures(?) in those cases.
 
+## Benchmarks
+
+JMH benchmarks with **1ms simulated network latency** per direction (2ms round-trip via Toxiproxy),
+JDK 21, single-threaded. All numbers are **ops/s** (higher is better).
+
+| Scenario | bpdbi | JDBC (pgjdbc) | Speedup |
+|---|--:|--:|---|
+| **Pipelined lookups** (10 SELECTs) | 310 | 18 | **17x** |
+| **Pipelined read-only tx** (BEGIN+SELECT+COMMIT) | 360 | 185 | **~2x** |
+| **Pipelined inserts in tx** (10 INSERTs) | 116 | 18 | **6.5x** |
+| **Bulk insert** (100 rows) | 313 | 171 | **1.8x** |
+| **Cursor fetch** (1000 rows) | 281 | 30 | **9.3x** |
+| **Large value streaming** | 152 | 82 | **1.9x** |
+| Single row lookup | 370 | 370 | 1x |
+| Multi-row fetch (10 rows) | 358 | 358 | 1x |
+| Join query | 271 | 271 | 1x |
+
+Anything that touches the network more than once — transactions, batches, sequential lookups —
+gets a **5-17x** speedup from pipelining. Single-query performance is at parity with raw pgjdbc:
+the overhead is zero and results are purely network-bound.
+
+For the full breakdown including mapper comparisons and Hibernate numbers, see
+[docs/benchmark-interpretation.md](docs/benchmark-interpretation.md).
+
 ## Design Principles
 
 **Pipelining first** — The `enqueue()`/`flush()` API is not an afterthought.
