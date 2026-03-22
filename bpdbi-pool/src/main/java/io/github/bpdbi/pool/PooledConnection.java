@@ -40,7 +40,10 @@ final class PooledConnection implements Connection {
   final long effectiveMaxLifetimeNanos;
 
   PooledConnection(
-      Connection delegate, ConnectionPool pool, long createdAtNanos, long effectiveMaxLifetimeNanos) {
+      Connection delegate,
+      ConnectionPool pool,
+      long createdAtNanos,
+      long effectiveMaxLifetimeNanos) {
     this.delegate = delegate;
     this.pool = pool;
     this.createdAtNanos = createdAtNanos;
@@ -144,7 +147,7 @@ final class PooledConnection implements Connection {
 
   @Override
   public void queryStream(
-      @NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer) {
+      @NonNull String sql, @NonNull Object[] params, @NonNull Consumer<Row> consumer) {
     delegate.queryStream(sql, params, consumer);
   }
 

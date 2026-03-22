@@ -16,15 +16,12 @@ import org.jspecify.annotations.Nullable;
 /**
  * Decodes binary-format column values from raw bytes received on the wire.
  *
- * <p>Each database driver provides its own implementation: Postgres uses big-endian encoding, MySQL
- * uses little-endian. The codec is selected automatically based on the connection type and is used
- * internally by {@link Row} getters to decode binary wire data. Only active for parameterized
- * queries — parameterless queries use text format and bypass the binary codec entirely (see {@link
- * Row} javadoc for why).
+ * <p>The codec is used internally by {@link Row} getters to decode binary wire data into Java
+ * types.
  *
  * <p><b>Not user-extensible.</b> This interface is implemented per-driver and handles the fixed set
- * of wire-format types defined by each database protocol. To decode custom types (e.g. Postgres
- * domains, composite types, or enums), use the text-format extension points instead:
+ * of wire-format types defined by each database protocol. To decode custom types (e.g. domain
+ * types, composite types, or enums), use the text-format extension points instead:
  *
  * <ul>
  *   <li>{@link ColumnMapperRegistry} — register a {@link ColumnMapper} to convert text column
@@ -68,15 +65,15 @@ public interface BinaryCodec {
   @NonNull BigDecimal decodeNumeric(byte @NonNull [] value);
 
   /**
-   * Decode a JSON/JSONB column to a string. PG JSONB has a 1-byte version prefix that needs
-   * stripping.
+   * Decode a JSON/JSONB column to a string. The type OID distinguishes JSON from JSONB (which may
+   * have a version prefix that needs stripping).
    */
   @NonNull String decodeJson(byte @NonNull [] value, int typeOID);
 
   /**
    * Decode a binary array value, applying the given function to each non-null element's raw bytes.
    * The binary array header is parsed by the codec; NULL elements are skipped. Returns {@code null}
-   * if this codec does not support binary arrays (e.g. MySQL has no array type).
+   * if this codec does not support binary arrays.
    */
   default <T> @Nullable List<T> decodeArray(
       byte @NonNull [] value, @NonNull Function<byte[], T> elementDecoder) {
@@ -172,6 +169,64 @@ public interface BinaryCodec {
       throw new IllegalArgumentException("BinaryCodec cannot decode type: " + type.getName());
     }
     return (T) result;
+  }
+
+  /**
+   * Parse a text-format array literal (e.g. {@code {1,2,3}}) into element strings. Used as a
+   * fallback when binary array decoding is not available. The default delegates to {@link
+   * #parseTextArrayDefault(String)}. Drivers may override for more complete parsing.
+   */
+  default @NonNull List<String> parseTextArray(@NonNull String text) {
+    return parseTextArrayDefault(text);
+  }
+
+  /**
+   * Default text array parser. Handles {@code {val1,val2,...}} syntax with quoted elements, escape
+   * sequences, and NULL filtering. Exposed as a static method so it can be called without a codec
+   * instance.
+   */
+  static @NonNull List<String> parseTextArrayDefault(@NonNull String text) {
+    if (text.isEmpty() || text.charAt(0) != '{') {
+      return List.of();
+    }
+    if ("{}".equals(text)) {
+      return List.of();
+    }
+    var result = new java.util.ArrayList<String>();
+    int len = text.length();
+    int i = 1; // skip '{'
+    while (i < len) {
+      char c = text.charAt(i);
+      if (c == '}') break;
+      if (c == ',') {
+        i++;
+        continue;
+      }
+      if (c == '"') {
+        i++;
+        var sb = new StringBuilder();
+        while (i < len) {
+          char qc = text.charAt(i);
+          if (qc == '\\' && i + 1 < len) {
+            sb.append(text.charAt(i + 1));
+            i += 2;
+          } else if (qc == '"') {
+            i++;
+            break;
+          } else {
+            sb.append(qc);
+            i++;
+          }
+        }
+        result.add(sb.toString());
+      } else {
+        int start = i;
+        while (i < len && text.charAt(i) != ',' && text.charAt(i) != '}') i++;
+        String element = text.substring(start, i);
+        if (!"NULL".equals(element)) result.add(element);
+      }
+    }
+    return result;
   }
 
   // --- Functional interfaces for offset-based decoding ---

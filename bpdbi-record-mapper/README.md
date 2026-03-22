@@ -10,7 +10,7 @@ using `java.lang.reflect`.
 dependencies {
     implementation(platform("io.github.bpdbi:bpdbi-bom:0.1.0"))
     implementation("io.github.bpdbi:bpdbi-record-mapper")
-    implementation("io.github.bpdbi:bpdbi-pg-client")  // or bpdbi-mysql-client
+    implementation("io.github.bpdbi:bpdbi-pg-client")
 }
 ```
 

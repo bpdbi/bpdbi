@@ -1,7 +1,7 @@
 package io.github.bpdbi.core.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,8 +13,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Shared connection test scenarios that work identically across Postgres and MySQL.
- * Database-specific tests remain in the driver-specific test classes.
+ * Shared connection test scenarios that work identically for Postgres. Database-specific tests
+ * remain in the driver-specific test classes.
  *
  * <p>Subclasses must implement {@link #connect()} and {@link #tempTableDDL(String, String)} to
  * provide database-specific connection and DDL logic. They should also set up and tear down a
@@ -26,8 +26,8 @@ public abstract class AbstractConnectionTest {
   protected abstract Connection connect();
 
   /**
-   * Return DDL to create a temporary table. Postgres uses "CREATE TEMP TABLE", MySQL uses "CREATE
-   * TEMPORARY TABLE"; column types may differ (e.g. "text" vs "VARCHAR(255)").
+   * Return DDL to create a temporary table. Postgres uses "CREATE TEMP TABLE"; column types may
+   * differ across subclasses.
    */
   protected abstract String tempTableDDL(String name, String columns);
 
@@ -78,8 +78,8 @@ public abstract class AbstractConnectionTest {
   void dataTypeBoolean() {
     try (var conn = connect()) {
       var rs = conn.query("SELECT TRUE AS t, FALSE AS f");
-      assertTrue(rs.first().getBoolean("t"));
-      assertFalse(rs.first().getBoolean("f"));
+      assertEquals(Boolean.TRUE, rs.first().getBoolean("t"));
+      assertNotEquals(Boolean.TRUE, rs.first().getBoolean("f"));
     }
   }
 
@@ -274,7 +274,7 @@ public abstract class AbstractConnectionTest {
       conn.query("INSERT INTO cv_test VALUES (1)");
       var ex = assertThrows(DbException.class, () -> conn.query("INSERT INTO cv_test VALUES (1)"));
       assertNotNull(ex.sqlState());
-      // 23505 = unique_violation (Postgres), 23000 = integrity constraint (MySQL)
+      // 23505 = unique_violation (Postgres)
       assertTrue(
           ex.sqlState().startsWith("23"),
           "Expected constraint violation sqlState starting with 23, got: " + ex.sqlState());
@@ -290,7 +290,7 @@ public abstract class AbstractConnectionTest {
     try (var conn = connect()) {
       var ex = assertThrows(DbException.class, () -> conn.query("SELEC INVALID SYNTAX"));
       assertNotNull(ex.sqlState());
-      // 42601 = syntax_error (Postgres), 42000 = syntax error (MySQL)
+      // 42601 = syntax_error (Postgres)
       assertTrue(
           ex.sqlState().startsWith("42"),
           "Expected syntax error sqlState starting with 42, got: " + ex.sqlState());

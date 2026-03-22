@@ -17,22 +17,16 @@ import org.jspecify.annotations.NonNull;
  * it knows natively (primitives, dates, UUID, etc.). Column mappers are the <em>fallback</em>: they
  * receive a text representation of the value and convert it to the requested type.
  *
- * <p>For <b>Postgres</b> (binary-format rows), the text representation is produced by {@link
- * BinaryCodec#decodeToString(byte[], int)}, which uses the column's type OID to correctly decode
- * binary bytes into text (e.g., a binary date becomes {@code "2026-03-18"}). Since the binary codec
- * already handles all standard PG types directly, column mappers on Postgres are primarily useful
- * for:
+ * <p>The text representation is produced by {@link BinaryCodec#decodeToString(byte[], int)}, which
+ * uses the column's type OID to correctly decode binary bytes into text (e.g., a binary date
+ * becomes {@code "2026-03-18"}). Since the binary codec already handles all standard types
+ * directly, column mappers are primarily useful for:
  *
  * <ul>
  *   <li>User-defined wrapper types — e.g., a {@code Money} wrapper around {@code BigDecimal}
- *   <li>Non-Java types — e.g., {@code kotlinx.datetime.LocalDate} mapped from a PG {@code date}
- *       column
+ *   <li>Non-Java types — e.g., {@code kotlinx.datetime.LocalDate} mapped from a {@code date} column
  *   <li>Enum mapping — converting a text column to a Java enum
  * </ul>
- *
- * <p>For <b>MySQL</b> text-format rows (parameterless queries), there is no binary codec, so column
- * mappers are the primary extension point for {@link Row#get(int, Class)}. They receive the raw
- * UTF-8 text directly from the wire.
  */
 @FunctionalInterface
 public interface ColumnMapper<T> {

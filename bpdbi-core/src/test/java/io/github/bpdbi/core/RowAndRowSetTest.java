@@ -1,9 +1,9 @@
 package io.github.bpdbi.core;
 
+import static io.github.bpdbi.core.test.TestRows.col;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -19,16 +19,14 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class RowAndRowSetTest {
 
   // =====================================================================
   // Helper to create rows
   // =====================================================================
-
-  private static ColumnDescriptor col(String name) {
-    return new ColumnDescriptor(name, 0, (short) 0, 0, (short) 0, 0);
-  }
 
   private static byte[] textBytes(String s) {
     return s.getBytes(StandardCharsets.UTF_8);
@@ -150,32 +148,12 @@ class RowAndRowSetTest {
     assertNull(row.getBigDecimal(0));
   }
 
-  @Test
+  @ParameterizedTest
+  @CsvSource({"t, true", "true, true", "1, true", "f, false"})
   @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getBooleanTrue() {
-    var row = textRow(new String[] {"b"}, new String[] {"t"});
-    assertTrue(row.getBoolean(0));
-  }
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getBooleanTrueWord() {
-    var row = textRow(new String[] {"b"}, new String[] {"true"});
-    assertTrue(row.getBoolean(0));
-  }
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getBooleanOne() {
-    var row = textRow(new String[] {"b"}, new String[] {"1"});
-    assertTrue(row.getBoolean(0));
-  }
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getBooleanFalse() {
-    var row = textRow(new String[] {"b"}, new String[] {"f"});
-    assertFalse(row.getBoolean(0));
+  void getBoolean(String rawValue, boolean expected) {
+    var row = textRow(new String[] {"b"}, new String[] {rawValue});
+    assertEquals(expected, row.getBoolean(0));
   }
 
   @Test
@@ -227,7 +205,7 @@ class RowAndRowSetTest {
 
   @Test
   void getInstantFromTimestampNoTz() {
-    // MySQL-style: no timezone — assumed UTC
+    // No timezone — assumed UTC
     var row = textRow(new String[] {"ts"}, new String[] {"2025-06-15 12:30:45"});
     assertEquals(java.time.Instant.parse("2025-06-15T12:30:45Z"), row.getInstant(0));
   }
@@ -496,16 +474,15 @@ class RowAndRowSetTest {
   }
 
   @Test
-  void rowSetCheckErrorWrapsWithFreshStackTrace() {
+  void rowSetCheckErrorThrowsStoredError() {
     var error = new DbException("ERROR", "42P01", "relation does not exist");
     var rs = new RowSet(error);
 
-    // Two calls should produce distinct exception instances with the original as cause
+    // Throws the stored error directly — same instance each time
     var ex1 = assertThrows(DbException.class, rs::size);
     var ex2 = assertThrows(DbException.class, rs::size);
-    assertNotSame(ex1, ex2);
-    assertSame(error, ex1.getCause());
-    assertSame(error, ex2.getCause());
+    assertSame(error, ex1);
+    assertSame(error, ex2);
     assertEquals("42P01", ex1.sqlState());
     assertEquals("ERROR", ex1.severity());
     assertEquals("relation does not exist", ex1.getMessage());

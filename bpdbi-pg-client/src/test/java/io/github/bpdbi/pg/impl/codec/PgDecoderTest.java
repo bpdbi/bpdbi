@@ -9,6 +9,8 @@ import io.github.bpdbi.core.impl.ByteBuffer;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class PgDecoderTest {
 
@@ -75,38 +77,17 @@ class PgDecoderTest {
     assertEquals(67890, kd.secretKey());
   }
 
-  @Test
-  void decodeReadyForQuery() throws IOException {
+  @ParameterizedTest
+  @CsvSource({"I", "T", "E"})
+  void decodeReadyForQuery(char txStatus) throws IOException {
     var buf = new ByteBuffer(8);
     buf.writeByte('Z');
-    buf.writeInt(5); // 4 + 1
-    buf.writeByte('I'); // Idle
+    buf.writeInt(5);
+    buf.writeByte(txStatus);
 
     var msg = decode(buf.toByteArray());
     assertInstanceOf(BackendMessage.ReadyForQuery.class, msg);
-    assertEquals('I', ((BackendMessage.ReadyForQuery) msg).txStatus());
-  }
-
-  @Test
-  void decodeReadyForQueryInTransaction() throws IOException {
-    var buf = new ByteBuffer(8);
-    buf.writeByte('Z');
-    buf.writeInt(5);
-    buf.writeByte('T'); // In transaction
-
-    var msg = decode(buf.toByteArray());
-    assertEquals('T', ((BackendMessage.ReadyForQuery) msg).txStatus());
-  }
-
-  @Test
-  void decodeReadyForQueryFailed() throws IOException {
-    var buf = new ByteBuffer(8);
-    buf.writeByte('Z');
-    buf.writeInt(5);
-    buf.writeByte('E'); // Failed transaction
-
-    var msg = decode(buf.toByteArray());
-    assertEquals('E', ((BackendMessage.ReadyForQuery) msg).txStatus());
+    assertEquals(txStatus, ((BackendMessage.ReadyForQuery) msg).txStatus());
   }
 
   @Test
@@ -179,34 +160,11 @@ class PgDecoderTest {
     assertArrayEquals("hello".getBytes(), dr.values()[2]);
   }
 
-  @Test
-  void decodeCommandCompleteInsert() throws IOException {
-    var msg = decodeCommandComplete("INSERT 0 5");
-    assertEquals(5, ((BackendMessage.CommandComplete) msg).rowsAffected());
-  }
-
-  @Test
-  void decodeCommandCompleteUpdate() throws IOException {
-    var msg = decodeCommandComplete("UPDATE 3");
-    assertEquals(3, ((BackendMessage.CommandComplete) msg).rowsAffected());
-  }
-
-  @Test
-  void decodeCommandCompleteDelete() throws IOException {
-    var msg = decodeCommandComplete("DELETE 1");
-    assertEquals(1, ((BackendMessage.CommandComplete) msg).rowsAffected());
-  }
-
-  @Test
-  void decodeCommandCompleteSelect() throws IOException {
-    var msg = decodeCommandComplete("SELECT 10");
-    assertEquals(10, ((BackendMessage.CommandComplete) msg).rowsAffected());
-  }
-
-  @Test
-  void decodeCommandCompleteCreate() throws IOException {
-    var msg = decodeCommandComplete("CREATE TABLE");
-    assertEquals(0, ((BackendMessage.CommandComplete) msg).rowsAffected());
+  @ParameterizedTest
+  @CsvSource({"INSERT 0 5, 5", "UPDATE 3, 3", "DELETE 1, 1", "SELECT 10, 10", "CREATE TABLE, 0"})
+  void decodeCommandComplete(String tag, int expectedRows) throws IOException {
+    var msg = decodeCommandComplete(tag);
+    assertEquals(expectedRows, ((BackendMessage.CommandComplete) msg).rowsAffected());
   }
 
   @Test

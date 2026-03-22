@@ -5,7 +5,6 @@ plugins {
 
 dependencies {
     implementation(project(":bpdbi-pg-client"))
-    implementation(project(":bpdbi-mysql-client"))
 }
 
 // Not a publishable artifact

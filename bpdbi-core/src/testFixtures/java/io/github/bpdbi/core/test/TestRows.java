@@ -12,12 +12,17 @@ public final class TestRows {
 
   private TestRows() {}
 
+  /** Create a minimal ColumnDescriptor with just a name and no type info. */
+  public static ColumnDescriptor col(String name) {
+    return new ColumnDescriptor(name, 0, (short) 0, 0, (short) 0, 0);
+  }
+
   /** Build a text-format Row from column names and string values. Null values produce SQL NULL. */
   public static Row row(String[] columnNames, String[] values) {
     ColumnDescriptor[] cols = new ColumnDescriptor[columnNames.length];
     byte[][] rawValues = new byte[values.length][];
     for (int i = 0; i < columnNames.length; i++) {
-      cols[i] = new ColumnDescriptor(columnNames[i], 0, (short) 0, 0, (short) 0, 0);
+      cols[i] = col(columnNames[i]);
       rawValues[i] = values[i] == null ? null : values[i].getBytes(StandardCharsets.UTF_8);
     }
     return new Row(cols, rawValues, null, null);

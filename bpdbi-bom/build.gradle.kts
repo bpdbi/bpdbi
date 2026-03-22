@@ -17,7 +17,6 @@ dependencies {
     constraints {
         api(project(":bpdbi-core"))
         api(project(":bpdbi-pg-client"))
-        api(project(":bpdbi-mysql-client"))
         api(project(":bpdbi-kotlin"))
         api(project(":bpdbi-record-mapper"))
         api(project(":bpdbi-javabean-mapper"))

@@ -2,7 +2,7 @@ package io.github.bpdbi.pg.data;
 
 import org.jspecify.annotations.NonNull;
 
-/** A Postgres circle: &lt;(x,y),r&gt;. */
+/** Postgres 'circle': &lt;(x,y),r&gt;. */
 public record Circle(@NonNull Point centerPoint, double radius) {
 
   @Override

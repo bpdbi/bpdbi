@@ -16,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.time.OffsetTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -33,17 +34,17 @@ class BinaryCodecDefaultsTest {
   private static final BinaryCodec STUB =
       new BinaryCodec() {
         @Override
-        public boolean decodeBool(byte[] value) {
+        public boolean decodeBool(byte @NonNull [] value) {
           return value[0] != 0;
         }
 
         @Override
-        public short decodeInt2(byte[] value) {
+        public short decodeInt2(byte @NonNull [] value) {
           return (short) ((value[0] << 8) | (value[1] & 0xFF));
         }
 
         @Override
-        public int decodeInt4(byte[] value) {
+        public int decodeInt4(byte @NonNull [] value) {
           return (value[0] << 24)
               | ((value[1] & 0xFF) << 16)
               | ((value[2] & 0xFF) << 8)
@@ -51,28 +52,28 @@ class BinaryCodecDefaultsTest {
         }
 
         @Override
-        public long decodeInt8(byte[] value) {
+        public long decodeInt8(byte @NonNull [] value) {
           return ((long) decodeInt4(value) << 32)
               | (decodeInt4(new byte[] {value[4], value[5], value[6], value[7]}) & 0xFFFFFFFFL);
         }
 
         @Override
-        public float decodeFloat4(byte[] value) {
+        public float decodeFloat4(byte @NonNull [] value) {
           return Float.intBitsToFloat(decodeInt4(value));
         }
 
         @Override
-        public double decodeFloat8(byte[] value) {
+        public double decodeFloat8(byte @NonNull [] value) {
           return Double.longBitsToDouble(decodeInt8(value));
         }
 
         @Override
-        public String decodeString(byte[] value) {
+        public @NonNull String decodeString(byte @NonNull [] value) {
           return new String(value, StandardCharsets.UTF_8);
         }
 
         @Override
-        public UUID decodeUuid(byte[] value) {
+        public @NonNull UUID decodeUuid(byte @NonNull [] value) {
           long msb = decodeInt8(value);
           long lsb =
               decodeInt8(
@@ -84,42 +85,42 @@ class BinaryCodecDefaultsTest {
         }
 
         @Override
-        public LocalDate decodeDate(byte[] value) {
+        public @NonNull LocalDate decodeDate(byte @NonNull [] value) {
           return LocalDate.of(2000, 1, 1).plusDays(decodeInt4(value));
         }
 
         @Override
-        public LocalTime decodeTime(byte[] value) {
+        public @NonNull LocalTime decodeTime(byte @NonNull [] value) {
           return LocalTime.ofNanoOfDay(decodeInt8(value) * 1000);
         }
 
         @Override
-        public LocalDateTime decodeTimestamp(byte[] value) {
+        public @NonNull LocalDateTime decodeTimestamp(byte @NonNull [] value) {
           return LocalDateTime.of(2000, 1, 1, 0, 0).plusNanos(decodeInt8(value) * 1000);
         }
 
         @Override
-        public OffsetDateTime decodeTimestamptz(byte[] value) {
+        public @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] value) {
           return decodeTimestamp(value).atOffset(ZoneOffset.UTC);
         }
 
         @Override
-        public OffsetTime decodeTimetz(byte[] value) {
+        public @NonNull OffsetTime decodeTimetz(byte @NonNull [] value) {
           return OffsetTime.of(LocalTime.NOON, ZoneOffset.UTC);
         }
 
         @Override
-        public byte[] decodeBytes(byte[] value) {
+        public byte @NonNull [] decodeBytes(byte @NonNull [] value) {
           return value;
         }
 
         @Override
-        public BigDecimal decodeNumeric(byte[] value) {
+        public @NonNull BigDecimal decodeNumeric(byte @NonNull [] value) {
           return new BigDecimal(decodeString(value));
         }
 
         @Override
-        public String decodeJson(byte[] value, int typeOID) {
+        public @NonNull String decodeJson(byte @NonNull [] value, int typeOID) {
           return decodeString(value);
         }
       };

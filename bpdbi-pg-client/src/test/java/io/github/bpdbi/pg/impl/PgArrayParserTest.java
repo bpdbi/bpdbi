@@ -1,4 +1,4 @@
-package io.github.bpdbi.core.impl;
+package io.github.bpdbi.pg.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class ConnectionConfigTest {
 
@@ -26,22 +28,6 @@ class ConnectionConfigTest {
     var c = ConnectionConfig.fromUri("postgresql://user:pass@localhost/test");
     assertEquals("localhost", c.host());
     assertEquals(5432, c.port());
-  }
-
-  @Test
-  void parseMysqlUri() {
-    var c = ConnectionConfig.fromUri("mysql://root:secret@db.example.com:3307/appdb");
-    assertEquals("db.example.com", c.host());
-    assertEquals(3307, c.port());
-    assertEquals("appdb", c.database());
-    assertEquals("root", c.username());
-    assertEquals("secret", c.password());
-  }
-
-  @Test
-  void parseMysqlUriDefaultPort() {
-    var c = ConnectionConfig.fromUri("mysql://user:pass@localhost/test");
-    assertEquals(3306, c.port());
   }
 
   @Test
@@ -105,34 +91,17 @@ class ConnectionConfigTest {
     assertNull(c.database());
   }
 
-  @Test
-  void parseUriSslModeVerifyCa() {
-    var c = ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=verify-ca");
-    assertEquals(SslMode.VERIFY_CA, c.sslMode());
-  }
-
-  @Test
-  void parseUriSslModeVerifyFull() {
-    var c = ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=verify-full");
-    assertEquals(SslMode.VERIFY_FULL, c.sslMode());
-  }
-
-  @Test
-  void parseUriSslModePrefer() {
-    var c = ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=prefer");
-    assertEquals(SslMode.PREFER, c.sslMode());
-  }
-
-  @Test
-  void parseUriSslModeDisable() {
-    var c = ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=disable");
-    assertEquals(SslMode.DISABLE, c.sslMode());
-  }
-
-  @Test
-  void parseUriUnknownSslModeDefaultsToDisable() {
-    var c = ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=bogus");
-    assertEquals(SslMode.DISABLE, c.sslMode());
+  @ParameterizedTest
+  @CsvSource({
+    "verify-ca, VERIFY_CA",
+    "verify-full, VERIFY_FULL",
+    "prefer, PREFER",
+    "disable, DISABLE",
+    "bogus, DISABLE"
+  })
+  void parseUriSslMode(String sslmodeValue, SslMode expected) {
+    var c = ConnectionConfig.fromUri("postgresql://u:p@host/db?sslmode=" + sslmodeValue);
+    assertEquals(expected, c.sslMode());
   }
 
   @Test

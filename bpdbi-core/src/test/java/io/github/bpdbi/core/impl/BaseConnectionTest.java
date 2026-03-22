@@ -7,12 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.bpdbi.core.BinaryCodec;
 import io.github.bpdbi.core.Cursor;
 import io.github.bpdbi.core.DbException;
 import io.github.bpdbi.core.PreparedStatement;
 import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowSet;
 import io.github.bpdbi.core.RowStream;
+import io.github.bpdbi.core.test.StubBinaryCodec;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,9 +40,9 @@ class BaseConnectionTest {
     static class ExtendedQuery {
 
       final String sql;
-      final String[] params;
+      final Object[] params;
 
-      ExtendedQuery(String sql, String[] params) {
+      ExtendedQuery(String sql, Object[] params) {
         this.sql = sql;
         this.params = params;
       }
@@ -50,7 +52,7 @@ class BaseConnectionTest {
     protected void flushToNetwork() {}
 
     @Override
-    protected @NonNull RowSet executeExtendedQuery(@NonNull String sql, String[] params) {
+    protected @NonNull RowSet executeExtendedQuery(@NonNull String sql, Object[] params) {
       extendedQueries.add(new ExtendedQuery(sql, params));
       return extendedResponses.isEmpty()
           ? new RowSet(List.of(), List.of(), 0)
@@ -68,8 +70,8 @@ class BaseConnectionTest {
     }
 
     @Override
-    protected @NonNull String placeholderPrefix() {
-      return "$";
+    protected @NonNull BinaryCodec binaryCodec() {
+      return StubBinaryCodec.INSTANCE;
     }
 
     @Override
@@ -95,11 +97,11 @@ class BaseConnectionTest {
 
     @Override
     protected void executeExtendedQueryStreaming(
-        @NonNull String sql, String[] params, @NonNull Consumer<Row> consumer) {}
+        @NonNull String sql, Object[] params, @NonNull Consumer<Row> consumer) {}
 
     @Override
     protected @NonNull RowStream createExtendedQueryRowStream(
-        @NonNull String sql, String[] params) {
+        @NonNull String sql, Object[] params) {
       return new RowStream(() -> null, () -> {});
     }
   }
@@ -123,7 +125,7 @@ class BaseConnectionTest {
     assertEquals(1, results.size());
     assertEquals(1, conn.extendedQueries.size());
     assertEquals("SELECT 1", conn.extendedQueries.getFirst().sql);
-    assertArrayEquals(new String[0], conn.extendedQueries.getFirst().params);
+    assertArrayEquals(new Object[0], conn.extendedQueries.getFirst().params);
   }
 
   @Test
@@ -147,7 +149,7 @@ class BaseConnectionTest {
     assertEquals(1, results.size());
     assertEquals(1, conn.extendedQueries.size());
     assertEquals("SELECT $1", conn.extendedQueries.getFirst().sql);
-    assertArrayEquals(new String[] {"42"}, conn.extendedQueries.getFirst().params);
+    assertArrayEquals(new Object[] {42}, conn.extendedQueries.getFirst().params);
   }
 
   @Test
@@ -360,7 +362,8 @@ class BaseConnectionTest {
     var uuid = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
     conn.enqueue("INSERT INTO t VALUES ($1)", uuid);
     conn.flush();
-    assertEquals("550E8400-E29B-41D4-A716-446655440000", conn.extendedQueries.getFirst().params[0]);
+    // Params are now stored as raw objects, not text-encoded
+    assertEquals(uuid, conn.extendedQueries.getFirst().params[0]);
   }
 
   @Test
@@ -456,12 +459,12 @@ class BaseConnectionTest {
     conn.setJsonMapper(
         new io.github.bpdbi.core.JsonMapper() {
           @Override
-          public <T> T fromJson(String json, Class<T> type) {
+          public <T> T fromJson(@NonNull String json, @NonNull Class<T> type) {
             return null;
           }
 
           @Override
-          public String toJson(Object value) {
+          public @NonNull String toJson(@NonNull Object value) {
             return value.toString();
           }
         });
@@ -469,6 +472,7 @@ class BaseConnectionTest {
     var sb = new StringBuilder("hello");
     conn.enqueue("INSERT INTO t VALUES ($1)", sb);
     conn.flush();
-    assertEquals("hello", conn.extendedQueries.getFirst().params[0]);
+    // Params are now stored as raw objects, not text-encoded
+    assertEquals(sb, conn.extendedQueries.getFirst().params[0]);
   }
 }

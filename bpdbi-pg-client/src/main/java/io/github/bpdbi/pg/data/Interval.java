@@ -3,7 +3,7 @@ package io.github.bpdbi.pg.data;
 import java.time.Duration;
 import org.jspecify.annotations.NonNull;
 
-/** A Postgres interval. */
+/** Postgres 'interval' (time). */
 public record Interval(
     int years, int months, int days, int hours, int minutes, int seconds, int microseconds) {
 

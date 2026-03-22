@@ -3,7 +3,11 @@ package io.github.bpdbi.pg.data;
 import java.math.BigDecimal;
 import org.jspecify.annotations.NonNull;
 
-/** A Postgres money value. Stored as cents internally. */
+/**
+ * Postgres 'money' value. Stored as cents internally.
+ *
+ * <p>Usually not a good idea to use this type for money values.
+ */
 public record Money(@NonNull BigDecimal bigDecimalValue) {
 
   @Override

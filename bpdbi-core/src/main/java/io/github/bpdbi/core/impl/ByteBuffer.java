@@ -223,6 +223,46 @@ public final class ByteBuffer {
     data[index + 3] = (byte) value;
   }
 
+  public void setShort(int index, int value) {
+    data[index] = (byte) (value >>> 8);
+    data[index + 1] = (byte) value;
+  }
+
+  /** Advance the writer index by {@code bytes} without writing. Used to reserve space. */
+  public void skip(int bytes) {
+    ensureCapacity(bytes);
+    writerIndex += bytes;
+  }
+
+  /** Encode a String as UTF-8 directly into the buffer. Returns the number of bytes written. */
+  public int writeStringUtf8(@NonNull String s) {
+    int len = s.length();
+    // Fast path: ASCII-only strings (very common for SQL values)
+    ensureCapacity(len * 3); // worst case UTF-8 expansion
+    int start = writerIndex;
+    for (int i = 0; i < len; i++) {
+      char c = s.charAt(i);
+      if (c < 0x80) {
+        data[writerIndex++] = (byte) c;
+      } else if (c < 0x800) {
+        data[writerIndex++] = (byte) (0xC0 | (c >>> 6));
+        data[writerIndex++] = (byte) (0x80 | (c & 0x3F));
+      } else if (Character.isHighSurrogate(c) && i + 1 < len) {
+        char low = s.charAt(++i);
+        int cp = Character.toCodePoint(c, low);
+        data[writerIndex++] = (byte) (0xF0 | (cp >>> 18));
+        data[writerIndex++] = (byte) (0x80 | ((cp >>> 12) & 0x3F));
+        data[writerIndex++] = (byte) (0x80 | ((cp >>> 6) & 0x3F));
+        data[writerIndex++] = (byte) (0x80 | (cp & 0x3F));
+      } else {
+        data[writerIndex++] = (byte) (0xE0 | (c >>> 12));
+        data[writerIndex++] = (byte) (0x80 | ((c >>> 6) & 0x3F));
+        data[writerIndex++] = (byte) (0x80 | (c & 0x3F));
+      }
+    }
+    return writerIndex - start;
+  }
+
   /** Ensure the buffer can hold at least {@code additionalBytes} more bytes without resizing. */
   public void ensureWritable(int additionalBytes) {
     ensureCapacity(additionalBytes);

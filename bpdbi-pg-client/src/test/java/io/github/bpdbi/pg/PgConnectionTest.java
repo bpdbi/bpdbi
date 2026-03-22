@@ -44,7 +44,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 class PgConnectionTest extends AbstractConnectionTest {
 
   @SuppressWarnings("resource") // withReuse keeps container alive across test runs
-  static PostgreSQLContainer<?> pg =
+  static final PostgreSQLContainer<?> pg =
       new PostgreSQLContainer<>("postgres:16-alpine").withReuse(true);
 
   @BeforeAll
@@ -2245,7 +2245,8 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("BEGIN");
       // Cursor with a byte[] param should use BinderRegistry (hex-encoding),
       // not raw toString() which produces "[B@..." garbage
-      try (var cursor = conn.cursor("SELECT id, data FROM cursor_binder WHERE data = $1", value)) {
+      try (var cursor =
+          conn.cursor("SELECT id, data FROM cursor_binder WHERE data = $1", (Object) value)) {
         var batch = cursor.read(10);
         assertEquals(1, batch.size());
         assertEquals(1, batch.first().getInteger(0));
@@ -3462,9 +3463,8 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   // =====================================================================
-  // Override inherited pipeline error tests — Postgres uses the extended query protocol for all
-  // queries, so errors cancel subsequent statements in the same Sync boundary (unlike MySQL's
-  // sequential execution where errors are independent).
+  // Override inherited pipeline error tests — errors cancel subsequent statements in the same
+  // Sync boundary when using the extended query protocol.
   // =====================================================================
 
   @Override

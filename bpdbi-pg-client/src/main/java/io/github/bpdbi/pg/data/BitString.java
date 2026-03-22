@@ -3,7 +3,7 @@ package io.github.bpdbi.pg.data;
 import org.jspecify.annotations.NonNull;
 
 /**
- * A Postgres bit or varbit (bit string) value. Stores a fixed number of bits backed by a byte
+ * Postgres 'bit' or 'varbit' (bit string) value. Stores a fixed number of bits backed by a byte
  * array.
  */
 public record BitString(int bitCount, byte @NonNull [] bytes) {

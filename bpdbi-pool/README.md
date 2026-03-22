@@ -8,7 +8,7 @@ A lightweight, thread-safe connection pool for [bpdbi](../) connections.
 dependencies {
     implementation(platform("io.github.bpdbi:bpdbi-bom:0.1.0"))
     implementation("io.github.bpdbi:bpdbi-pool")
-    implementation("io.github.bpdbi:bpdbi-pg-client")  // or bpdbi-mysql-client
+    implementation("io.github.bpdbi:bpdbi-pg-client")
 }
 ```
 
@@ -87,7 +87,7 @@ pool.close()
 - **Wait queue limit** — reject requests when too many threads are waiting
 - **Lifecycle hooks** — run custom logic after acquire or before recycle (see below)
 - **Virtual thread friendly** — blocking on `acquire()` is cheap with virtual threads
-- **Works with any driver** — swap `PgConnection` for `MysqlConnection`
+- **Works with PgConnection** — designed for the Postgres wire protocol driver
 
 ### Lifecycle hooks
 

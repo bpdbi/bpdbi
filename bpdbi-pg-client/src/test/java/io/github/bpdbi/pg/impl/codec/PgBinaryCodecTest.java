@@ -888,43 +888,6 @@ class PgBinaryCodecTest {
   // Binary encode roundtrip tests
   // =====================================================================
 
-  @Test
-  void encodeDecodeInt4Roundtrip() {
-    byte[] encoded = PgBinaryCodec.encodeInt4(12345);
-    assertEquals(4, encoded.length);
-    assertEquals(12345, codec.decodeInt4(encoded, 0));
-  }
-
-  @Test
-  void encodeDecodeInt8Roundtrip() {
-    byte[] encoded = PgBinaryCodec.encodeInt8(9876543210L);
-    assertEquals(8, encoded.length);
-    assertEquals(9876543210L, codec.decodeInt8(encoded, 0));
-  }
-
-  @Test
-  void encodeDecodeFloat8Roundtrip() {
-    byte[] encoded = PgBinaryCodec.encodeFloat8(3.14159);
-    assertEquals(8, encoded.length);
-    assertEquals(3.14159, codec.decodeFloat8(encoded, 0));
-  }
-
-  @Test
-  void encodeDecodeBoolRoundtrip() {
-    assertArrayEquals(new byte[] {1}, PgBinaryCodec.encodeBool(true));
-    assertArrayEquals(new byte[] {0}, PgBinaryCodec.encodeBool(false));
-    assertTrue(codec.decodeBool(PgBinaryCodec.encodeBool(true), 0));
-    assertFalse(codec.decodeBool(PgBinaryCodec.encodeBool(false), 0));
-  }
-
-  @Test
-  void encodeDecodeUuidRoundtrip() {
-    UUID uuid = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
-    byte[] encoded = PgBinaryCodec.encodeUuid(uuid);
-    assertEquals(16, encoded.length);
-    assertEquals(uuid, codec.decodeUuid(encoded, 0, 16));
-  }
-
   // =====================================================================
   // Special float/double values — NaN, Infinity
   // =====================================================================

@@ -64,7 +64,6 @@ subprojects {
 val publishedModules = setOf(
     "bpdbi-core",
     "bpdbi-pg-client",
-    "bpdbi-mysql-client",
     "bpdbi-kotlin",
     "bpdbi-record-mapper",
     "bpdbi-javabean-mapper",

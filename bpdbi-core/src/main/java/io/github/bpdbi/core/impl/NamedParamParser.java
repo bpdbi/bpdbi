@@ -1,6 +1,5 @@
 package io.github.bpdbi.core.impl;
 
-import io.github.bpdbi.core.BinderRegistry;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -15,15 +14,13 @@ import org.jspecify.annotations.NonNull;
  *
  * <p>Supports collection expansion: if a named parameter value is a {@link Collection} or array,
  * the single placeholder is expanded to match the element count. For example, {@code WHERE id IN
- * (:ids)} with a 3-element list becomes {@code WHERE id IN ($1, $2, $3)} (PG) or {@code WHERE id IN
- * (?, ?, ?)} (MySQL).
+ * (:ids)} with a 3-element list becomes {@code WHERE id IN ($1, $2, $3)}.
  */
 public final class NamedParamParser {
 
   private NamedParamParser() {}
 
-  @SuppressWarnings("ArrayRecordComponent") // internal record; callers handle the array correctly
-  public record ParsedQuery(String sql, String[] params) {}
+  public record ParsedQuery(String sql, Object[] params) {}
 
   /**
    * A parsed SQL template with named parameter positions but no resolved values. Used by prepared
@@ -36,7 +33,8 @@ public final class NamedParamParser {
    * names. No values are resolved — this is for prepare-time usage.
    *
    * @param sql the SQL with :name parameters
-   * @param placeholderPrefix "$" for PG (generates $1, $2), "?" for MySQL (generates ?)
+   * @param placeholderPrefix "$" for PG (generates $1, $2), or "?" for drivers that use positional
+   *     ?
    * @return parsed template with positional SQL and ordered parameter names
    */
   public static @NonNull ParsedTemplate parseTemplate(
@@ -82,11 +80,18 @@ public final class NamedParamParser {
     return new ParsedTemplate(result.toString(), Collections.unmodifiableList(paramNames));
   }
 
-  /** Quick check whether SQL contains named parameters (`:name` but not `::`). */
+  /**
+   * Quick check whether SQL contains named parameters (`:name` but not `::`), skipping literals.
+   */
   public static boolean containsNamedParams(@NonNull String sql) {
     int len = sql.length();
     for (int i = 0; i < len - 1; i++) {
       char c = sql.charAt(i);
+      int skip = skipLiteralNoAppend(sql, i, len);
+      if (skip >= 0) {
+        i = skip - 1;
+        continue;
+      }
       if (c == ':' && isNameStart(sql.charAt(i + 1)) && (i == 0 || sql.charAt(i - 1) != ':')) {
         return true;
       }
@@ -94,22 +99,45 @@ public final class NamedParamParser {
     return false;
   }
 
+  /** Like {@link #skipLiteral} but without appending to a StringBuilder. Returns -1 if no skip. */
+  private static int skipLiteralNoAppend(String sql, int i, int len) {
+    char c = sql.charAt(i);
+    if (c == '-' && i + 1 < len && sql.charAt(i + 1) == '-') {
+      int end = sql.indexOf('\n', i);
+      return end == -1 ? len : end;
+    }
+    if (c == '/' && i + 1 < len && sql.charAt(i + 1) == '*') {
+      int end = sql.indexOf("*/", i + 2);
+      return (end == -1 ? len - 2 : end) + 2;
+    }
+    if (c == '\'') {
+      i++;
+      while (i < len) {
+        if (sql.charAt(i) == '\'') {
+          i++;
+          if (i >= len || sql.charAt(i) != '\'') return i;
+        } else {
+          i++;
+        }
+      }
+      return len;
+    }
+    return -1;
+  }
+
   /**
    * Parse SQL containing :name parameters and convert to positional placeholders.
    *
    * @param sql the SQL with :name parameters
    * @param params the parameter values keyed by name
-   * @param placeholderPrefix "$" for PG (generates $1, $2), "?" for MySQL (generates ?)
-   * @param binderRegistry for converting values to strings
+   * @param placeholderPrefix "$" for PG (generates $1, $2), or "?" for drivers that use positional
+   *     ?
    * @return parsed query with positional SQL and ordered parameter array
    */
   public static @NonNull ParsedQuery parse(
-      @NonNull String sql,
-      @NonNull Map<String, Object> params,
-      @NonNull String placeholderPrefix,
-      @NonNull BinderRegistry binderRegistry) {
+      @NonNull String sql, @NonNull Map<String, Object> params, @NonNull String placeholderPrefix) {
     var result = new StringBuilder(sql.length());
-    var paramValues = new ArrayList<String>();
+    var paramValues = new ArrayList<>();
     int paramIndex = 0;
     int len = sql.length();
 
@@ -151,7 +179,7 @@ public final class NamedParamParser {
             } else {
               result.append('?');
             }
-            paramValues.add(binderRegistry.bind(element));
+            paramValues.add(element);
             first = false;
           }
           if (elements.isEmpty()) {
@@ -165,7 +193,7 @@ public final class NamedParamParser {
           } else {
             result.append('?');
           }
-          paramValues.add(binderRegistry.bind(value));
+          paramValues.add(value);
         }
         i = nameEnd - 1; // skip the name (loop will i++)
       } else {
@@ -173,14 +201,13 @@ public final class NamedParamParser {
       }
     }
 
-    return new ParsedQuery(result.toString(), paramValues.toArray(new String[0]));
+    return new ParsedQuery(result.toString(), paramValues.toArray(new Object[0]));
   }
 
   /**
    * Resolve a named parameter Map to a positional Object array using the given parameter names.
    * Throws if a required parameter is missing. Collection/array values are passed through as-is —
-   * the caller is responsible for handling them (e.g. converting to database array literals for
-   * Postgres, or rejecting them for MySQL).
+   * the caller is responsible for handling them (e.g., converting to Postgres array literals).
    */
   public static @NonNull Object[] resolveParams(
       @NonNull List<String> parameterNames, @NonNull Map<String, Object> params) {
@@ -276,18 +303,42 @@ public final class NamedParamParser {
     return -1;
   }
 
-  /** Convert a value to a Collection if it is a Collection or array; return null otherwise. */
+  /**
+   * Convert a value to a Collection if it is a Collection or array; return null otherwise. Uses
+   * explicit primitive array checks instead of java.lang.reflect.Array to keep bpdbi-core
+   * reflection-free.
+   */
   private static Collection<?> toCollection(Object value) {
-    if (value instanceof Collection<?> c) {
-      return c;
+    if (value instanceof Collection<?> c) return c;
+    if (value instanceof Object[] a) return List.of(a);
+    if (value instanceof int[] a) {
+      var list = new ArrayList<Object>(a.length);
+      for (int v : a) list.add(v);
+      return list;
     }
-    if (value != null && value.getClass().isArray()) {
-      // Convert primitive and object arrays to a list
-      int length = java.lang.reflect.Array.getLength(value);
-      var list = new ArrayList<>(length);
-      for (int j = 0; j < length; j++) {
-        list.add(java.lang.reflect.Array.get(value, j));
-      }
+    if (value instanceof long[] a) {
+      var list = new ArrayList<Object>(a.length);
+      for (long v : a) list.add(v);
+      return list;
+    }
+    if (value instanceof double[] a) {
+      var list = new ArrayList<Object>(a.length);
+      for (double v : a) list.add(v);
+      return list;
+    }
+    if (value instanceof float[] a) {
+      var list = new ArrayList<Object>(a.length);
+      for (float v : a) list.add(v);
+      return list;
+    }
+    if (value instanceof short[] a) {
+      var list = new ArrayList<Object>(a.length);
+      for (short v : a) list.add(v);
+      return list;
+    }
+    if (value instanceof boolean[] a) {
+      var list = new ArrayList<Object>(a.length);
+      for (boolean v : a) list.add(v);
       return list;
     }
     return null;

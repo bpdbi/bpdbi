@@ -1,8 +1,9 @@
 package io.github.bpdbi.core.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -125,43 +126,43 @@ class ByteCharSequenceTest {
   @Test
   void equalsSelf() {
     var seq = of("hello");
-    assertTrue(seq.equals(seq));
+    assertEquals(seq, seq);
   }
 
   @Test
   void equalsOtherByteCharSequenceAscii() {
-    assertTrue(of("hello").equals(of("hello")));
+    assertEquals(of("hello"), of("hello"));
   }
 
   @Test
   void equalsOtherByteCharSequenceMultiByte() {
-    assertTrue(of("\u4F60\u597D").equals(of("\u4F60\u597D")));
+    assertEquals(of("\u4F60\u597D"), of("\u4F60\u597D"));
   }
 
   @Test
   void notEqualsDifferentLength() {
-    assertFalse(of("ab").equals(of("abc")));
+    assertNotEquals(of("ab"), of("abc"));
   }
 
   @Test
   void notEqualsDifferentContent() {
-    assertFalse(of("abc").equals(of("abd")));
+    assertNotEquals(of("abc"), of("abd"));
   }
 
   @Test
   void notEqualsNull() {
-    assertFalse(of("hello").equals(null));
+    assertNotNull(of("hello"));
   }
 
   @Test
   void notEqualsOtherType() {
-    assertFalse(of("hello").equals(42));
+    assertNotEquals(42, of("hello"));
   }
 
   @Test
   void hashCodeConsistentWithString() {
     assertEquals("hello".hashCode(), of("hello").hashCode());
-    assertEquals("caf\u00E9".hashCode(), of("caf\u00E9").hashCode());
+    assertEquals("café".hashCode(), of("café").hashCode());
   }
 
   @Test
@@ -177,6 +178,6 @@ class ByteCharSequenceTest {
     String s1 = seq.toString();
     String s2 = seq.toString();
     // Same instance (not just equal), proving caching
-    assertTrue(s1 == s2);
+    assertSame(s1, s2);
   }
 }

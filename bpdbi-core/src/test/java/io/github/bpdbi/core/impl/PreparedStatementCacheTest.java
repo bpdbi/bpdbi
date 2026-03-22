@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class PreparedStatementCacheTest {
 
   private static PreparedStatementCache.CachedStatement stmt(String sql) {
-    return new PreparedStatementCache.CachedStatement(sql, sql, null, -1, null, null);
+    return new PreparedStatementCache.CachedStatement(sql, sql, new byte[] {0}, null, null, null);
   }
 
   @Test

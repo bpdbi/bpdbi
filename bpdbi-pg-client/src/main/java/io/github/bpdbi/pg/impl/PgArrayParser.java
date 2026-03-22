@@ -1,4 +1,4 @@
-package io.github.bpdbi.core.impl;
+package io.github.bpdbi.pg.impl;
 
 import java.util.ArrayList;
 import java.util.Collections;

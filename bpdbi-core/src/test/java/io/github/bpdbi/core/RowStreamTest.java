@@ -1,5 +1,6 @@
 package io.github.bpdbi.core;
 
+import static io.github.bpdbi.core.test.TestRows.col;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -12,10 +13,6 @@ import org.junit.jupiter.api.Test;
 
 /** Unit tests for RowStream. No database required. */
 class RowStreamTest {
-
-  private static ColumnDescriptor col(String name) {
-    return new ColumnDescriptor(name, 0, (short) 0, 0, (short) 0, 0);
-  }
 
   private static Row makeRow(String value) {
     ColumnDescriptor[] cols = {col("v")};

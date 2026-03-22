@@ -15,7 +15,7 @@ This library presents a developer experience similar to [Jdbi](https://jdbi.org)
 JDBC is [showing its age](docs/is-jdbc-showing-its-age.md) and (hence) does not allow pipelining
 which is available
 in [Postgres 14+](https://www.postgresql.org/docs/current/libpq-pipeline-mode.html)
-and to some extent (TODO: add documentation for this) in [MySQL 5.7.12+](https://dev.mysql.com/blog-archive/mysql-5-7-12-part-2-improving-the-mysql-protocol/).
+.
 
 Vert.x (`vertx-sql-client`) does support pipelines (for these databases) —it does not use JDBC—
 but forces reactive/async programming and
@@ -114,10 +114,6 @@ parameterless statements. The always-binary design has three significant consequ
    `"SELECT 1; SELECT 2"` — use `enqueue()`/`flush()` instead, which is both
    more explicit and faster.
 
-The MySQL driver uses `COM_STMT_EXECUTE` (binary) for parameterized queries and
-`COM_QUERY` (text) for parameterless queries, because MySQL's `COM_STMT_PREPARE`
-rejects `BEGIN`, `COMMIT`, `ROLLBACK`, `SET`, and other session commands.
-
 **Lazy decoding with column-oriented storage** — `Row` stores raw bytes from the wire and decodes
 them only when you call a typed getter (`getInteger`, `getString`, etc.).
 Columns you never read are never decoded, keeping CPU overhead minimal.
@@ -153,13 +149,13 @@ These tests are straightforward to generate with AI assistance and catch schema 
 typos, and type errors at test time rather than compile time — with far less machinery.
 
 **Dependency minimalism** Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
-the Postgres JDBC driver (~1.1MB), or MySQL Connector/J (~2.5MB). It also provides named parameters,
+the Postgres JDBC driver (~1.1MB). It also provides named parameters,
 row mapping, and type binding commonly found in libraries like Jdbi (~1MB) or Spring Data JDBC (~
 3MB). Bpdbi can be used without the JVM reflection API, some optional mapper modules do use it.
 Mind you that libraries like Hibernate and jOOQ weigh in at about 15MB as well.
 
 **GraalVM native-image ready** — The core library and drivers (`bpdbi-core`, `bpdbi-pg-client`,
-`bpdbi-mysql-client`, `bpdbi-pool`) use zero reflection and work out of the box with
+`bpdbi-pool`) use zero reflection and work out of the box with
 `native-image`. The optional mapper modules (`bpdbi-record-mapper`,
 `bpdbi-javabean-mapper`) ship with GraalVM `reflect-config.json` metadata for their own
 classes; you only need to register your application's record/bean types. The Kotlin module
@@ -174,7 +170,6 @@ uses compile-time code generation (kotlinx.serialization) and needs no reflectio
 dependencies {
     implementation(platform("io.github.bpdbi:bpdbi-bom:0.1.0"))
     implementation("io.github.bpdbi:bpdbi-pg-client")                // Postgres driver
-    // implementation("io.github.bpdbi:bpdbi-mysql-client")          // MySQL driver
     // implementation("io.github.bpdbi:bpdbi-pool")                  // Connection pool
     // implementation("io.github.bpdbi:bpdbi-javabean-mapper")       // JavaBean mapping per row (reflection-based)
     // implementation("io.github.bpdbi:bpdbi-record-mapper")         // Java record mapping per row (reflection-based)
@@ -195,11 +190,6 @@ var config = ConnectionConfig.fromUri("postgresql://user:pass@localhost:5432/myd
 try (var conn = PgConnection.connect(config)) {
     conn.query("SELECT 1");
 }
-
-// MySQL
-try (var conn = MysqlConnection.connect("localhost", 3306, "mydb", "user", "pass")) {
-    conn.query("SELECT 1");
-}
 ```
 
 <details><summary>Kotlin equivalent</summary>
@@ -215,16 +205,11 @@ val config = ConnectionConfig.fromUri("postgresql://user:pass@localhost:5432/myd
 PgConnection.connect(config).use { conn ->
     conn.query("SELECT 1")
 }
-
-// MySQL
-MysqlConnection.connect("localhost", 3306, "mydb", "user", "pass").use { conn ->
-    conn.query("SELECT 1")
-}
 ```
 
 </details>
 
-URI parsing supports `postgresql://`, `postgres://`, and `mysql://` schemes with
+URI parsing supports `postgresql://` and `postgres://` schemes with
 optional query parameters: `?sslmode=require&application_name=myapp`.
 
 #### SSL/TLS
@@ -279,7 +264,7 @@ for (Row row : users) {
     System.out.println(row.getString("name") + ": " + row.getInteger("age"));
 }
 
-// Parameterized query (PG uses $1, $2; MySQL uses ?)
+// Parameterized query ($1, $2, ...)
 RowSet rs = conn.query("SELECT * FROM users WHERE id = $1", 42);
 Row row = rs.first();
 ```
@@ -293,7 +278,7 @@ for (row in users) {
     println("${row.getString("name")}: ${row.getInteger("age")}")
 }
 
-// Parameterized query (PG uses $1, $2; MySQL uses ?)
+// Parameterized query ($1, $2, ...)
 val rs = conn.query("SELECT * FROM users WHERE id = $1", 42)
 val row = rs.first()
 ```
@@ -320,7 +305,7 @@ val rs = conn.query(
 
 </details>
 
-Named parameters are rewritten to positional placeholders (`$1`, `$2` for Postgres, `?` for MySQL)
+Named parameters are rewritten to positional placeholders (`$1`, `$2`)
 before execution. They work with `query()`, `enqueue()`, and `prepare()`. The `::` cast operator
 (e.g. `$1::int`) is correctly handled and not treated as a named parameter.
 
@@ -480,7 +465,6 @@ conn.prepare("SELECT * FROM users WHERE id = ANY(:ids::int[])").use { stmt ->
 
 Collection and array values are automatically formatted as Postgres array literals (`{1,2,3}`).
 This works regardless of collection size without re-preparing the statement.
-MySQL does not support array types — use `query(String, Map)` with IN-list expansion instead.
 
 ### Transactions
 
@@ -788,7 +772,7 @@ conn.setJsonMapper(new JsonMapper() {
 
 **Auto-detection for JSON/JSONB columns** — if the database column type is `json`, `jsonb` (
 Postgres),
-or `JSON` (MySQL), `row.get()` automatically deserializes:
+`row.get()` automatically deserializes:
 
 ```java
 // metadata is a jsonb column — auto-detected, no extra config needed
@@ -1148,9 +1132,6 @@ For heavier requirements, any generic object pool library
 well.
 Note that HikariCP is JDBC-specific and thus not compatible.
 
-This works with any driver — just swap `PgConnection.connect(...)` for
-`MysqlConnection.connect(...)`.
-
 ## Recommended HTTP frameworks
 
 Bpdbi uses blocking I/O and is designed for virtual threads — it pairs well with HTTP frameworks that
@@ -1183,7 +1164,6 @@ That said, Bpdbi started as a port of the `vertx-sql-client` package!
 * `bpdbi-bom`                       BOM (Bill of Materials) for version alignment
 * `bpdbi-core`                      Database-agnostic API (Connection, Row, RowSet, pipelining logic)
 * `bpdbi-pg-client`                 Postgres driver (wire protocol, auth, PG types)
-* `bpdbi-mysql-client`              MySQL driver (wire protocol, auth)
 * `bpdbi-pool`                      Simple connection pool with idle/lifetime eviction
 * `bpdbi-kotlin`                    Kotlin extensions (kotlinx.serialization-based row decoding)
 * `bpdbi-record-mapper`             Reflection-based Java record mapping (GraalVM metadata included)
@@ -1243,8 +1223,8 @@ Early development. Not yet published to Maven Central — the dependency coordin
 * Test for nested records
 * Double check we have all kotlin's time types implemented
 * Make explicit when it's positional mapping and when ist' "by name"
-* Consider abstracting over pg/mysql parameter injection syntax ($1 vs ?): may be a bad idea (what
-  doe Jdbi do?)
+* Consider abstracting over parameter injection syntax: may be a bad idea (what
+  does Jdbi do?)
 * allow nested transactions
 * Publish to Maven Central
 

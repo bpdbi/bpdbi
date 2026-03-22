@@ -16,7 +16,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Not thread-safe — each connection has its own cache instance.
  */
-@SuppressWarnings("serial")
+@SuppressWarnings("serial") // Would trigger a warning otherwise (and warnings break the build).
 public class PreparedStatementCache
     extends LinkedHashMap<String, PreparedStatementCache.CachedStatement> {
 
@@ -127,34 +127,13 @@ public class PreparedStatementCache
    * A cached prepared statement handle. Holds the server-side state needed to re-execute without
    * re-preparing.
    */
-  @SuppressWarnings("ArrayRecordComponent")
-  // internal record; nullable arrays are intentional (null = not applicable for this DB)
+  @SuppressWarnings("ArrayRecordComponent") // internal record; nullable arrays are intentional
   public record CachedStatement(
       @NonNull String sql,
-      @Nullable String pgStatementName, // PG: named statement, null for MySQL
-      byte @Nullable [] pgStatementNameCString, // pre-encoded null-terminated C string for the wire
-      int mysqlStatementId, // MySQL: server-assigned ID, -1 for PG
+      @NonNull String pgStatementName,
+      byte @NonNull [] pgStatementNameCString, // pre-encoded null-terminated C string for the wire
       ColumnDescriptor @Nullable [] columns,
-      int @Nullable [] columnTypes, // MySQL binary column types, null for PG
+      int @Nullable [] paramTypeOIDs, // parameter type OIDs for binary encoding
       @Nullable List<String> parameterNames // named param ordering, null if positional
-      ) {
-
-    /** Convenience constructor without parameterNames (positional params only). */
-    public CachedStatement(
-        @NonNull String sql,
-        @Nullable String pgStatementName,
-        byte @Nullable [] pgStatementNameCString,
-        int mysqlStatementId,
-        ColumnDescriptor @Nullable [] columns,
-        int @Nullable [] columnTypes) {
-      this(
-          sql,
-          pgStatementName,
-          pgStatementNameCString,
-          mysqlStatementId,
-          columns,
-          columnTypes,
-          null);
-    }
-  }
+      ) {}
 }

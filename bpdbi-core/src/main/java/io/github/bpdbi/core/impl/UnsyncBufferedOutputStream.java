@@ -6,7 +6,7 @@ import org.jspecify.annotations.NonNull;
 
 /**
  * An unsynchronized buffered output stream. Unlike {@link java.io.BufferedOutputStream}, this does
- * not acquire a lock on every write, avoiding contention overhead. Safe because each database
+ * not acquire a lock on every 'write', avoiding contention overhead. Safe because each database
  * connection is used by a single thread.
  *
  * <p>Also optimized for large writes: data larger than the buffer is written directly to the

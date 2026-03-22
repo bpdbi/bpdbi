@@ -15,6 +15,7 @@ import io.github.bpdbi.pg.data.Money;
 import io.github.bpdbi.pg.data.Path;
 import io.github.bpdbi.pg.data.Point;
 import io.github.bpdbi.pg.data.Polygon;
+import io.github.bpdbi.pg.impl.PgArrayParser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.Inet4Address;
@@ -46,8 +47,6 @@ public final class PgBinaryCodec implements BinaryCodec {
   private static final LocalDate PG_EPOCH_DATE = LocalDate.of(2000, 1, 1);
   private static final LocalDateTime PG_EPOCH_DATETIME = PG_EPOCH_DATE.atStartOfDay();
 
-  private static final int OID_JSONB = 3802;
-
   private static final int NUMERIC_POS = 0x0000;
   private static final int NUMERIC_NEG = 0x4000;
   private static final int NUMERIC_NAN = 0xC000;
@@ -55,45 +54,6 @@ public final class PgBinaryCodec implements BinaryCodec {
   private static final int[] DIGIT_DIVISORS = {1000, 100, 10, 1};
 
   private static final char[] HEX = "0123456789abcdef".toCharArray();
-
-  // Postgres type OIDs for binary array/element decoding and decodeToString
-  private static final int OID_BOOL = 16;
-  private static final int OID_CHAR = 18;
-  private static final int OID_INT2 = 21;
-  private static final int OID_INT4 = 23;
-  private static final int OID_INT8 = 20;
-  private static final int OID_FLOAT4 = 700;
-  private static final int OID_FLOAT8 = 701;
-  private static final int OID_TEXT = 25;
-  private static final int OID_VARCHAR = 1043;
-  private static final int OID_BPCHAR = 1042;
-  private static final int OID_BYTEA = 17;
-  private static final int OID_NUMERIC = 1700;
-  private static final int OID_UUID = 2950;
-  private static final int OID_DATE = 1082;
-  private static final int OID_TIME = 1083;
-  private static final int OID_TIMETZ = 1266;
-  private static final int OID_TIMESTAMP = 1114;
-  private static final int OID_TIMESTAMPTZ = 1184;
-  private static final int OID_INTERVAL = 1186;
-  private static final int OID_JSON = 114;
-  private static final int OID_XML = 142;
-  private static final int OID_MONEY = 790;
-  private static final int OID_POINT = 600;
-  private static final int OID_LINE = 628;
-  private static final int OID_LSEG = 601;
-  private static final int OID_BOX = 603;
-  private static final int OID_PATH = 602;
-  private static final int OID_POLYGON = 604;
-  private static final int OID_CIRCLE = 718;
-  private static final int OID_INET = 869;
-  private static final int OID_CIDR = 650;
-  private static final int OID_MACADDR = 829;
-  private static final int OID_MACADDR8 = 774;
-  private static final int OID_BIT = 1560;
-  private static final int OID_VARBIT = 1562;
-  private static final int OID_TSVECTOR = 3614;
-  private static final int OID_TSQUERY = 3615;
 
   private PgBinaryCodec() {}
 
@@ -320,7 +280,7 @@ public final class PgBinaryCodec implements BinaryCodec {
 
   @Override
   public @NonNull String decodeJson(byte @NonNull [] buf, int offset, int length, int typeOID) {
-    if (typeOID == OID_JSONB && length > 0) {
+    if (typeOID == PgOIDs.JSONB && length > 0) {
       return new String(buf, offset + 1, length - 1, StandardCharsets.UTF_8);
     }
     return new String(buf, offset, length, StandardCharsets.UTF_8);
@@ -423,14 +383,8 @@ public final class PgBinaryCodec implements BinaryCodec {
     } else {
       throw new IllegalArgumentException("Decoding Path: invalid open/closed byte: " + first);
     }
-    int idx = 1;
-    int numberOfPoints = decodeInt4At(value, idx);
-    idx += 4;
-    List<Point> points = new ArrayList<>();
-    for (int i = 0; i < numberOfPoints; i++) {
-      points.add(new Point(decodeFloat8At(value, idx), decodeFloat8At(value, idx + 8)));
-      idx += 16;
-    }
+    int numberOfPoints = decodeInt4At(value, 1);
+    List<Point> points = decodePointList(value, 5, numberOfPoints);
     return new Path(isOpen, points);
   }
 
@@ -439,24 +393,13 @@ public final class PgBinaryCodec implements BinaryCodec {
     byte[] result = new byte[1 + 4 + points.size() * 16];
     result[0] = (byte) (path.isOpen() ? 0 : 1);
     putInt4(result, 1, points.size());
-    int idx = 5;
-    for (Point point : points) {
-      putFloat8(result, idx, point.x());
-      putFloat8(result, idx + 8, point.y());
-      idx += 16;
-    }
+    encodePointList(points, result, 5);
     return result;
   }
 
   public @NonNull Polygon decodePolygon(byte @NonNull [] value) {
-    int idx = 0;
-    int numberOfPoints = decodeInt4At(value, idx);
-    idx += 4;
-    List<Point> points = new ArrayList<>();
-    for (int i = 0; i < numberOfPoints; i++) {
-      points.add(new Point(decodeFloat8At(value, idx), decodeFloat8At(value, idx + 8)));
-      idx += 16;
-    }
+    int numberOfPoints = decodeInt4At(value, 0);
+    List<Point> points = decodePointList(value, 4, numberOfPoints);
     return new Polygon(points);
   }
 
@@ -464,13 +407,27 @@ public final class PgBinaryCodec implements BinaryCodec {
     List<Point> points = polygon.points();
     byte[] result = new byte[4 + points.size() * 16];
     putInt4(result, 0, points.size());
-    int idx = 4;
+    encodePointList(points, result, 4);
+    return result;
+  }
+
+  private List<Point> decodePointList(byte @NonNull [] value, int startIdx, int count) {
+    List<Point> points = new ArrayList<>(count);
+    int idx = startIdx;
+    for (int i = 0; i < count; i++) {
+      points.add(new Point(decodeFloat8At(value, idx), decodeFloat8At(value, idx + 8)));
+      idx += 16;
+    }
+    return points;
+  }
+
+  private static void encodePointList(List<Point> points, byte[] result, int startIdx) {
+    int idx = startIdx;
     for (Point point : points) {
       putFloat8(result, idx, point.x());
       putFloat8(result, idx + 8, point.y());
       idx += 16;
     }
-    return result;
   }
 
   public @NonNull Circle decodeCircle(byte @NonNull [] value) {
@@ -544,17 +501,8 @@ public final class PgBinaryCodec implements BinaryCodec {
   public @NonNull Inet decodeInet(byte @NonNull [] value) {
     byte family = value[0];
     byte netmask = value[1];
-    int size = value[3] & 0xFF;
-    byte[] data = new byte[size];
-    System.arraycopy(value, 4, data, 0, size);
-    InetAddress address;
-    Integer mask;
-    try {
-      address = InetAddress.getByAddress(data);
-    } catch (UnknownHostException e) {
-      throw new IllegalArgumentException("Invalid inet address", e);
-    }
-    mask =
+    InetAddress address = decodeInetAddress(value, "inet");
+    Integer mask =
         switch (family) {
           case 2 -> (netmask & 0xFF) == 32 ? null : Byte.toUnsignedInt(netmask);
           case 3 -> (netmask & 0xFF) == 128 ? null : Byte.toUnsignedInt(netmask);
@@ -570,15 +518,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   public @NonNull Cidr decodeCidr(byte @NonNull [] value) {
     byte family = value[0];
     byte netmask = value[1];
-    int size = value[3] & 0xFF;
-    byte[] data = new byte[size];
-    System.arraycopy(value, 4, data, 0, size);
-    InetAddress address;
-    try {
-      address = InetAddress.getByAddress(data);
-    } catch (UnknownHostException e) {
-      throw new IllegalArgumentException("Invalid cidr address", e);
-    }
+    InetAddress address = decodeInetAddress(value, "cidr");
     switch (family) {
       case 2, 3:
         break;
@@ -590,6 +530,17 @@ public final class PgBinaryCodec implements BinaryCodec {
 
   public static byte @NonNull [] encodeCidr(@NonNull Cidr value) {
     return encodeInetOrCidrToBytes(value.address(), value.netmask(), InetOrCidr.Cidr);
+  }
+
+  private static @NonNull InetAddress decodeInetAddress(byte @NonNull [] value, String typeName) {
+    int size = value[3] & 0xFF;
+    byte[] data = new byte[size];
+    System.arraycopy(value, 4, data, 0, size);
+    try {
+      return InetAddress.getByAddress(data);
+    } catch (UnknownHostException e) {
+      throw new IllegalArgumentException("Invalid " + typeName + " address", e);
+    }
   }
 
   enum InetOrCidr {
@@ -804,7 +755,7 @@ public final class PgBinaryCodec implements BinaryCodec {
 
   @Override
   public <T> @Nullable List<T> decodeArray(
-      byte @NonNull [] value, BinaryCodec.ElementDecoder<T> elementDecoder) {
+      byte @NonNull [] value, BinaryCodec.@NonNull ElementDecoder<T> elementDecoder) {
     if (value.length < 12) {
       return List.of();
     }
@@ -837,10 +788,7 @@ public final class PgBinaryCodec implements BinaryCodec {
       return List.of();
     }
     int elemType = decodeInt4At(value, 8);
-    return decodeArray(
-        value,
-        (BinaryCodec.ElementDecoder<String>)
-            (buf, off, len) -> decodeElementToString(elemType, buf, off, len));
+    return decodeArray(value, (buf, off, len) -> decodeElementToString(elemType, buf, off, len));
   }
 
   @Override
@@ -854,41 +802,42 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   /** Decode a single binary value to its string representation based on type OID. */
-  private String decodeElementToString(int elemTypeOid, byte[] buf, int off, int len) {
-    return switch (elemTypeOid) {
-      case OID_BOOL -> decodeBool(buf, off) ? "t" : "f";
-      case OID_INT2 -> String.valueOf(decodeInt2(buf, off));
-      case OID_INT4 -> String.valueOf(decodeInt4(buf, off));
-      case OID_INT8 -> String.valueOf(decodeInt8(buf, off));
-      case OID_FLOAT4 -> String.valueOf(decodeFloat4(buf, off));
-      case OID_FLOAT8 -> String.valueOf(decodeFloat8(buf, off));
-      case OID_NUMERIC -> decodeNumeric(buf, off, len).toPlainString();
-      case OID_TEXT, OID_VARCHAR, OID_BPCHAR, OID_CHAR, OID_XML -> decodeString(buf, off, len);
-      case OID_UUID -> decodeUuid(buf, off, len).toString();
-      case OID_DATE -> decodeDate(buf, off, len).toString();
-      case OID_TIME -> decodeTime(buf, off, len).toString();
-      case OID_TIMETZ -> decodeTimetz(buf, off, len).toString();
-      case OID_TIMESTAMP -> decodeTimestamp(buf, off, len).toString();
-      case OID_TIMESTAMPTZ -> decodeTimestamptz(buf, off, len).toString();
-      case OID_INTERVAL -> decodeInterval(copySlice(buf, off, len)).toString();
-      case OID_JSON -> decodeString(buf, off, len);
-      case OID_JSONB -> decodeJson(buf, off, len, OID_JSONB);
-      case OID_BYTEA -> hexEncode(buf, off, len);
-      case OID_MONEY -> decodeMoney(copySlice(buf, off, len)).toString();
-      case OID_POINT -> decodePoint(copySlice(buf, off, len)).toString();
-      case OID_LINE -> decodeLine(copySlice(buf, off, len)).toString();
-      case OID_LSEG -> decodeLseg(copySlice(buf, off, len)).toString();
-      case OID_BOX -> decodeBox(copySlice(buf, off, len)).toString();
-      case OID_PATH -> decodePath(copySlice(buf, off, len)).toString();
-      case OID_POLYGON -> decodePolygon(copySlice(buf, off, len)).toString();
-      case OID_CIRCLE -> decodeCircle(copySlice(buf, off, len)).toString();
-      case OID_INET -> decodeInet(copySlice(buf, off, len)).toString();
-      case OID_CIDR -> decodeCidr(copySlice(buf, off, len)).toString();
-      case OID_MACADDR -> decodeMacaddr(copySlice(buf, off, len)).toString();
-      case OID_MACADDR8 -> decodeMacaddr8(copySlice(buf, off, len)).toString();
-      case OID_BIT, OID_VARBIT -> decodeBitString(copySlice(buf, off, len)).toString();
-      case OID_TSVECTOR -> decodeTsVector(copySlice(buf, off, len));
-      case OID_TSQUERY -> decodeTsQuery(copySlice(buf, off, len));
+  private String decodeElementToString(int elemTypeOID, byte[] buf, int off, int len) {
+    return switch (elemTypeOID) {
+      case PgOIDs.BOOL -> decodeBool(buf, off) ? "t" : "f";
+      case PgOIDs.INT2 -> String.valueOf(decodeInt2(buf, off));
+      case PgOIDs.INT4 -> String.valueOf(decodeInt4(buf, off));
+      case PgOIDs.INT8 -> String.valueOf(decodeInt8(buf, off));
+      case PgOIDs.FLOAT4 -> String.valueOf(decodeFloat4(buf, off));
+      case PgOIDs.FLOAT8 -> String.valueOf(decodeFloat8(buf, off));
+      case PgOIDs.NUMERIC -> decodeNumeric(buf, off, len).toPlainString();
+      case PgOIDs.TEXT, PgOIDs.VARCHAR, PgOIDs.BPCHAR, PgOIDs.CHAR, PgOIDs.XML ->
+          decodeString(buf, off, len);
+      case PgOIDs.UUID -> decodeUuid(buf, off, len).toString();
+      case PgOIDs.DATE -> decodeDate(buf, off, len).toString();
+      case PgOIDs.TIME -> decodeTime(buf, off, len).toString();
+      case PgOIDs.TIMETZ -> decodeTimetz(buf, off, len).toString();
+      case PgOIDs.TIMESTAMP -> decodeTimestamp(buf, off, len).toString();
+      case PgOIDs.TIMESTAMPTZ -> decodeTimestamptz(buf, off, len).toString();
+      case PgOIDs.INTERVAL -> decodeInterval(copySlice(buf, off, len)).toString();
+      case PgOIDs.JSON -> decodeString(buf, off, len);
+      case PgOIDs.JSONB -> decodeJson(buf, off, len, PgOIDs.JSONB);
+      case PgOIDs.BYTEA -> hexEncode(buf, off, len);
+      case PgOIDs.MONEY -> decodeMoney(copySlice(buf, off, len)).toString();
+      case PgOIDs.POINT -> decodePoint(copySlice(buf, off, len)).toString();
+      case PgOIDs.LINE -> decodeLine(copySlice(buf, off, len)).toString();
+      case PgOIDs.LSEG -> decodeLseg(copySlice(buf, off, len)).toString();
+      case PgOIDs.BOX -> decodeBox(copySlice(buf, off, len)).toString();
+      case PgOIDs.PATH -> decodePath(copySlice(buf, off, len)).toString();
+      case PgOIDs.POLYGON -> decodePolygon(copySlice(buf, off, len)).toString();
+      case PgOIDs.CIRCLE -> decodeCircle(copySlice(buf, off, len)).toString();
+      case PgOIDs.INET -> decodeInet(copySlice(buf, off, len)).toString();
+      case PgOIDs.CIDR -> decodeCidr(copySlice(buf, off, len)).toString();
+      case PgOIDs.MACADDR -> decodeMacaddr(copySlice(buf, off, len)).toString();
+      case PgOIDs.MACADDR8 -> decodeMacaddr8(copySlice(buf, off, len)).toString();
+      case PgOIDs.BIT, PgOIDs.VARBIT -> decodeBitString(copySlice(buf, off, len)).toString();
+      case PgOIDs.TSVECTOR -> decodeTsVector(copySlice(buf, off, len));
+      case PgOIDs.TSQUERY -> decodeTsQuery(copySlice(buf, off, len));
       default -> decodeString(buf, off, len);
     };
   }
@@ -945,12 +894,8 @@ public final class PgBinaryCodec implements BinaryCodec {
 
   public static byte @NonNull [] encodeUuid(@NonNull UUID uuid) {
     byte[] bytes = new byte[16];
-    long msb = uuid.getMostSignificantBits();
-    long lsb = uuid.getLeastSignificantBits();
-    for (int i = 0; i < 8; i++) {
-      bytes[i] = (byte) (msb >> (56 - i * 8));
-      bytes[8 + i] = (byte) (lsb >> (56 - i * 8));
-    }
+    putInt8(bytes, 0, uuid.getMostSignificantBits());
+    putInt8(bytes, 8, uuid.getLeastSignificantBits());
     return bytes;
   }
 
@@ -1147,5 +1092,10 @@ public final class PgBinaryCodec implements BinaryCodec {
     byte[] slice = new byte[length];
     System.arraycopy(buf, offset, slice, 0, length);
     return slice;
+  }
+
+  @Override
+  public @NonNull List<String> parseTextArray(@NonNull String text) {
+    return PgArrayParser.parse(text);
   }
 }

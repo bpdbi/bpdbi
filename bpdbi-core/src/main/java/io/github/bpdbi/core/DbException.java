@@ -10,7 +10,6 @@ import org.jspecify.annotations.Nullable;
  *
  * <ul>
  *   <li>{@code PgException} — adds detail, hint, schema, table, column, constraint
- *   <li>{@code MysqlException} — adds MySQL error code
  * </ul>
  *
  * <p>{@link DbConnectionException} is a subclass for transport and I/O errors, allowing callers to

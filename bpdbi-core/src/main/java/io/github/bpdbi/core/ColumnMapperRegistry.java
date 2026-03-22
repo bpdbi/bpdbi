@@ -43,7 +43,7 @@ public final class ColumnMapperRegistry {
     return this;
   }
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings("unchecked") // safe: mappers are registered with matching Class<T> keys
   @NonNull
   public <T> T map(@NonNull Class<T> type, @NonNull String value, @NonNull String columnName) {
     ColumnMapper<T> mapper = (ColumnMapper<T>) findMapper(type);

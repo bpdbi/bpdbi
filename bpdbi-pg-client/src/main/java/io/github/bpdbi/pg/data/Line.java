@@ -2,7 +2,7 @@ package io.github.bpdbi.pg.data;
 
 import org.jspecify.annotations.NonNull;
 
-/** A Postgres line: {A,B,C} representing Ax + By + C = 0. */
+/** Postgres 'line': {A,B,C} representing Ax + By + C = 0. */
 public record Line(double a, double b, double c) {
 
   @Override

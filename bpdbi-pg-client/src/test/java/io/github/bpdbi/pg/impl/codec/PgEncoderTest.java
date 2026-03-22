@@ -143,7 +143,7 @@ class PgEncoderTest {
   @Test
   void bindMessageNoParams() throws IOException {
     var encoder = new PgEncoder();
-    encoder.writeBind(null);
+    encoder.writeBind(new String[0]);
     byte[] bytes = flush(encoder);
 
     var buf = ByteBuffer.wrap(bytes);
@@ -265,13 +265,14 @@ class PgEncoderTest {
     // Verify the estimate is at least as large as the actual encoded bytes
     var encoder = new PgEncoder();
     String sql = "SELECT * FROM users WHERE id = $1 AND name = $2";
-    String[] params = {"42", "Alice"};
+    Object[] params = {42, "Alice"};
 
     int estimate = PgEncoder.estimateExtendedQuerySize(sql, params);
 
     // Encode the same sequence and measure actual size
-    encoder.writeParse(sql, null);
-    encoder.writeBind(params);
+    int[] typeOIDs = {23, 25}; // INT4, TEXT
+    encoder.writeParse(sql, typeOIDs);
+    encoder.writeBindInline(PgEncoder.EMPTY_CSTRING, PgEncoder.EMPTY_CSTRING, params, null);
     encoder.writeDescribePortal();
     encoder.writeExecute();
     byte[] actual = flush(encoder);

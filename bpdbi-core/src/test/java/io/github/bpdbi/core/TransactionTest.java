@@ -3,10 +3,10 @@ package io.github.bpdbi.core;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.bpdbi.core.test.AbstractStubConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
  */
 class TransactionTest {
 
-  /** Records all SQL passed to query() for verification. */
-  static class RecordingConnection implements Connection {
+  /** Records all SQL passed to query() and enqueue() for verification. */
+  static class RecordingConnection extends AbstractStubConnection {
 
     final List<String> queries = new ArrayList<>();
 
@@ -64,21 +64,6 @@ class TransactionTest {
     }
 
     @Override
-    public @NonNull PreparedStatement prepare(@NonNull String sql) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public @NonNull Cursor cursor(@NonNull String sql, Object... params) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public @NonNull Transaction begin() {
-      return new Transaction(this);
-    }
-
-    @Override
     public @NonNull List<RowSet> executeMany(
         @NonNull String sql, @NonNull List<Object[]> paramSets) {
       queries.add("executeMany:" + sql);
@@ -89,50 +74,6 @@ class TransactionTest {
     public void ping() {
       queries.add("ping");
     }
-
-    @Override
-    public @NonNull Map<String, String> parameters() {
-      return Map.of();
-    }
-
-    @Override
-    public void queryStream(@NonNull String sql, @NonNull Consumer<Row> consumer) {}
-
-    @Override
-    public void queryStream(
-        @NonNull String sql, Object[] params, @NonNull Consumer<Row> consumer) {}
-
-    @Override
-    public @NonNull RowStream stream(@NonNull String sql, Object... params) {
-      return new RowStream(() -> null, () -> {});
-    }
-
-    @Override
-    public @NonNull BinderRegistry binderRegistry() {
-      return BinderRegistry.defaults();
-    }
-
-    @Override
-    public void setBinderRegistry(@NonNull BinderRegistry registry) {}
-
-    @Override
-    public @NonNull ColumnMapperRegistry mapperRegistry() {
-      return ColumnMapperRegistry.defaults();
-    }
-
-    @Override
-    public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {}
-
-    @Override
-    public JsonMapper jsonMapper() {
-      return null;
-    }
-
-    @Override
-    public void setJsonMapper(JsonMapper mapper) {}
-
-    @Override
-    public void close() {}
   }
 
   // ===== Root transaction lifecycle =====

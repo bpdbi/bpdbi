@@ -25,8 +25,8 @@ import org.jspecify.annotations.Nullable;
  * var config = ConnectionConfig.fromUri("postgresql://user:pass@host:5432/db?sslmode=require");
  * }</pre>
  *
- * <p>URI parsing supports {@code postgresql://}, {@code postgres://}, and {@code mysql://} schemes,
- * with optional query parameters for SSL mode, certificates, and application-specific properties.
+ * <p>URI parsing supports {@code postgresql://} and {@code postgres://} schemes, with optional
+ * query parameters for SSL mode, certificates, and application-specific properties.
  *
  * @see SslMode
  */
@@ -76,9 +76,8 @@ public final class ConnectionConfig {
   }
 
   /**
-   * Parse a connection URI. Supports formats:
+   * Parse a connection URI. Supports format:
    * postgresql://user:password@host:port/database?param=value
-   * mysql://user:password@host:port/database
    */
   public static @NonNull ConnectionConfig fromUri(@NonNull String uri) {
     var config = new ConnectionConfig();
@@ -156,7 +155,6 @@ public final class ConnectionConfig {
         config.port =
             switch (scheme) {
               case "postgresql", "postgres" -> 5432;
-              case "mysql" -> 3306;
               default -> -1;
             };
       }

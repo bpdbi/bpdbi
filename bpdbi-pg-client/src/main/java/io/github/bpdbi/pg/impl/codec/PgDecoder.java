@@ -326,7 +326,7 @@ public final class PgDecoder {
   }
 
   private int readInt() throws IOException {
-    readFully(intBuf, 0, 4);
+    readFully(intBuf, 4);
     return (intBuf[0] & 0xFF) << 24
         | (intBuf[1] & 0xFF) << 16
         | (intBuf[2] & 0xFF) << 8
@@ -334,7 +334,7 @@ public final class PgDecoder {
   }
 
   private int readShort() throws IOException {
-    readFully(intBuf, 0, 2);
+    readFully(intBuf, 2);
     return (intBuf[0] & 0xFF) << 8 | (intBuf[1] & 0xFF);
   }
 
@@ -351,7 +351,7 @@ public final class PgDecoder {
         values[i] = null; // SQL NULL
       } else {
         values[i] = new byte[len];
-        readFully(values[i], 0, len);
+        readFully(values[i], len);
       }
     }
     return values;
@@ -377,17 +377,18 @@ public final class PgDecoder {
 
   private byte[] readExactly(int n) throws IOException {
     byte[] buf = new byte[n];
-    readFully(buf, 0, n);
+    readFully(buf, n);
     return buf;
   }
 
-  private void readFully(byte[] buf, int offset, int n) throws IOException {
-    int end = offset + n;
+  private void readFully(byte[] buf, int n) throws IOException {
+    int offset = 0;
+    final int end = offset + n;
     while (offset < end) {
       int read = in.read(buf, offset, end - offset);
       if (read == -1) {
         throw new IOException(
-            "Unexpected end of stream (needed " + n + " bytes, got " + (offset - (end - n)) + ")");
+            "Unexpected end of stream (needed " + n + " bytes, got " + offset + ")");
       }
       offset += read;
     }

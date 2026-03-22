@@ -21,18 +21,15 @@ import org.jspecify.annotations.Nullable;
  * Abstract base class that implements the shared pipeline logic (enqueue/flush/query).
  * Database-specific drivers extend this and implement the protocol-level methods.
  *
- * <p>Parameterized queries use the binary wire protocol (Postgres Parse/Bind/Execute, MySQL
- * COM_STMT_PREPARE/COM_STMT_EXECUTE). Parameterless queries use the simple/text protocol because
- * neither database's prepared-statement protocol supports all SQL commands — MySQL rejects
- * BEGIN/COMMIT/SET/etc. via COM_STMT_PREPARE, and Postgres's extended protocol forbids
- * multi-statement strings. Text format also allows getString() to work for types without a
- * dedicated binary decoder (geometric, network, array types).
+ * <p>All queries use the extended query protocol with binary result format.
  */
 public abstract class BaseConnection implements Connection {
 
-  private List<PendingStatement> pending = new ArrayList<>();
-  private BinderRegistry binderRegistry = BinderRegistry.defaults();
-  private ColumnMapperRegistry mapperRegistry = ColumnMapperRegistry.defaults();
+  private static final Object[] EMPTY_PARAMS = new Object[0];
+
+  private @NonNull List<PendingStatement> pending = new ArrayList<>();
+  private @NonNull BinderRegistry binderRegistry = BinderRegistry.defaults();
+  private @NonNull ColumnMapperRegistry mapperRegistry = ColumnMapperRegistry.defaults();
   private @Nullable JsonMapper jsonMapper;
   protected @Nullable PreparedStatementCache psCache;
   protected int cacheSqlLimit;
@@ -92,8 +89,6 @@ public abstract class BaseConnection implements Connection {
   /** Close a cached statement server-side. DB-specific implementations override this. */
   protected abstract void closeCachedStatement(PreparedStatementCache.CachedStatement stmt);
 
-  private static final String[] EMPTY_PARAMS = new String[0];
-
   @Override
   public @NonNull RowSet query(@NonNull String sql) {
     enqueue(sql);
@@ -116,8 +111,8 @@ public abstract class BaseConnection implements Connection {
 
   @Override
   public @NonNull RowSet query(@NonNull String sql, @NonNull Map<String, Object> params) {
-    var parsed = NamedParamParser.parse(sql, params, placeholderPrefix(), binderRegistry);
-    enqueue(parsed.sql(), (Object[]) parsed.params());
+    var parsed = NamedParamParser.parse(sql, params, placeholderPrefix());
+    enqueue(parsed.sql(), parsed.params());
     var result = flush().getLast();
     if (result.getError() != null) {
       throw result.getError();
@@ -146,14 +141,14 @@ public abstract class BaseConnection implements Connection {
   @Override
   public int enqueue(@NonNull String sql, @Nullable Object... params) {
     int index = pending.size();
-    pending.add(new PendingStatement(sql, encodeParams(params)));
+    pending.add(new PendingStatement(sql, params));
     return index;
   }
 
   @Override
   public int enqueue(@NonNull String sql, @NonNull Map<String, Object> params) {
-    var parsed = NamedParamParser.parse(sql, params, placeholderPrefix(), binderRegistry);
-    return enqueue(parsed.sql(), (Object[]) parsed.params());
+    var parsed = NamedParamParser.parse(sql, params, placeholderPrefix());
+    return enqueue(parsed.sql(), parsed.params());
   }
 
   @Override
@@ -197,7 +192,7 @@ public abstract class BaseConnection implements Connection {
       @NonNull List<PendingStatement> statements) {
     List<RowSet> results = new ArrayList<>(statements.size());
     for (PendingStatement stmt : statements) {
-      results.add(executeExtendedQuery(stmt.sql, stmt.paramValues));
+      results.add(executeExtendedQuery(stmt.sql, stmt.params));
     }
     return results;
   }
@@ -212,12 +207,11 @@ public abstract class BaseConnection implements Connection {
 
   @Override
   public void queryStream(
-      @NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer) {
+      @NonNull String sql, @NonNull Object[] params, @NonNull Consumer<Row> consumer) {
     if (!pending.isEmpty()) {
       flush();
     }
-    String[] textParams = encodeParams(params);
-    executeExtendedQueryStreaming(sql, textParams, consumer);
+    executeExtendedQueryStreaming(sql, params, consumer);
   }
 
   @Override
@@ -225,22 +219,23 @@ public abstract class BaseConnection implements Connection {
     if (!pending.isEmpty()) {
       flush();
     }
-    String[] textParams = params.length == 0 ? EMPTY_PARAMS : encodeParams(params);
-    return createExtendedQueryRowStream(sql, textParams);
+    return createExtendedQueryRowStream(sql, params.length == 0 ? EMPTY_PARAMS : params);
   }
 
   protected String[] encodeParams(Object[] params) {
     String[] textParams = new String[params.length];
     for (int i = 0; i < params.length; i++) {
-      if (params[i] != null
-          && jsonMapper != null
-          && binderRegistry.isJsonType(params[i].getClass())) {
-        textParams[i] = jsonMapper.toJson(params[i]);
-      } else {
-        textParams[i] = binderRegistry.bind(params[i]);
-      }
+      textParams[i] = encodeParamToText(params[i]);
     }
     return textParams;
+  }
+
+  /** Text-encode a single parameter value, handling JSON types via jsonMapper if configured. */
+  protected String encodeParamToText(@Nullable Object value) {
+    if (value != null && jsonMapper != null && binderRegistry.isJsonType(value.getClass())) {
+      return jsonMapper.toJson(value);
+    }
+    return binderRegistry.bind(value);
   }
 
   /**
@@ -268,15 +263,6 @@ public abstract class BaseConnection implements Connection {
         mapperRegistry,
         jsonMapper,
         binderRegistry.jsonTypes());
-  }
-
-  /**
-   * Create a Row for text-format results (no binary decoding). Used by the MySQL driver for
-   * parameterless queries (COM_QUERY), which return text-format data.
-   */
-  protected @NonNull Row createTextRow(
-      @NonNull ColumnDescriptor[] columns, byte @NonNull [][] values) {
-    return new Row(columns, values, null, mapperRegistry, jsonMapper, binderRegistry.jsonTypes());
   }
 
   /**
@@ -315,23 +301,8 @@ public abstract class BaseConnection implements Connection {
         binderRegistry.jsonTypes());
   }
 
-  /**
-   * Create a buffered Row for text-format results (no binary decoding). Used by the MySQL driver
-   * for parameterless queries (COM_QUERY), which return text-format data.
-   */
-  protected @NonNull Row createTextBufferedRow(
-      @NonNull ColumnDescriptor[] columns, @NonNull ColumnBuffer[] buffers, int rowIndex) {
-    return new Row(
-        columns, buffers, rowIndex, null, mapperRegistry, jsonMapper, binderRegistry.jsonTypes());
-  }
-
-  /**
-   * Return the binary codec for this database driver, or null if not applicable. Subclasses
-   * override to provide their driver-specific codec.
-   */
-  protected @Nullable BinaryCodec binaryCodec() {
-    return null;
-  }
+  /** Return the binary codec for this database driver. */
+  protected abstract @NonNull BinaryCodec binaryCodec();
 
   @Override
   public void close() {
@@ -350,25 +321,18 @@ public abstract class BaseConnection implements Connection {
   /** Flush the write buffer to the network. */
   protected abstract void flushToNetwork();
 
-  /**
-   * Execute a query. An empty params array indicates a parameterless query.
-   *
-   * <p>Parameterized queries use the binary wire protocol (PG Parse/Bind/Execute, MySQL
-   * COM_STMT_PREPARE/COM_STMT_EXECUTE). Parameterless queries use the simple/text protocol (PG
-   * Query message, MySQL COM_QUERY) — see class javadoc for why.
-   */
+  /** Execute a query using the extended query protocol. An empty params array is parameterless. */
   protected abstract @NonNull RowSet executeExtendedQuery(
-      @NonNull String sql, @NonNull String[] params);
+      @NonNull String sql, @NonNull Object[] params);
 
   protected abstract void sendTerminate();
 
   protected abstract void closeTransport();
 
-  /**
-   * Return the placeholder prefix for this database. PG uses "$" (for $1, $2, ...), MySQL uses "?"
-   * (positional).
-   */
-  protected abstract @NonNull String placeholderPrefix();
+  /** Return the placeholder prefix for positional parameters ($1, $2, ...). */
+  protected @NonNull String placeholderPrefix() {
+    return "$";
+  }
 
   // --- Streaming abstract methods ---
 
@@ -377,11 +341,11 @@ public abstract class BaseConnection implements Connection {
    * indicates a parameterless query.
    */
   protected abstract void executeExtendedQueryStreaming(
-      @NonNull String sql, @NonNull String[] params, @NonNull Consumer<Row> consumer);
+      @NonNull String sql, @NonNull Object[] params, @NonNull Consumer<Row> consumer);
 
   /** Create a RowStream for a query. An empty params array indicates a parameterless query. */
   protected abstract @NonNull RowStream createExtendedQueryRowStream(
-      @NonNull String sql, @NonNull String[] params);
+      @NonNull String sql, @NonNull Object[] params);
 
   // --- Shared helpers for result set construction ---
 
@@ -391,7 +355,7 @@ public abstract class BaseConnection implements Connection {
 
   /**
    * Create column buffers with explicit initial sizing. Use when the expected row count and average
-   * value size are known (e.g. from a previous cursor batch).
+   * value size are known (e.g., from a previous cursor batch).
    */
   protected static ColumnBuffer[] newColumnBuffers(
       int columnCount, int initialRows, int estimatedAvgSize) {
@@ -433,5 +397,5 @@ public abstract class BaseConnection implements Connection {
   // --- Internal ---
 
   @SuppressWarnings("ArrayRecordComponent") // internal record; array ownership is intentional
-  protected record PendingStatement(String sql, String[] paramValues) {}
+  protected record PendingStatement(String sql, Object[] params) {}
 }

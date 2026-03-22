@@ -11,7 +11,6 @@
 
 # Run tests for a specific module
 ./gradlew :bpdbi-pg-client:test
-./gradlew :bpdbi-mysql-client:test
 ./gradlew :bpdbi-core:test
 
 # Run a single test class
@@ -41,7 +40,6 @@
 
 - `bpdbi-core/` — Database-agnostic API: Connection, Row, RowSet, pipelining, type registries
 - `bpdbi-pg-client/` — Postgres wire protocol driver
-- `bpdbi-mysql-client/` — MySQL wire protocol driver
 - `bpdbi-kotlin/` — Kotlin extensions, binders for Kotlin types and mapping of rows via `kotlinx.serialization`
 - `bpdbi-record-mapper/` — Java record mapping of rows via reflection
 - `bpdbi-javabean-mapper/` — JavaBean/POJO mapping of rows via reflection
@@ -52,11 +50,10 @@
 
 - **Pipelining-first**: `enqueue()` + `flush()` batches statements in one TCP write
 - **Lazy decoding**: Row stores raw `byte[][]`, decodes on getter access
-- **Binary protocol**: Postgres uses the extended query protocol with binary results for all
+- **Binary protocol**: Uses the Postgres extended query protocol with binary results for all
   queries (including parameterless ones). Multi-statement strings (`SELECT 1; SELECT 2`) are
-  not supported on Postgres. MySQL uses COM_STMT_EXECUTE (binary) for parameterized queries
-  and COM_QUERY (text) for parameterless queries
-- **BaseConnection**: Abstract class with shared pipeline logic; PG/MySQL extend it
+  not supported
+- **BaseConnection**: Abstract class with shared pipeline logic; PgConnection extends it
 - **No Netty**: Plain `java.net.Socket` + `BufferedInputStream`/`BufferedOutputStream`
 - **Java 21+**: Works especially well with virtual threads, has optional mapper for records,
   and uses sealed types internally
@@ -65,17 +62,12 @@
 
 - JSpecify `@Nullable` annotations on all public API
 - `DbException` is the base for all database errors (unchecked)
-- Parameters: text-encoded via `BinderRegistry.bind()`, sent as text format codes
-- Results: PG always uses binary format via the extended query protocol (even for
-  parameterless queries). MySQL uses binary format for prepared statements, text for
-  simple queries
-- Tests use Testcontainers (Postgres 16-alpine, MySQL 8.0)
+- Parameters: binary-encoded for supported types (int, long, etc.), text fallback for others
+- Results: always binary format via the extended query protocol
+- Tests use Testcontainers (Postgres 16-alpine)
 - Postgres is **not** referred to as "PostgreSQL" anywhere in the project, just "Postgres"
 - Do **not** use asterisk `import` statements
 - All `@SuppressWarnings` and `@Suppress` (Kotlin) annotations should come with a comment explaining
   why it's needed
 - Do **not** use `@NullMarked` in `package-info.java` files but explicitly mark types `@NonNull` or `@Nullable`
-
-## Postgres vs MySQL
-
-This codebase
+- Use **`OID`/`OIDs`** (all-caps) in symbol names, never `Oid`/`Oids` — e.g. `typeOID`, `paramTypeOIDs`, `PgOIDs`

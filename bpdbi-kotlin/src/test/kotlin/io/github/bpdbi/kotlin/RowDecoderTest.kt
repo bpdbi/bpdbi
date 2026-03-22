@@ -1,7 +1,5 @@
 package io.github.bpdbi.kotlin
 
-import io.github.bpdbi.core.ColumnDescriptor
-import io.github.bpdbi.core.Row
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -111,53 +109,39 @@ class RowDecoderTest {
     @Serializable
     data class TwoOptionalNested(val id: Int, val address: Address?, val phone: Phone?)
 
-    // --- Helpers ---
-
-    private fun col(name: String) = ColumnDescriptor(name, 0, 0, 0, 0, 0)
-
-    private fun row(vararg values: String?): Row {
-        val columns = values.mapIndexed { i, _ -> col("col$i") }.toTypedArray()
-        val byteValues: Array<ByteArray?> =
-            values.map { it?.toByteArray(Charsets.UTF_8) }.toTypedArray()
-        // JSpecify's `byte @Nullable [][]` puts nullability on the inner array, but Kotlin
-        // reads it as the outer array being nullable — cast to satisfy the constructor.
-        @Suppress("UNCHECKED_CAST")
-        return Row(columns, byteValues as Array<ByteArray>, null, null)
-    }
-
     // --- Tests ---
 
     @Test
     fun `decode simple data class`() {
-        val r = row("42", "Alice", "t")
+        val r = testRow("42", "Alice", "t")
         val result = serializer<Simple>().deserialize(RowDecoder(r))
         assertEquals(Simple(42, "Alice", true), result)
     }
 
     @Test
     fun `decode all primitive types`() {
-        val r = row("true", "7", "42", "123456789", "1.5", "3.14", "hello")
+        val r = testRow("true", "7", "42", "123456789", "1.5", "3.14", "hello")
         val result = serializer<AllPrimitives>().deserialize(RowDecoder(r))
         assertEquals(AllPrimitives(true, 7, 42, 123456789L, 1.5f, 3.14, "hello"), result)
     }
 
     @Test
     fun `decode nullable field with value`() {
-        val r = row("1", "Alice")
+        val r = testRow("1", "Alice")
         val result = serializer<WithNullable>().deserialize(RowDecoder(r))
         assertEquals(WithNullable(1, "Alice"), result)
     }
 
     @Test
     fun `decode nullable field with null`() {
-        val r = row("1", null)
+        val r = testRow("1", null)
         val result = serializer<WithNullable>().deserialize(RowDecoder(r))
         assertEquals(WithNullable(1, null), result)
     }
 
     @Test
     fun `null for non-nullable field throws`() {
-        val r = row(null, "Alice", "t")
+        val r = testRow(null, "Alice", "t")
         assertThrows<SerializationException> {
             serializer<Simple>().deserialize(RowDecoder(r))
         }
@@ -165,56 +149,56 @@ class RowDecoderTest {
 
     @Test
     fun `decode nested data class`() {
-        val r = row("1", "123 Main St", "Springfield")
+        val r = testRow("1", "123 Main St", "Springfield")
         val result = serializer<Nested>().deserialize(RowDecoder(r))
         assertEquals(Nested(1, Address("123 Main St", "Springfield")), result)
     }
 
     @Test
     fun `decode nullable nested with values`() {
-        val r = row("1", "123 Main St", "Springfield")
+        val r = testRow("1", "123 Main St", "Springfield")
         val result = serializer<WithNullableNested>().deserialize(RowDecoder(r))
         assertEquals(WithNullableNested(1, Address("123 Main St", "Springfield")), result)
     }
 
     @Test
     fun `decode nullable nested all null`() {
-        val r = row("1", null, null)
+        val r = testRow("1", null, null)
         val result = serializer<WithNullableNested>().deserialize(RowDecoder(r))
         assertEquals(WithNullableNested(1, null), result)
     }
 
     @Test
     fun `decode SqlJsonValue field`() {
-        val r = row("1", """{"source":"web","priority":5}""")
+        val r = testRow("1", """{"source":"web","priority":5}""")
         val result = serializer<WithJson>().deserialize(RowDecoder(r))
         assertEquals(WithJson(1, Meta("web", 5)), result)
     }
 
     @Test
     fun `decode nullable SqlJsonValue with value`() {
-        val r = row("1", """{"source":"api","priority":3}""")
+        val r = testRow("1", """{"source":"api","priority":3}""")
         val result = serializer<WithNullableJson>().deserialize(RowDecoder(r))
         assertEquals(WithNullableJson(1, Meta("api", 3)), result)
     }
 
     @Test
     fun `decode nullable SqlJsonValue with null`() {
-        val r = row("1", null)
+        val r = testRow("1", null)
         val result = serializer<WithNullableJson>().deserialize(RowDecoder(r))
         assertEquals(WithNullableJson(1, null), result)
     }
 
     @Test
     fun `decode enum`() {
-        val r = row("1", "GREEN")
+        val r = testRow("1", "GREEN")
         val result = serializer<WithEnum>().deserialize(RowDecoder(r))
         assertEquals(WithEnum(1, Color.GREEN), result)
     }
 
     @Test
     fun `unknown enum value throws`() {
-        val r = row("1", "PURPLE")
+        val r = testRow("1", "PURPLE")
         assertThrows<SerializationException> {
             serializer<WithEnum>().deserialize(RowDecoder(r))
         }
@@ -260,21 +244,21 @@ class RowDecoderTest {
 
     @Test
     fun `decode value class fields`() {
-        val r = row("42", "alice@x.com", "Alice")
+        val r = testRow("42", "alice@x.com", "Alice")
         val result = serializer<UserWithValueClasses>().deserialize(RowDecoder(r))
         assertEquals(UserWithValueClasses(UserId(42), Email("alice@x.com"), "Alice"), result)
     }
 
     @Test
     fun `decode nullable value class with value`() {
-        val r = row("7", "bob@y.org")
+        val r = testRow("7", "bob@y.org")
         val result = serializer<UserWithNullableValueClass>().deserialize(RowDecoder(r))
         assertEquals(UserWithNullableValueClass(UserId(7), Email("bob@y.org")), result)
     }
 
     @Test
     fun `decode nullable value class with null`() {
-        val r = row("7", null)
+        val r = testRow("7", null)
         val result = serializer<UserWithNullableValueClass>().deserialize(RowDecoder(r))
         assertEquals(UserWithNullableValueClass(UserId(7), null), result)
     }
@@ -283,7 +267,7 @@ class RowDecoderTest {
 
     @Test
     fun `decode deeply nested three levels`() {
-        val r = row("1", "123 Main St", "Springfield", "USA", "US")
+        val r = testRow("1", "123 Main St", "Springfield", "USA", "US")
         val result = serializer<DeeplyNested>().deserialize(RowDecoder(r))
         assertEquals(
             DeeplyNested(1, FullAddress("123 Main St", "Springfield", Country("USA", "US"))),
@@ -295,14 +279,14 @@ class RowDecoderTest {
 
     @Test
     fun `multiple nullable nested - both null`() {
-        val r = row("1", null, null, null, null)
+        val r = testRow("1", null, null, null, null)
         val result = serializer<TwoOptionalNested>().deserialize(RowDecoder(r))
         assertEquals(TwoOptionalNested(1, null, null), result)
     }
 
     @Test
     fun `multiple nullable nested - one null one present`() {
-        val r = row("1", null, null, "555-1234", "x100")
+        val r = testRow("1", null, null, "555-1234", "x100")
         val result = serializer<TwoOptionalNested>().deserialize(RowDecoder(r))
         assertEquals(TwoOptionalNested(1, null, Phone("555-1234", "x100")), result)
     }
@@ -311,7 +295,7 @@ class RowDecoderTest {
 
     @Test
     fun `unicode and special characters`() {
-        val r = row("1", "\uD83D\uDE00 hello \u4F60\u597D")
+        val r = testRow("1", "\uD83D\uDE00 hello \u4F60\u597D")
         val result = serializer<WithNullable>().deserialize(RowDecoder(r))
         assertEquals(WithNullable(1, "\uD83D\uDE00 hello \u4F60\u597D"), result)
     }
@@ -322,7 +306,7 @@ class RowDecoderTest {
 
     @Test
     fun `decode kotlinx datetime types`() {
-        val r = row("1", "2024-06-15", "14:30:00", "2024-06-15T14:30:00")
+        val r = testRow("1", "2024-06-15", "14:30:00", "2024-06-15T14:30:00")
         val result = serializer<WithDateTimeTypes>().deserialize(RowDecoder(r))
         assertEquals(
             WithDateTimeTypes(
@@ -337,14 +321,14 @@ class RowDecoderTest {
 
     @Test
     fun `decode LocalDateTime with space separator`() {
-        val r = row("1", "2024-06-15", "14:30:00", "2024-06-15 14:30:00")
+        val r = testRow("1", "2024-06-15", "14:30:00", "2024-06-15 14:30:00")
         val result = serializer<WithDateTimeTypes>().deserialize(RowDecoder(r))
         assertEquals(LocalDateTime(2024, 6, 15, 14, 30, 0), result.dateTime)
     }
 
     @Test
     fun `decode nullable kotlinx datetime with values`() {
-        val r = row("1", "2024-06-15", "14:30:00", "2024-06-15T14:30:00")
+        val r = testRow("1", "2024-06-15", "14:30:00", "2024-06-15T14:30:00")
         val result = serializer<WithNullableDateTime>().deserialize(RowDecoder(r))
         assertEquals(LocalDate(2024, 6, 15), result.date)
         assertEquals(LocalTime(14, 30, 0), result.time)
@@ -353,7 +337,7 @@ class RowDecoderTest {
 
     @Test
     fun `decode nullable kotlinx datetime with nulls`() {
-        val r = row("1", null, null, null)
+        val r = testRow("1", null, null, null)
         val result = serializer<WithNullableDateTime>().deserialize(RowDecoder(r))
         assertEquals(1, result.id)
         assertNull(result.date)
@@ -365,7 +349,7 @@ class RowDecoderTest {
 
     @Test
     fun `extreme numeric values`() {
-        val r = row(
+        val r = testRow(
             "true",
             "${Short.MAX_VALUE}",
             "${Int.MAX_VALUE}",
@@ -396,7 +380,7 @@ class RowDecoderTest {
         @Serializable
         data class IntHolder(val value: Int)
 
-        val r = row(null)
+        val r = testRow(null)
         assertThrows<SerializationException> {
             serializer<IntHolder>().deserialize(RowDecoder(r))
         }
@@ -407,7 +391,7 @@ class RowDecoderTest {
         @Serializable
         data class BoolHolder(val value: Boolean)
 
-        val r = row(null)
+        val r = testRow(null)
         assertThrows<SerializationException> {
             serializer<BoolHolder>().deserialize(RowDecoder(r))
         }
@@ -418,7 +402,7 @@ class RowDecoderTest {
         @Serializable
         data class StrHolder(val value: String)
 
-        val r = row(null)
+        val r = testRow(null)
         assertThrows<SerializationException> {
             serializer<StrHolder>().deserialize(RowDecoder(r))
         }
@@ -429,7 +413,7 @@ class RowDecoderTest {
         @Serializable
         data class CharHolder(val value: Char)
 
-        val r = row("A")
+        val r = testRow("A")
         val result = serializer<CharHolder>().deserialize(RowDecoder(r))
         assertEquals('A', result.value)
     }

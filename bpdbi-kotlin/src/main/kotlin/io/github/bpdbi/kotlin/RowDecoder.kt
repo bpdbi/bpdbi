@@ -15,7 +15,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 
-private val defaultJson = Json { ignoreUnknownKeys = true }
+@PublishedApi internal val defaultJson = Json { ignoreUnknownKeys = true }
 
 /**
  * A `kotlinx.serialization` [Decoder] that reads from bpdbi's [Row].

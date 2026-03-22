@@ -1,6 +1,6 @@
 package io.github.bpdbi.core;
 
-import io.github.bpdbi.core.impl.PgArrayParser;
+import io.github.bpdbi.core.impl.ColumnBuffer;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -23,9 +23,9 @@ import org.jspecify.annotations.Nullable;
  * A single row in a query result with lazy decoding.
  *
  * <p>Values are stored as raw bytes from the wire and decoded only when a typed getter is called
- * ({@link #getString(int)}, {@link #getInteger(int)}, etc.). Postgres returns binary-format rows
- * (decoded via {@link BinaryCodec}); MySQL returns text-format rows (decoded from UTF-8 strings).
- * Columns you never read are never decoded, keeping CPU overhead minimal.
+ * ({@link #getString(int)}, {@link #getInteger(int)}, etc.). Rows are returned in binary format and
+ * decoded via {@link BinaryCodec}. Columns you never read are never decoded, keeping CPU overhead
+ * minimal.
  *
  * <p>All getters accept either a column index ({@code int}, zero-based) or a column name ({@code
  * String}). NULL values return {@code null} — check with {@link #isNull(int)}.
@@ -38,17 +38,23 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Row {
 
+  private static final byte[][] EMPTY_VALUES = new byte[0][];
+
   private final ColumnDescriptor[] columns;
+
   // Cached column name → index map, built lazily on first by-name access.
   // Shared across all Row objects that reference the same ColumnDescriptor[].
-  private final @Nullable Map<String, Integer> columnNameIndex;
+  private final @NonNull Map<String, Integer> columnNameIndex;
+
   // Backing mode 1: per-row byte[][] (used by streaming and legacy path).
   // Inner byte[] elements are nullable (SQL NULL) but NullAway cannot model this on
-  // multi-dimensional primitive arrays, so null handling is done manually in accessors.
+  // multidimensional primitive arrays, so null handling is done manually in accessors.
   // Non-final to allow streaming reuse via resetForStreaming().
   private byte[][] values;
-  // Backing mode 2: column buffers + row index (used by buffered result sets)
-  private final ColumnData @Nullable [] buffers;
+
+  // Backing mode 2: column 'buffers' and 'rowIndex' (used by buffered result sets).
+  // Nullable because it is null when backed by mode 1 (the 'byte[][]').
+  private final ColumnBuffer @Nullable [] buffers;
   private final int rowIndex;
 
   private final @Nullable BinaryCodec binaryCodec;
@@ -106,7 +112,7 @@ public final class Row {
   /** Column-buffer-backed constructor. Row is a lightweight view into shared buffers. */
   public Row(
       @NonNull ColumnDescriptor[] columns,
-      @NonNull ColumnData[] buffers,
+      @NonNull ColumnBuffer[] buffers,
       int rowIndex,
       @Nullable BinaryCodec binaryCodec,
       @Nullable ColumnMapperRegistry mapperRegistry,
@@ -114,7 +120,7 @@ public final class Row {
       @NonNull Set<Class<?>> jsonTypes) {
     this.columns = columns;
     this.columnNameIndex = buildColumnNameIndex(columns);
-    this.values = new byte[0][];
+    this.values = EMPTY_VALUES;
     this.buffers = buffers;
     this.rowIndex = rowIndex;
     this.binaryCodec = binaryCodec;
@@ -130,7 +136,7 @@ public final class Row {
   public Row(
       @NonNull ColumnDescriptor[] columns,
       @NonNull Map<String, Integer> columnNameIndex,
-      @NonNull ColumnData[] buffers,
+      @NonNull ColumnBuffer[] buffers,
       int rowIndex,
       @Nullable BinaryCodec binaryCodec,
       @Nullable ColumnMapperRegistry mapperRegistry,
@@ -138,7 +144,7 @@ public final class Row {
       @NonNull Set<Class<?>> jsonTypes) {
     this.columns = columns;
     this.columnNameIndex = columnNameIndex;
-    this.values = new byte[0][];
+    this.values = EMPTY_VALUES;
     this.buffers = buffers;
     this.rowIndex = rowIndex;
     this.binaryCodec = binaryCodec;
@@ -170,8 +176,8 @@ public final class Row {
 
   // ---- Column value access ----
   // Performance note: column value access is the innermost hot loop for result-set processing.
-  // We read buffer, offset, and length in a single pass through readValue() to avoid 3 separate
-  // interface dispatches per column through the ColumnData interface. The buf/off/len triple is
+  // We read buffer, offset, and length in a single pass through readValue(). The buf/off/len triple
+  // is
   // stored in mutable thread-local-like fields (this class is not thread-safe by design) to avoid
   // allocating a holder object per access.
 
@@ -185,10 +191,11 @@ public final class Row {
    * Read buffer, offset, and length for a column into scratch fields in one pass. Returns false if
    * the value is SQL NULL. After a true return, vBuf/vOff/vLen hold the value coordinates.
    */
+  //noinspection BooleanMethodIsAlwaysInverted
   private boolean readValue(int index) {
-    ColumnData[] b = this.buffers;
+    ColumnBuffer[] b = this.buffers;
     if (b != null) {
-      ColumnData col = b[index];
+      ColumnBuffer col = b[index];
       if (col.isNull(rowIndex)) {
         return false;
       }
@@ -212,7 +219,7 @@ public final class Row {
    * if SQL NULL. Used by getBytes() and array getters that need the raw buffer.
    */
   private byte[] getBuffer(int index) {
-    ColumnData[] b = this.buffers;
+    ColumnBuffer[] b = this.buffers;
     if (b != null) {
       return b[index].buffer(rowIndex);
     }
@@ -220,7 +227,7 @@ public final class Row {
   }
 
   public boolean isNull(int index) {
-    ColumnData[] b = this.buffers;
+    ColumnBuffer[] b = this.buffers;
     if (b != null) {
       return b[index].isNull(rowIndex);
     }
@@ -229,6 +236,16 @@ public final class Row {
 
   public boolean isNull(@NonNull String columnName) {
     return isNull(columnIndex(columnName));
+  }
+
+  /** Parse text array via the codec if available, otherwise use the BinaryCodec default. */
+  private @NonNull List<String> parseTextArray(@NonNull String text) {
+    BinaryCodec bc = this.binaryCodec;
+    if (bc != null) {
+      return bc.parseTextArray(text);
+    }
+    // No codec — use the default implementation directly
+    return BinaryCodec.parseTextArrayDefault(text);
   }
 
   /** Returns the non-null binary codec. Only call when binaryCodec is known to be set. */
@@ -281,7 +298,7 @@ public final class Row {
     }
     BinaryCodec bc = this.binaryCodec;
     if (bc != null) {
-      // Fast path for text/varchar: in Postgres binary protocol the wire format for text-like
+      // Fast path for text/varchar: in binary protocol the wire format for text-like
       // types is raw UTF-8 bytes, identical to text protocol. Skipping the type OID switch in
       // decodeToString() avoids unnecessary dispatch for the most common getString() use case.
       if (columns[index].isTextLikeType()) {
@@ -427,8 +444,7 @@ public final class Row {
   }
 
   public @Nullable BigDecimal getBigDecimal(int index) {
-    return decode(
-        index, (c, buf, off, len) -> c.decodeNumeric(buf, off, len), parseAscii(BigDecimal::new));
+    return decode(index, BinaryCodec::decodeNumeric, parseAscii(BigDecimal::new));
   }
 
   public @Nullable BigDecimal getBigDecimal(@NonNull String columnName) {
@@ -469,8 +485,7 @@ public final class Row {
   // --- Date/time ---
 
   public @Nullable LocalDate getLocalDate(int index) {
-    return decode(
-        index, (c, buf, off, len) -> c.decodeDate(buf, off, len), parseText(LocalDate::parse));
+    return decode(index, BinaryCodec::decodeDate, parseText(LocalDate::parse));
   }
 
   public @Nullable LocalDate getLocalDate(@NonNull String columnName) {
@@ -478,8 +493,7 @@ public final class Row {
   }
 
   public @Nullable LocalTime getLocalTime(int index) {
-    return decode(
-        index, (c, buf, off, len) -> c.decodeTime(buf, off, len), parseText(LocalTime::parse));
+    return decode(index, BinaryCodec::decodeTime, parseText(LocalTime::parse));
   }
 
   public @Nullable LocalTime getLocalTime(@NonNull String columnName) {
@@ -487,10 +501,7 @@ public final class Row {
   }
 
   public @Nullable LocalDateTime getLocalDateTime(int index) {
-    return decode(
-        index,
-        (c, buf, off, len) -> c.decodeTimestamp(buf, off, len),
-        Row::parseTimestampFromBytes);
+    return decode(index, BinaryCodec::decodeTimestamp, Row::parseTimestampFromBytes);
   }
 
   public @Nullable LocalDateTime getLocalDateTime(@NonNull String columnName) {
@@ -498,10 +509,7 @@ public final class Row {
   }
 
   public @Nullable OffsetDateTime getOffsetDateTime(int index) {
-    return decode(
-        index,
-        (c, buf, off, len) -> c.decodeTimestamptz(buf, off, len),
-        Row::parseOffsetTimestampFromBytes);
+    return decode(index, BinaryCodec::decodeTimestamptz, Row::parseOffsetTimestampFromBytes);
   }
 
   public @Nullable OffsetDateTime getOffsetDateTime(@NonNull String columnName) {
@@ -530,10 +538,10 @@ public final class Row {
   public @Nullable OffsetTime getOffsetTime(int index) {
     return decode(
         index,
-        (c, buf, off, len) -> c.decodeTimetz(buf, off, len),
+        BinaryCodec::decodeTimetz,
         (buf, off, len) -> {
           String s = new String(buf, off, len, StandardCharsets.UTF_8);
-          // PG returns short offsets like +02 but Java requires +02:00
+          // Short offsets like +02 need padding to +02:00 for Java parsing
           int sLen = s.length();
           if (sLen >= 3) {
             char sign = s.charAt(sLen - 3);
@@ -554,8 +562,7 @@ public final class Row {
   // --- Other types ---
 
   public @Nullable UUID getUUID(int index) {
-    return decode(
-        index, (c, buf, off, len) -> c.decodeUuid(buf, off, len), parseText(UUID::fromString));
+    return decode(index, BinaryCodec::decodeUuid, parseText(UUID::fromString));
   }
 
   public @Nullable UUID getUUID(@NonNull String columnName) {
@@ -570,7 +577,7 @@ public final class Row {
     if (bc != null) {
       return bc.decodeBytes(vBuf, vOff, vLen);
     }
-    // Text format: PostgreSQL bytea hex format \x...
+    // Text format: bytea hex format \x...
     if (vLen >= 2 && vBuf[vOff] == '\\' && vBuf[vOff + 1] == 'x') {
       int hexLen = vLen - 2;
       byte[] result = new byte[hexLen / 2];
@@ -629,9 +636,9 @@ public final class Row {
   // --- Array getters ---
 
   /**
-   * Parse a Postgres array column into a list of strings. Uses the binary array decoder when
-   * available (parameterized queries), falls back to text-format parsing. Returns {@code null} if
-   * the column is SQL NULL.
+   * Parse an array column into a list of strings. Uses the binary array decoder when available,
+   * falls back to text-format parsing via the codec. Returns {@code null} if the column is SQL
+   * NULL.
    */
   public @Nullable List<String> getStringArray(int index) {
     if (isNull(index)) {
@@ -647,10 +654,10 @@ public final class Row {
         }
       }
     }
-    // Text format fallback — only parse PG array syntax {val1,val2,...}
+    // Text format fallback — parse array syntax
     String text = getString(index);
     if (text != null && !text.isEmpty() && text.charAt(0) == '{') {
-      return PgArrayParser.parse(text);
+      return parseTextArray(text);
     }
     return null;
   }
@@ -659,7 +666,7 @@ public final class Row {
     return getStringArray(columnIndex(columnName));
   }
 
-  /** Parse a Postgres integer array ({@code int[]}) column. */
+  /** Parse an integer array ({@code int[]}) column. */
   public @Nullable List<Integer> getIntegerArray(int index) {
     return getTypedArray(
         index, (buf, off, len) -> requireBinaryCodec().decodeInt4(buf, off), Integer::parseInt);
@@ -669,7 +676,7 @@ public final class Row {
     return getIntegerArray(columnIndex(columnName));
   }
 
-  /** Parse a Postgres bigint array ({@code bigint[]}) column. */
+  /** Parse a bigint array ({@code bigint[]}) column. */
   public @Nullable List<Long> getLongArray(int index) {
     return getTypedArray(
         index, (buf, off, len) -> requireBinaryCodec().decodeInt8(buf, off), Long::parseLong);
@@ -679,7 +686,7 @@ public final class Row {
     return getLongArray(columnIndex(columnName));
   }
 
-  /** Parse a Postgres double precision array ({@code float8[]}) column. */
+  /** Parse a double precision array ({@code float8[]}) column. */
   public @Nullable List<Double> getDoubleArray(int index) {
     return getTypedArray(
         index, (buf, off, len) -> requireBinaryCodec().decodeFloat8(buf, off), Double::parseDouble);
@@ -689,7 +696,7 @@ public final class Row {
     return getDoubleArray(columnIndex(columnName));
   }
 
-  /** Parse a Postgres real array ({@code float4[]}) column. */
+  /** Parse a real array ({@code float4[]}) column. */
   public @Nullable List<Float> getFloatArray(int index) {
     return getTypedArray(
         index, (buf, off, len) -> requireBinaryCodec().decodeFloat4(buf, off), Float::parseFloat);
@@ -699,7 +706,7 @@ public final class Row {
     return getFloatArray(columnIndex(columnName));
   }
 
-  /** Parse a Postgres smallint array ({@code int2[]}) column. */
+  /** Parse a smallint array ({@code int2[]}) column. */
   public @Nullable List<Short> getShortArray(int index) {
     return getTypedArray(
         index, (buf, off, len) -> requireBinaryCodec().decodeInt2(buf, off), Short::parseShort);
@@ -709,7 +716,7 @@ public final class Row {
     return getShortArray(columnIndex(columnName));
   }
 
-  /** Parse a Postgres boolean array ({@code boolean[]}) column. */
+  /** Parse a boolean array ({@code boolean[]}) column. */
   public @Nullable List<Boolean> getBooleanArray(int index) {
     return getTypedArray(
         index,
@@ -723,7 +730,7 @@ public final class Row {
 
   /**
    * Typed array getter helper. Binary path uses zero-copy element decoding directly from wire
-   * bytes. Text path parses PG array syntax and converts each element string.
+   * bytes. Text path parses array syntax via the codec and converts each element string.
    */
   private <T> @Nullable List<T> getTypedArray(
       int index,
@@ -742,10 +749,10 @@ public final class Row {
         }
       }
     }
-    // Text format fallback — only parse PG array syntax {val1,val2,...}
+    // Text format fallback — parse array syntax
     String text = getString(index);
     if (text != null && !text.isEmpty() && text.charAt(0) == '{') {
-      return PgArrayParser.parse(text).stream().map(textParser).toList();
+      return parseTextArray(text).stream().map(textParser).toList();
     }
     return null;
   }
@@ -849,7 +856,7 @@ public final class Row {
   }
 
   /**
-   * Parse a Postgres timestamp text representation directly from bytes without intermediate String
+   * Parse a timestamp text representation directly from bytes without intermediate String
    * allocation. Format: "2025-06-01 10:30:45" or "2025-06-01 10:30:45.123456".
    */
   private static LocalDateTime parseTimestampFromBytes(byte[] buf, int off, int len) {
@@ -870,8 +877,8 @@ public final class Row {
   }
 
   /**
-   * Parse a Postgres timestamptz text representation directly from bytes. Format: "2025-06-01
-   * 10:30:45+02" or "2025-06-01 10:30:45.123456+02:00".
+   * Parse a timestamptz text representation directly from bytes. Format: "2025-06-01 10:30:45+02"
+   * or "2025-06-01 10:30:45.123456+02:00".
    */
   private static OffsetDateTime parseOffsetTimestampFromBytes(byte[] buf, int off, int len) {
     // Find the timezone offset: scan backward for +/-

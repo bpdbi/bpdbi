@@ -9,20 +9,9 @@ indictment.
 ### What Vert.x SQL Client Does Instead
 
 Rather than wrapping JDBC, `vertx-sql-client` implements the **database wire protocol directly** for
-Postgres, MySQL and
-DB2:
-
-```
-JDBC approach:
-  Your Code → JDBC API → Driver → TCP → Postgre/MySQL/DB2
-
-Vert.x approach:
-  Your Code → Vert.x SQL Client → Postgre/MySQL/DB2
-```
-
-It speaks Postgres [wire protocol](https://www.postgresql.org/docs/current/protocol.html) (or
-MySQL's)
-directly over non-blocking sockets. No JDBC involved at any layer.
+Postgres, It speaks Postgres [wire protocol](https://www.postgresql.org/docs/current/protocol.html) directly over non-blocking sockets.
+No JDBC involved at any layer, and, as a result allows Postgres users to have control over the
+query pipeline.
 
 ```kotlin
 // Fully async, no threads parked

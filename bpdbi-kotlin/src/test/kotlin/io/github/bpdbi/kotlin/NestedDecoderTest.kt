@@ -1,7 +1,5 @@
 package io.github.bpdbi.kotlin
 
-import io.github.bpdbi.core.ColumnDescriptor
-import io.github.bpdbi.core.Row
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -81,17 +79,6 @@ class NestedDecoderTest {
     @Serializable
     data class WithShortList(val id: Int, val values: List<Short>)
 
-    // --- Helpers ---
-
-    private fun col(name: String) = ColumnDescriptor(name, 0, 0, 0, 0, 0)
-
-    private fun row(vararg values: String?): Row {
-        val columns = values.mapIndexed { i, _ -> col("col$i") }.toTypedArray()
-        val byteValues: Array<ByteArray?> =
-            values.map { it?.toByteArray(Charsets.UTF_8) }.toTypedArray()
-        @Suppress("UNCHECKED_CAST")
-        return Row(columns, byteValues as Array<ByteArray>, null, null)
-    }
 
     // =========================================================================
     // WORKING: Nested data classes
@@ -100,14 +87,14 @@ class NestedDecoderTest {
     @Test
     fun `nested data class - columns are consumed in order`() {
         // Columns: id, name, street, city
-        val r = row("1", "Alice", "123 Main St", "Springfield")
+        val r = testRow("1", "Alice", "123 Main St", "Springfield")
         val result = serializer<UserWithAddress>().deserialize(RowDecoder(r))
         assertEquals(UserWithAddress(1, "Alice", Address("123 Main St", "Springfield")), result)
     }
 
     @Test
     fun `nullable nested data class - present`() {
-        val r = row("1", "Alice", "123 Main St", "Springfield")
+        val r = testRow("1", "Alice", "123 Main St", "Springfield")
         val result = serializer<UserWithNullableAddress>().deserialize(RowDecoder(r))
         assertEquals(
             UserWithNullableAddress(1, "Alice", Address("123 Main St", "Springfield")),
@@ -117,7 +104,7 @@ class NestedDecoderTest {
 
     @Test
     fun `nullable nested data class - null when all columns null`() {
-        val r = row("1", "Alice", null, null)
+        val r = testRow("1", "Alice", null, null)
         val result = serializer<UserWithNullableAddress>().deserialize(RowDecoder(r))
         assertEquals(UserWithNullableAddress(1, "Alice", null), result)
     }
@@ -126,7 +113,7 @@ class NestedDecoderTest {
     fun `deeply nested - three levels`() {
         // Trip(id, origin: Location(name, coord: Coordinate(lat, lng)), destination: Location(name, coord: Coordinate(lat, lng)))
         // Columns: id, origin_name, origin_lat, origin_lng, dest_name, dest_lat, dest_lng
-        val r = row("1", "Home", "52.37", "4.89", "Office", "52.35", "4.91")
+        val r = testRow("1", "Home", "52.37", "4.89", "Office", "52.35", "4.91")
         val result = serializer<Trip>().deserialize(RowDecoder(r))
         assertEquals(
             Trip(
@@ -140,7 +127,7 @@ class NestedDecoderTest {
 
     @Test
     fun `multiple nullable nested - both present`() {
-        val r = row("1", "Main St", "CityA", "Work Ave", "CityB")
+        val r = testRow("1", "Main St", "CityA", "Work Ave", "CityB")
         val result = serializer<NestedInNullable>().deserialize(RowDecoder(r))
         assertEquals(
             NestedInNullable(1, Address("Main St", "CityA"), Address("Work Ave", "CityB")),
@@ -150,14 +137,14 @@ class NestedDecoderTest {
 
     @Test
     fun `multiple nullable nested - one null`() {
-        val r = row("1", null, null, "Work Ave", "CityB")
+        val r = testRow("1", null, null, "Work Ave", "CityB")
         val result = serializer<NestedInNullable>().deserialize(RowDecoder(r))
         assertEquals(NestedInNullable(1, null, Address("Work Ave", "CityB")), result)
     }
 
     @Test
     fun `multiple nullable nested - both null`() {
-        val r = row("1", null, null, null, null)
+        val r = testRow("1", null, null, null, null)
         val result = serializer<NestedInNullable>().deserialize(RowDecoder(r))
         assertEquals(NestedInNullable(1, null, null), result)
     }
@@ -168,14 +155,14 @@ class NestedDecoderTest {
 
     @Test
     fun `list of strings from JSON column`() {
-        val r = row("1", """["alpha","beta","gamma"]""")
+        val r = testRow("1", """["alpha","beta","gamma"]""")
         val result = serializer<WithJsonList>().deserialize(RowDecoder(r))
         assertEquals(WithJsonList(1, listOf("alpha", "beta", "gamma")), result)
     }
 
     @Test
     fun `list of nested objects from JSON column`() {
-        val r = row("1", """[{"name":"urgent","priority":1},{"name":"low","priority":5}]""")
+        val r = testRow("1", """[{"name":"urgent","priority":1},{"name":"low","priority":5}]""")
         val result = serializer<WithJsonObjectList>().deserialize(RowDecoder(r))
         assertEquals(
             WithJsonObjectList(1, listOf(Tag("urgent", 1), Tag("low", 5))),
@@ -189,14 +176,14 @@ class NestedDecoderTest {
 
     @Test
     fun `list of strings from PG array format`() {
-        val r = row("1", "{foo,bar,baz}")
+        val r = testRow("1", "{foo,bar,baz}")
         val result = serializer<WithStringList>().deserialize(RowDecoder(r))
         assertEquals(WithStringList(1, listOf("foo", "bar", "baz")), result)
     }
 
     @Test
     fun `list of strings from JSON array format`() {
-        val r = row("1", """["foo","bar","baz"]""")
+        val r = testRow("1", """["foo","bar","baz"]""")
         val result = serializer<WithStringList>().deserialize(RowDecoder(r))
         assertEquals(WithStringList(1, listOf("foo", "bar", "baz")), result)
     }
@@ -207,7 +194,7 @@ class NestedDecoderTest {
 
     @Test
     fun `list of ints from PG array`() {
-        val r = row("1", "{1,2,3}")
+        val r = testRow("1", "{1,2,3}")
         val result = serializer<WithIntList>().deserialize(RowDecoder(r))
         assertEquals(WithIntList(1, listOf(1, 2, 3)), result)
         // Verify they are actual Ints, not Strings
@@ -216,14 +203,14 @@ class NestedDecoderTest {
 
     @Test
     fun `list of ints from JSON array`() {
-        val r = row("1", "[1,2,3]")
+        val r = testRow("1", "[1,2,3]")
         val result = serializer<WithIntList>().deserialize(RowDecoder(r))
         assertEquals(WithIntList(1, listOf(1, 2, 3)), result)
     }
 
     @Test
     fun `list of longs from PG array`() {
-        val r = row("1", "{100,200,300}")
+        val r = testRow("1", "{100,200,300}")
         val result = serializer<WithLongList>().deserialize(RowDecoder(r))
         assertEquals(WithLongList(1, listOf(100L, 200L, 300L)), result)
         assertEquals(600L, result.numbers.sum())
@@ -231,49 +218,49 @@ class NestedDecoderTest {
 
     @Test
     fun `list of doubles from PG array`() {
-        val r = row("1", "{1.5,2.5,3.0}")
+        val r = testRow("1", "{1.5,2.5,3.0}")
         val result = serializer<WithDoubleList>().deserialize(RowDecoder(r))
         assertEquals(WithDoubleList(1, listOf(1.5, 2.5, 3.0)), result)
     }
 
     @Test
     fun `list of floats from PG array`() {
-        val r = row("1", "{1.5,2.5}")
+        val r = testRow("1", "{1.5,2.5}")
         val result = serializer<WithFloatList>().deserialize(RowDecoder(r))
         assertEquals(WithFloatList(1, listOf(1.5f, 2.5f)), result)
     }
 
     @Test
     fun `list of booleans from PG array`() {
-        val r = row("1", "{t,f,true,false}")
+        val r = testRow("1", "{t,f,true,false}")
         val result = serializer<WithBoolList>().deserialize(RowDecoder(r))
         assertEquals(WithBoolList(1, listOf(true, false, true, false)), result)
     }
 
     @Test
     fun `list of shorts from PG array`() {
-        val r = row("1", "{10,20,30}")
+        val r = testRow("1", "{10,20,30}")
         val result = serializer<WithShortList>().deserialize(RowDecoder(r))
         assertEquals(WithShortList(1, listOf(10.toShort(), 20.toShort(), 30.toShort())), result)
     }
 
     @Test
     fun `set of strings from PG array`() {
-        val r = row("1", "{foo,bar,baz}")
+        val r = testRow("1", "{foo,bar,baz}")
         val result = serializer<WithStringSet>().deserialize(RowDecoder(r))
         assertEquals(WithStringSet(1, setOf("foo", "bar", "baz")), result)
     }
 
     @Test
     fun `set of strings from JSON array`() {
-        val r = row("1", """["foo","bar","baz"]""")
+        val r = testRow("1", """["foo","bar","baz"]""")
         val result = serializer<WithStringSet>().deserialize(RowDecoder(r))
         assertEquals(WithStringSet(1, setOf("foo", "bar", "baz")), result)
     }
 
     @Test
     fun `empty PG array`() {
-        val r = row("1", "{}")
+        val r = testRow("1", "{}")
         val result = serializer<WithIntList>().deserialize(RowDecoder(r))
         assertEquals(WithIntList(1, emptyList()), result)
     }

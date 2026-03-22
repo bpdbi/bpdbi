@@ -24,9 +24,9 @@ import org.jspecify.annotations.Nullable;
  * }
  * }</pre>
  *
- * <p><b>Postgres array parameters:</b> Instead of IN-list expansion (which is incompatible with
- * prepared statements because the SQL changes with collection size), Postgres supports passing a
- * Collection or array as a single parameter and using {@code = ANY(:param)}:
+ * <p><b>Array parameters:</b> Instead of IN-list expansion (which is incompatible with prepared
+ * statements because the SQL changes with collection size), you can pass a Collection or array as a
+ * single parameter and use {@code = ANY(:param)}:
  *
  * <pre>{@code
  * try (var stmt = conn.prepare("SELECT * FROM users WHERE id = ANY(:ids::int[])")) {
@@ -34,8 +34,7 @@ import org.jspecify.annotations.Nullable;
  * }
  * }</pre>
  *
- * Collections and arrays are automatically formatted as Postgres array literals ({1,2,3}). This is
- * Postgres-only — MySQL does not support array types and will reject collection values.
+ * Collections and arrays are automatically formatted as array literals ({1,2,3}).
  */
 public interface PreparedStatement extends AutoCloseable {
 
@@ -46,16 +45,12 @@ public interface PreparedStatement extends AutoCloseable {
    * Execute the prepared statement with named parameters. The statement must have been prepared
    * with {@code :name} syntax.
    *
-   * <p><b>Postgres:</b> Collection and array values are automatically converted to Postgres array
-   * literals for use with {@code = ANY(:param::type[])} syntax.
-   *
-   * <p><b>MySQL:</b> Collection/array values are not supported — use {@link
-   * Connection#query(String, Map)} for queries with IN-list expansion.
+   * <p>Collection and array values are automatically converted to array literals for use with
+   * {@code = ANY(:param::type[])} syntax.
    *
    * @param params parameter values keyed by name
    * @throws IllegalStateException if the statement was not prepared with named parameters
-   * @throws IllegalArgumentException if a required parameter is missing, or (MySQL only) if a value
-   *     is a Collection/array
+   * @throws IllegalArgumentException if a required parameter is missing
    */
   @NonNull RowSet query(@NonNull Map<String, Object> params);
 

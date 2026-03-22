@@ -5,7 +5,7 @@ package io.github.bpdbi.pool;
  *
  * @see PoolConfig#maxWaitQueueSize()
  */
-@SuppressWarnings("serial")
+@SuppressWarnings("serial") // Would trigger a warning otherwise (and warnings break the build).
 public class PoolExhaustedException extends PoolException {
 
   public PoolExhaustedException(int maxWaitQueueSize) {

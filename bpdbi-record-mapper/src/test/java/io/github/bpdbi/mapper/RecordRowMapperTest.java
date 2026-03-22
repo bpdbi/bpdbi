@@ -511,7 +511,7 @@ class RecordRowMapperTest {
 
   @Test
   void dateTimeWithSpaceInsteadOfT() {
-    // MySQL returns "2024-06-15 14:30:00" (space instead of T).
+    // Some formats use a space instead of T (e.g. "2024-06-15 14:30:00").
     // Row.getLocalDateTime replaces space with T before parsing, so this succeeds.
     record DtRecord(LocalDateTime dateTime) {}
 

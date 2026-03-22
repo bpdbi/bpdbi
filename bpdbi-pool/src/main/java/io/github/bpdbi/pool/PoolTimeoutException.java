@@ -5,7 +5,7 @@ package io.github.bpdbi.pool;
  *
  * @see PoolConfig#connectionTimeoutMillis()
  */
-@SuppressWarnings("serial")
+@SuppressWarnings("serial") // Would trigger a warning otherwise (and warnings break the build).
 public class PoolTimeoutException extends PoolException {
 
   public PoolTimeoutException(long timeoutMillis) {

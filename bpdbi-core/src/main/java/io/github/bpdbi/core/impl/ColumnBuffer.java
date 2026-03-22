@@ -1,6 +1,5 @@
 package io.github.bpdbi.core.impl;
 
-import io.github.bpdbi.core.ColumnData;
 import java.io.IOException;
 import java.io.InputStream;
 import org.jspecify.annotations.NonNull;
@@ -16,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Not thread-safe. Designed for single-threaded append-then-read usage.
  */
-public final class ColumnBuffer implements ColumnData {
+public final class ColumnBuffer {
 
   private byte[] data;
   private int[] offsets;
@@ -24,6 +23,7 @@ public final class ColumnBuffer implements ColumnData {
   private int rowCount;
   private int dataPos;
   private long totalValueBytes; // tracks total non-null bytes appended for average calculation
+  private int nonNullCount;
 
   public ColumnBuffer(int initialRows, int estimatedAvgSize) {
     this.data = new byte[initialRows * estimatedAvgSize];
@@ -50,6 +50,7 @@ public final class ColumnBuffer implements ColumnData {
       System.arraycopy(value, 0, data, dataPos, value.length);
       dataPos += value.length;
       totalValueBytes += value.length;
+      nonNullCount++;
     }
     rowCount++;
   }
@@ -87,6 +88,7 @@ public final class ColumnBuffer implements ColumnData {
     }
     dataPos += length;
     totalValueBytes += length;
+    nonNullCount++;
     rowCount++;
   }
 
@@ -94,7 +96,6 @@ public final class ColumnBuffer implements ColumnData {
    * Get the raw bytes for a given row, or null if the value is SQL NULL. Returns a copy — the
    * caller owns the returned array.
    */
-  @Override
   public byte[] get(int rowIndex) {
     if (lengths[rowIndex] == -1) {
       return null;
@@ -105,12 +106,10 @@ public final class ColumnBuffer implements ColumnData {
     return result;
   }
 
-  @Override
   public boolean isNull(int rowIndex) {
     return lengths[rowIndex] == -1;
   }
 
-  @Override
   public byte[] buffer(int rowIndex) {
     if (lengths[rowIndex] == -1) {
       return null;
@@ -118,12 +117,10 @@ public final class ColumnBuffer implements ColumnData {
     return data;
   }
 
-  @Override
   public int offset(int rowIndex) {
     return offsets[rowIndex];
   }
 
-  @Override
   public int length(int rowIndex) {
     return lengths[rowIndex];
   }
@@ -137,12 +134,6 @@ public final class ColumnBuffer implements ColumnData {
    * appended. Useful for sizing future ColumnBuffers based on observed data.
    */
   public int averageValueSize() {
-    int nonNullCount = 0;
-    for (int i = 0; i < rowCount; i++) {
-      if (lengths[i] != -1) {
-        nonNullCount++;
-      }
-    }
     return nonNullCount == 0 ? 0 : (int) (totalValueBytes / nonNullCount);
   }
 
@@ -154,6 +145,7 @@ public final class ColumnBuffer implements ColumnData {
     rowCount = 0;
     dataPos = 0;
     totalValueBytes = 0;
+    nonNullCount = 0;
   }
 
   /**

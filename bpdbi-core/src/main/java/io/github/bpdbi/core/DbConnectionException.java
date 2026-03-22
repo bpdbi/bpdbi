@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
  * }
  * }</pre>
  */
-@SuppressWarnings("serial")
+@SuppressWarnings("serial") // serialVersionUID not needed; unchecked exceptions are not serialized
 public class DbConnectionException extends DbException {
 
   public DbConnectionException(@NonNull String message, @Nullable Throwable cause) {

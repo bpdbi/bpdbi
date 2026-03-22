@@ -9,7 +9,7 @@ A reflection-based `RowMapper` for [bpdbi](../) that automatically maps query re
 dependencies {
     implementation(platform("io.github.bpdbi:bpdbi-bom:0.1.0"))
     implementation("io.github.bpdbi:bpdbi-javabean-mapper")
-    implementation("io.github.bpdbi:bpdbi-pg-client")  // or bpdbi-mysql-client
+    implementation("io.github.bpdbi:bpdbi-pg-client")
 }
 ```
 

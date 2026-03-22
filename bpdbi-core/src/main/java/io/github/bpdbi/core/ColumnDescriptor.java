@@ -23,16 +23,15 @@ public record ColumnDescriptor(
     short typeSize,
     int typeModifier) {
 
-  // Known JSON type OIDs
-  public static final int OID_PG_JSON = 114;
-  public static final int OID_PG_JSONB = 3802;
-  public static final int OID_MYSQL_JSON = 245;
+  // Known JSON type OIDs (Postgres)
+  public static final int OID_JSON = 114;
+  public static final int OID_JSONB = 3802;
 
   public boolean isJsonType() {
-    return typeOID == OID_PG_JSON || typeOID == OID_PG_JSONB || typeOID == OID_MYSQL_JSON;
+    return typeOID == OID_JSON || typeOID == OID_JSONB;
   }
 
-  // Postgres OIDs for text-like types where binary wire format is identical to UTF-8 text
+  // OIDs for text-like types where binary wire format is identical to UTF-8 text
   private static final int OID_TEXT = 25;
   private static final int OID_VARCHAR = 1043;
   private static final int OID_BPCHAR = 1042;

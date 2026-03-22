@@ -8,18 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.bpdbi.core.BinderRegistry;
-import io.github.bpdbi.core.ColumnMapperRegistry;
 import io.github.bpdbi.core.Connection;
-import io.github.bpdbi.core.Cursor;
-import io.github.bpdbi.core.JsonMapper;
-import io.github.bpdbi.core.PreparedStatement;
-import io.github.bpdbi.core.Row;
-import io.github.bpdbi.core.RowSet;
-import io.github.bpdbi.core.RowStream;
+import io.github.bpdbi.core.test.AbstractStubConnection;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -31,115 +23,18 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
-import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 class ConnectionPoolTest {
 
   /** Minimal stub connection for testing pool mechanics (no real database). */
-  static class StubConnection implements Connection {
+  static class StubConnection extends AbstractStubConnection {
 
     boolean closed = false;
     final int id;
 
     StubConnection(int id) {
       this.id = id;
-    }
-
-    @Override
-    public @NonNull RowSet query(@NonNull String sql) {
-      return null;
-    }
-
-    @Override
-    public @NonNull RowSet query(@NonNull String sql, Object... params) {
-      return null;
-    }
-
-    @Override
-    public int enqueue(@NonNull String sql) {
-      return 0;
-    }
-
-    @Override
-    public int enqueue(@NonNull String sql, Object... params) {
-      return 0;
-    }
-
-    @Override
-    public @NonNull RowSet query(@NonNull String sql, @NonNull Map<String, Object> params) {
-      return null;
-    }
-
-    @Override
-    public int enqueue(@NonNull String sql, @NonNull Map<String, Object> params) {
-      return 0;
-    }
-
-    @Override
-    public @NonNull List<RowSet> flush() {
-      return List.of();
-    }
-
-    @Override
-    public @NonNull List<RowSet> executeMany(
-        @NonNull String sql, @NonNull List<Object[]> paramSets) {
-      return List.of();
-    }
-
-    @Override
-    public @NonNull PreparedStatement prepare(@NonNull String sql) {
-      return null;
-    }
-
-    @Override
-    public @NonNull Cursor cursor(@NonNull String sql, Object... params) {
-      return null;
-    }
-
-    @Override
-    public void ping() {}
-
-    @Override
-    public void queryStream(
-        @NonNull String sql, java.util.function.@NonNull Consumer<Row> consumer) {}
-
-    @Override
-    public void queryStream(
-        @NonNull String sql, Object[] params, java.util.function.@NonNull Consumer<Row> consumer) {}
-
-    @Override
-    public @NonNull RowStream stream(@NonNull String sql, Object... params) {
-      return new RowStream(() -> null, () -> {});
-    }
-
-    @Override
-    public @NonNull Map<String, String> parameters() {
-      return Map.of();
-    }
-
-    @Override
-    public void setBinderRegistry(@NonNull BinderRegistry registry) {}
-
-    @Override
-    public @NonNull BinderRegistry binderRegistry() {
-      return BinderRegistry.defaults();
-    }
-
-    @Override
-    public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {}
-
-    @Override
-    public @NonNull ColumnMapperRegistry mapperRegistry() {
-      return ColumnMapperRegistry.defaults();
-    }
-
-    @Override
-    public void setJsonMapper(JsonMapper mapper) {}
-
-    @Override
-    public JsonMapper jsonMapper() {
-      return null;
     }
 
     @Override
@@ -685,7 +580,6 @@ class ConnectionPoolTest {
     var errors = new CopyOnWriteArrayList<Throwable>();
 
     for (int i = 0; i < threadCount; i++) {
-      final int ti = i;
       Thread.startVirtualThread(
           () -> {
             try {

@@ -2,7 +2,6 @@ package io.github.bpdbi.core;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -28,7 +27,7 @@ public final class Transaction implements Connection {
 
   private final Connection conn;
   private final String savepointName; // null = root transaction, non-null = nested (savepoint)
-  private final AtomicInteger savepointCounter;
+  private final int[] savepointCounter; // shared mutable counter across nested transactions
   private boolean finished = false;
 
   /**
@@ -39,7 +38,7 @@ public final class Transaction implements Connection {
   public Transaction(@NonNull Connection conn) {
     this.conn = conn;
     this.savepointName = null;
-    this.savepointCounter = new AtomicInteger(0);
+    this.savepointCounter = new int[] {0};
     conn.enqueue("BEGIN");
   }
 
@@ -47,7 +46,7 @@ public final class Transaction implements Connection {
    * Create a nested transaction. SAVEPOINT is enqueued but not flushed — it will be pipelined with
    * the next query.
    */
-  private Transaction(Connection conn, String savepointName, AtomicInteger savepointCounter) {
+  private Transaction(Connection conn, String savepointName, int[] savepointCounter) {
     this.conn = conn;
     this.savepointName = savepointName;
     this.savepointCounter = savepointCounter;
@@ -119,7 +118,7 @@ public final class Transaction implements Connection {
   @Override
   public @NonNull Transaction begin() {
     checkNotFinished();
-    String sp = "_bpdbi_sp_" + savepointCounter.getAndIncrement();
+    String sp = "_bpdbi_sp_" + savepointCounter[0]++;
     return new Transaction(conn, sp, savepointCounter);
   }
 
@@ -149,7 +148,7 @@ public final class Transaction implements Connection {
 
   @Override
   public void queryStream(
-      @NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer) {
+      @NonNull String sql, @NonNull Object[] params, @NonNull Consumer<Row> consumer) {
     checkNotFinished();
     conn.queryStream(sql, params, consumer);
   }
@@ -210,11 +209,7 @@ public final class Transaction implements Connection {
    */
   public void rollback() {
     checkNotFinished();
-    if (isNested()) {
-      conn.query("ROLLBACK TO SAVEPOINT " + savepointName);
-    } else {
-      conn.query("ROLLBACK");
-    }
+    sendRollback();
     finished = true;
   }
 
@@ -222,16 +217,20 @@ public final class Transaction implements Connection {
   public void close() {
     if (!finished) {
       try {
-        if (isNested()) {
-          conn.query("ROLLBACK TO SAVEPOINT " + savepointName);
-        } else {
-          conn.query("ROLLBACK");
-        }
+        sendRollback();
       } catch (Exception e) {
         LOG.log(
             Level.FINE, "Failed to rollback transaction on close — connection may be broken", e);
       }
       finished = true;
+    }
+  }
+
+  private void sendRollback() {
+    if (isNested()) {
+      conn.query("ROLLBACK TO SAVEPOINT " + savepointName);
+    } else {
+      conn.query("ROLLBACK");
     }
   }
 

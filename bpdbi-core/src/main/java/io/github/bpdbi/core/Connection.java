@@ -24,8 +24,9 @@ import org.jspecify.annotations.Nullable;
  * composes naturally with immediate queries.
  *
  * <p><b>Not thread-safe.</b> Each connection must be used by a single thread at a time. Designed
- * for one-connection-per-(virtual-)thread usage with Java 21+ virtual threads. For concurrent
- * access, use a connection pool where each thread borrows its own connection.
+ * for one-connection-per-thread usage. Compatible with Java 21+ virtual threads. For concurrent
+ * access, use a connection pool (see our <b>bpdbi-pool</b> package) where each thread borrows its
+ * own connection.
  *
  * @see RowSet
  * @see Transaction
@@ -48,8 +49,8 @@ public interface Connection extends AutoCloseable {
    * Execute a parameterized SQL statement and return the result. Also flushes any previously
    * enqueued pipeline statements.
    *
-   * <p>Postgres uses {@code $1, $2, ...} placeholders; MySQL uses {@code ?}. Parameters are
-   * text-encoded via {@link BinderRegistry} before sending.
+   * <p>Uses {@code $1, $2, ...} positional placeholders. Parameters are text-encoded via {@link
+   * BinderRegistry} before sending.
    *
    * @param sql the SQL statement with positional placeholders
    * @param params the parameter values (null elements become SQL NULL)
@@ -103,14 +104,13 @@ public interface Connection extends AutoCloseable {
    * Flush all enqueued statements in a single network write, then read all responses. Returns one
    * {@link RowSet} per enqueued statement, in order.
    *
-   * <p><b>Error semantics in pipelined mode (Postgres):</b> When the batch contains only
-   * parameterized statements, Postgres executes them in a single pipeline with one Sync at the end.
-   * If statement K fails, the server skips all subsequent statements K+1..N per the Postgres wire
-   * protocol. Their RowSets will contain an error indicating they were skipped due to the earlier
-   * failure. This matches pgjdbc's and Vert.x's pipelining behavior.
+   * <p><b>Error semantics in pipelined mode:</b> When the batch contains only parameterized
+   * statements, they execute in a single pipeline. If statement K fails, the server skips all
+   * subsequent statements K+1..N. Their RowSets will contain an error indicating they were skipped
+   * due to the earlier failure.
    *
-   * <p>When the batch contains parameterless statements (simple protocol), statements execute
-   * sequentially and errors do not affect subsequent statements.
+   * <p>When the batch contains parameterless statements, statements execute sequentially and errors
+   * do not affect subsequent statements.
    *
    * @return a list of RowSet results, one per enqueued statement
    * @throws DbConnectionException if a network/transport error occurs
@@ -208,16 +208,14 @@ public interface Connection extends AutoCloseable {
   /**
    * Check that this connection is alive and usable.
    *
-   * <p>Postgres sends an empty query ({@code ""}), MySQL sends {@code COM_PING}. Both are
-   * lightweight server roundtrips. Throws {@link DbException} (typically {@link
-   * DbConnectionException}) if the connection is broken.
+   * <p>Sends a lightweight server roundtrip to verify the connection is usable. Throws {@link
+   * DbException} (typically {@link DbConnectionException}) if the connection is broken.
    */
   void ping();
 
   /**
-   * Server parameters received during connection startup. For Postgres, includes settings like
-   * {@code server_version}, {@code client_encoding}, etc. For MySQL, includes connection
-   * attributes.
+   * Server parameters received during connection startup. Includes settings like {@code
+   * server_version}, {@code client_encoding}, etc.
    *
    * @return an unmodifiable map of parameter name to value
    */
@@ -242,7 +240,7 @@ public interface Connection extends AutoCloseable {
    * @param consumer called once per result row
    * @throws DbException if the statement fails
    */
-  void queryStream(@NonNull String sql, @Nullable Object[] params, @NonNull Consumer<Row> consumer);
+  void queryStream(@NonNull String sql, @NonNull Object[] params, @NonNull Consumer<Row> consumer);
 
   /**
    * Return a closeable, iterable stream of rows. Must be closed after use (use try-with-resources)

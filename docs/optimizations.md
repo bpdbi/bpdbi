@@ -87,11 +87,10 @@ throwaway `String` per numeric column.
 
 ### Binary protocol for parameterized queries
 
-Parameterized queries use the binary wire protocol (Postgres Parse/Bind/Execute,
-MySQL COM_STMT_EXECUTE). Binary format is more compact on the wire and avoids
-text parsing overhead for numerics, timestamps, and UUIDs. Parameterless queries
-use the text/simple protocol for compatibility (MySQL rejects BEGIN/SET via
-prepared statements; Postgres extended protocol forbids multi-statement strings).
+All queries use the Postgres extended query protocol (Parse/Bind/Execute) with binary
+result format. Binary format is more compact on the wire and avoids text parsing
+overhead for numerics, timestamps, and UUIDs. Multi-statement strings are not
+supported since the extended protocol forbids them.
 
 `bpdbi-core/…/impl/BaseConnection.java` (class javadoc)
 
@@ -144,11 +143,11 @@ redundant copy for large payloads. `UnsyncBufferedInputStream` also provides a
 
 ### `TCP_NODELAY`
 
-Both `PgConnection` and `MysqlConnection` set `socket.setTcpNoDelay(true)` to
-disable Nagle's algorithm. Without this, the OS might delay small writes waiting
-for more data, adding artificial latency to pipelined roundtrips.
+`PgConnection` sets `socket.setTcpNoDelay(true)` to disable Nagle's algorithm.
+Without this, the OS might delay small writes waiting for more data, adding
+artificial latency to pipelined roundtrips.
 
-`PgConnection.java` line 133, `MysqlConnection.java` line 115
+`PgConnection.java` line 133
 
 ### Single TCP write for pipelined batches
 

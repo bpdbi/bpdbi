@@ -25,7 +25,7 @@ import kotlinx.serialization.serializer
 class KotlinRowMapper<T : Any>(
     private val deserializer: DeserializationStrategy<T>,
     private val serializersModule: SerializersModule = SerializersModule {},
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val json: Json = defaultJson
 ) : RowMapper<T> {
 
     override fun map(row: Row): T {
@@ -37,7 +37,7 @@ class KotlinRowMapper<T : Any>(
         /** Create a mapper for the given `@Serializable` type. */
         inline fun <reified T : Any> of(
             serializersModule: SerializersModule = SerializersModule {},
-            json: Json = Json { ignoreUnknownKeys = true }
+            json: Json = defaultJson
         ): KotlinRowMapper<T> = KotlinRowMapper(serializer<T>(), serializersModule, json)
     }
 }

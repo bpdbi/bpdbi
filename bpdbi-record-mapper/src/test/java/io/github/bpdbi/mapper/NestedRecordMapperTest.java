@@ -1,13 +1,12 @@
 package io.github.bpdbi.mapper;
 
+import static io.github.bpdbi.core.test.TestRows.row;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.bpdbi.core.ColumnDescriptor;
 import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowMapper;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -30,16 +29,6 @@ class NestedRecordRowMapperTest {
   record Trip(int id, Location origin, Location destination) {}
 
   record WithList(int id, List<String> tags) {}
-
-  private static Row row(String[] columnNames, String[] values) {
-    ColumnDescriptor[] cols = new ColumnDescriptor[columnNames.length];
-    byte[][] rawValues = new byte[values.length][];
-    for (int i = 0; i < columnNames.length; i++) {
-      cols[i] = new ColumnDescriptor(columnNames[i], 0, (short) 0, 0, (short) 0, 0);
-      rawValues[i] = values[i] == null ? null : values[i].getBytes(StandardCharsets.UTF_8);
-    }
-    return new Row(cols, rawValues, null, null);
-  }
 
   @Test
   void nestedRecordConsumesFlatColumns() {

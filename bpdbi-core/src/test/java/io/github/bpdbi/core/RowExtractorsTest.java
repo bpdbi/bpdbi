@@ -1,5 +1,6 @@
 package io.github.bpdbi.core;
 
+import static io.github.bpdbi.core.test.TestRows.col;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -9,10 +10,6 @@ import org.junit.jupiter.api.Test;
 
 /** Unit tests for RowExtractors. No database required. */
 class RowExtractorsTest {
-
-  private static ColumnDescriptor col(String name) {
-    return new ColumnDescriptor(name, 0, (short) 0, 0, (short) 0, 0);
-  }
 
   private Row textRow(String value) {
     ColumnDescriptor[] cols = {col("v")};

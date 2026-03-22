@@ -82,7 +82,8 @@ public final class BinderRegistry {
    * Convert a value to its SQL string representation using a qualified binder. Falls back to the
    * unqualified {@link #bind(Object)} if no qualified binder matches.
    */
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings(
+      "unchecked") // safe: qualifiedBinders are registered with matching QualifiedType<T> keys
   public <T> @Nullable String bind(@NonNull QualifiedType<T> qualifiedType, @Nullable T value) {
     if (value == null) {
       return null;
@@ -102,7 +103,7 @@ public final class BinderRegistry {
    * converted via {@link Object#toString()} as a fallback. Register explicit binders for custom
    * types to avoid relying on this fallback.
    */
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings("unchecked") // safe: binders are registered with matching Class<T> keys
   public @Nullable String bind(@Nullable Object value) {
     if (value == null) {
       return null;

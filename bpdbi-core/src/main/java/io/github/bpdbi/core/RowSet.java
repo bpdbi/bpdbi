@@ -56,10 +56,7 @@ public final class RowSet implements Iterable<Row> {
 
   private void checkError() {
     if (error != null) {
-      String msg = error.getMessage();
-      var ex = new DbException(error.severity(), error.sqlState(), msg != null ? msg : "", error);
-      ex.setSql(error.sql());
-      throw ex;
+      throw error;
     }
   }
 

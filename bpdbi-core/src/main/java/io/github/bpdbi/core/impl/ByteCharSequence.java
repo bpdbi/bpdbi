@@ -1,6 +1,7 @@
 package io.github.bpdbi.core.impl;
 
 import java.nio.charset.StandardCharsets;
+import org.jspecify.annotations.NonNull;
 
 /**
  * A {@link CharSequence} view over a region of a byte array, avoiding the copy that {@code new
@@ -61,7 +62,7 @@ public final class ByteCharSequence implements CharSequence {
   }
 
   @Override
-  public CharSequence subSequence(int start, int end) {
+  public @NonNull CharSequence subSequence(int start, int end) {
     if (ascii) {
       return new ByteCharSequence(buf, off + start, end - start);
     }
@@ -70,7 +71,7 @@ public final class ByteCharSequence implements CharSequence {
   }
 
   @Override
-  public String toString() {
+  public @NonNull String toString() {
     if (decoded == null) {
       decoded = new String(buf, off, len, StandardCharsets.UTF_8);
     }

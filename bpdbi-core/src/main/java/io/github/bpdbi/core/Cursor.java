@@ -19,7 +19,10 @@ import org.jspecify.annotations.NonNull;
  */
 public interface Cursor extends AutoCloseable {
 
-  /** Fetch the next batch of rows. */
+  /**
+   * Fetch the next batch of rows. The returned RowSet is only valid until the next call to {@code
+   * read()} — subsequent reads may reuse internal buffers, invalidating previous rows.
+   */
   @NonNull RowSet read(int count);
 
   /** Whether there are more rows to read. */

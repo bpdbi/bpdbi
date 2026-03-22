@@ -4,7 +4,7 @@ import java.net.InetAddress;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-/** A Postgres inet network address. */
+/** Postgres 'inet' network address. */
 public record Inet(@NonNull InetAddress address, @Nullable Integer netmask) {
 
   @Override

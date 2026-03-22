@@ -319,7 +319,7 @@ public final class ConnectionPool implements AutoCloseable {
   }
 
   private void detectLeaks() {
-    if (activeForLeakDetection == null || leakDetectionThresholdNanos <= 0) {
+    if (activeForLeakDetection == null) {
       return;
     }
     long now = System.nanoTime();
