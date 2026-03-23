@@ -280,6 +280,27 @@ public interface Connection extends AutoCloseable {
    */
   @NonNull RowStream stream(@NonNull String sql, @Nullable Object... params);
 
+  // --- Fluent builder ---
+
+  /**
+   * Create a fluent SQL builder for this connection. Use {@link SqlBuilder#bind(String, Object)} to
+   * add named parameters, then call a terminal method ({@link SqlBuilder#query()}, {@link
+   * SqlBuilder#enqueue()}, {@link SqlBuilder#stream()}) to execute.
+   *
+   * <pre>{@code
+   * conn.sql("SELECT * FROM users WHERE name = :name AND age > :age")
+   *     .bind("name", "Alice")
+   *     .bind("age", 30)
+   *     .query();
+   * }</pre>
+   *
+   * @param sql the SQL statement, optionally with {@code :name} placeholders
+   * @return a new builder for this statement
+   */
+  default @NonNull SqlBuilder sql(@NonNull String sql) {
+    return new SqlBuilder(this, sql);
+  }
+
   // --- Configuration ---
 
   /** Return the type registry used for encoding query parameters. */

@@ -1,26 +1,12 @@
 plugins {
-    `maven-publish`
-    signing
-    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
-    id("com.diffplug.spotless") version "7.0.4"
-    kotlin("jvm") version "2.1.20" apply false
-    kotlin("plugin.serialization") version "2.1.20" apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.vanniktech.maven.publish) apply false
+    alias(libs.plugins.spotless)
 }
 
 group = "io.github.bpdbi"
-version = "0.1.0-SNAPSHOT"
-
-nexusPublishing {
-    repositories {
-        sonatype {
-            nexusUrl = uri("https://s01.oss.sonatype.org/service/local/")
-            snapshotRepositoryUrl =
-                uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-            username = providers.environmentVariable("OSSRH_USERNAME")
-            password = providers.environmentVariable("OSSRH_PASSWORD")
-        }
-    }
-}
+version = "0.1.0"
 
 subprojects {
     group = rootProject.group
@@ -72,56 +58,42 @@ val publishedModules = setOf(
 
 subprojects {
     if (name in publishedModules) {
-        apply(plugin = "maven-publish")
-        apply(plugin = "signing")
+        apply(plugin = "com.vanniktech.maven.publish")
 
-        // Can't use the `java { }` shorthand here because that accessor is only
-        // available when the root project applies the `java` plugin — and we don't,
-        // to avoid the root producing an empty JAR. `the<>()` looks up the extension
-        // that the subproject's own `java` plugin registered.
-        the<JavaPluginExtension>().apply {
-            withJavadocJar()
-            withSourcesJar()
-        }
+        configure<com.vanniktech.maven.publish.MavenPublishBaseExtension> {
+            publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+            signAllPublications()
 
-        publishing {
-            publications {
-                create<MavenPublication>("mavenJava") {
-                    from(components["java"])
-
-                    pom {
-                        name = project.name
-                        description = "bpdbi — Blocking pipelined SQL client for Java 21+"
-                        url = "https://github.com/cies/bpdbi"
-                        licenses {
-                            license {
-                                name = "The Apache License, Version 2.0"
-                                url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
-                            }
-                        }
-                        developers {
-                            developer {
-                                id = "cies"
-                                name = "Cies Breijs"
-                                url = "https://github.com/cies"
-                            }
-                        }
-                        scm {
-                            connection = "scm:git:git://github.com/cies/bpdbi.git"
-                            developerConnection = "scm:git:ssh://github.com/cies/bpdbi.git"
-                            url = "https://github.com/cies/bpdbi"
-                        }
+            pom {
+                name = project.name
+                description = "Blocking pipelined SQL client for Postgres"
+                url = "https://github.com/bpdbi/bpdbi"
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
                     }
+                }
+                developers {
+                    developer {
+                        id = "cies"
+                        name = "Cies Breijs"
+                        url = "https://github.com/cies"
+                    }
+                }
+                scm {
+                    connection = "scm:git:git://github.com/bpdbi/bpdbi.git"
+                    developerConnection = "scm:git:ssh://github.com/bpdbi/bpdbi.git"
+                    url = "https://github.com/bpdbi/bpdbi"
                 }
             }
         }
 
-        signing {
-            val signingKey = providers.environmentVariable("GPG_SIGNING_KEY")
-            val signingPassword = providers.environmentVariable("GPG_SIGNING_PASSWORD")
-            useInMemoryPgpKeys(signingKey.orNull, signingPassword.orNull)
-            sign(publishing.publications["mavenJava"])
-            isRequired = !version.toString().endsWith("-SNAPSHOT")
+        // Signing is required for remote publishes but not for local
+        gradle.taskGraph.whenReady {
+            tasks.withType<Sign>().configureEach {
+                onlyIf { !gradle.taskGraph.hasTask(":${project.name}:publishToMavenLocal") }
+            }
         }
     }
 }

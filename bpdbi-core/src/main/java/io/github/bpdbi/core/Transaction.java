@@ -167,6 +167,12 @@ public final class Transaction implements Connection {
   }
 
   @Override
+  public @NonNull SqlBuilder sql(@NonNull String sql) {
+    checkNotFinished();
+    return conn.sql(sql);
+  }
+
+  @Override
   public @NonNull BinderRegistry binderRegistry() {
     return conn.binderRegistry();
   }

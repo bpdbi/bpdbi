@@ -2,10 +2,48 @@
 junit = "5.11.4"
 testcontainers = "1.20.4"
 jspecify = "1.0.0"
+vanniktech-maven-publish = "0.30.0"
+kotlin = "2.1.20"
+spotless = "7.0.4"
+scram = "3.1"
+kotlinx-serialization = "1.8.1"
+kotlinx-datetime = "0.6.2"
+jmh-gradle-plugin = "0.7.3"
+postgresql-jdbc = "42.7.5"
+hikaricp = "6.2.1"
+jdbi = "3.47.0"
+hibernate = "6.6.5.Final"
+vertx = "5.0.8"
+error-prone = "2.36.0"
+jmh = "1.37"
+slf4j = "2.0.16"
+
+[plugins]
+vanniktech-maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-maven-publish" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+jmh = { id = "me.champeau.jmh", version.ref = "jmh-gradle-plugin" }
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
+testcontainers-toxiproxy = { module = "org.testcontainers:toxiproxy", version.ref = "testcontainers" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
+scram-client = { module = "com.ongres.scram:scram-client", version.ref = "scram" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+postgresql-jdbc = { module = "org.postgresql:postgresql", version.ref = "postgresql-jdbc" }
+hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
+jdbi-core = { module = "org.jdbi:jdbi3-core", version.ref = "jdbi" }
+jdbi-kotlin = { module = "org.jdbi:jdbi3-kotlin", version.ref = "jdbi" }
+hibernate-core = { module = "org.hibernate.orm:hibernate-core", version.ref = "hibernate" }
+vertx-pg-client = { module = "io.vertx:vertx-pg-client", version.ref = "vertx" }
+vertx-codegen-api = { module = "io.vertx:vertx-codegen-api", version.ref = "vertx" }
+vertx-codegen-json = { module = "io.vertx:vertx-codegen-json", version.ref = "vertx" }
+error-prone-annotations = { module = "com.google.errorprone:error_prone_annotations", version.ref = "error-prone" }
+jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh" }
+jmh-generator-annprocess = { module = "org.openjdk.jmh:jmh-generator-annprocess", version.ref = "jmh" }
+slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }

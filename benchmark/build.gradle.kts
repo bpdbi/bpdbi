@@ -1,8 +1,8 @@
 plugins {
     java
-    kotlin("jvm")
-    kotlin("plugin.serialization")
-    id("me.champeau.jmh") version "0.7.3"
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.jmh)
 }
 
 dependencies {
@@ -14,28 +14,28 @@ dependencies {
     jmh(project(":bpdbi-javabean-mapper"))
     jmh(project(":bpdbi-pool"))
 
-    jmh("org.postgresql:postgresql:42.7.5")
-    jmh("com.zaxxer:HikariCP:6.2.1")
-    jmh("org.jdbi:jdbi3-core:3.47.0")
-    jmh("org.jdbi:jdbi3-kotlin:3.47.0")
+    jmh(libs.postgresql.jdbc)
+    jmh(libs.hikaricp)
+    jmh(libs.jdbi.core)
+    jmh(libs.jdbi.kotlin)
     jmh(kotlin("reflect"))
-    jmh("org.hibernate.orm:hibernate-core:6.6.5.Final")
+    jmh(libs.hibernate.core)
 
-    jmh("io.vertx:vertx-pg-client:5.0.8")
+    jmh(libs.vertx.pg.client)
     // Suppress "Cannot find annotation method" warnings from Vert.x codegen and Jdbi annotations
-    jmh("io.vertx:vertx-codegen-api:5.0.8")
-    jmh("io.vertx:vertx-codegen-json:5.0.8")
-    jmh("com.google.errorprone:error_prone_annotations:2.36.0")
+    jmh(libs.vertx.codegen.api)
+    jmh(libs.vertx.codegen.json)
+    jmh(libs.error.prone.annotations)
 
-    jmh("org.openjdk.jmh:jmh-core:1.37")
-    jmh("org.openjdk.jmh:jmh-generator-annprocess:1.37")
+    jmh(libs.jmh.core)
+    jmh(libs.jmh.generator.annprocess)
 
     jmh(libs.testcontainers.postgresql)
-    jmh("org.testcontainers:toxiproxy:${libs.versions.testcontainers.get()}")
+    jmh(libs.testcontainers.toxiproxy)
 
-    jmh("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    jmh(libs.kotlinx.serialization.json)
 
-    jmh("org.slf4j:slf4j-nop:2.0.16")
+    jmh(libs.slf4j.nop)
 }
 
 kotlin {

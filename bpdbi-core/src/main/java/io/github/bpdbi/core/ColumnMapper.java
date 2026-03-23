@@ -17,10 +17,10 @@ import org.jspecify.annotations.NonNull;
  * it knows natively (primitives, dates, UUID, etc.). Column mappers are the <em>fallback</em>: they
  * receive a text representation of the value and convert it to the requested type.
  *
- * <p>The text representation is produced by {@link BinaryCodec#decodeToString(byte[], int)}, which
- * uses the column's type OID to correctly decode binary bytes into text (e.g., a binary date
- * becomes {@code "2026-03-18"}). Since the binary codec already handles all standard types
- * directly, column mappers are primarily useful for:
+ * <p>The text representation is produced by {@link BinaryCodec#decodeToString(byte[], int, int,
+ * int)}, which uses the column's type OID to correctly decode binary bytes into text (e.g., a
+ * binary date becomes {@code "2026-03-18"}). Since the binary codec already handles all standard
+ * types directly, column mappers are primarily useful for:
  *
  * <ul>
  *   <li>User-defined wrapper types — e.g., a {@code Money} wrapper around {@code BigDecimal}

@@ -9,6 +9,7 @@ import io.github.bpdbi.core.PreparedStatement;
 import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowSet;
 import io.github.bpdbi.core.RowStream;
+import io.github.bpdbi.core.SqlBuilder;
 import io.github.bpdbi.core.Transaction;
 import java.util.List;
 import java.util.Map;
@@ -166,6 +167,11 @@ final class PooledConnection implements Connection {
   @Override
   public @NonNull RowStream stream(@NonNull String sql, @Nullable Object... params) {
     return delegate.stream(sql, params);
+  }
+
+  @Override
+  public @NonNull SqlBuilder sql(@NonNull String sql) {
+    return delegate.sql(sql);
   }
 
   @Override

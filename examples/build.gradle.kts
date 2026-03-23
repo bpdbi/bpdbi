@@ -9,6 +9,7 @@ dependencies {
 
 // Not a publishable artifact
 tasks.jar { enabled = false }
+tasks.javadoc { enabled = false }
 
 // Default main class — override with -PmainClass=...
 application {

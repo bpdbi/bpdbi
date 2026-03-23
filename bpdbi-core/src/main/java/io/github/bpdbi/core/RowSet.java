@@ -128,6 +128,18 @@ public final class RowSet implements Iterable<Row> {
     return mapper.map(first());
   }
 
+  /**
+   * Map the first row to a typed object, or return null if the result is empty.
+   *
+   * @param mapper the row mapper
+   * @param <T> the mapped type
+   * @return the mapped first row, or null if no rows
+   */
+  public <T> @Nullable T mapFirstOrNull(@NonNull RowMapper<T> mapper) {
+    Row row = firstOrNull();
+    return row != null ? mapper.map(row) : null;
+  }
+
   @Nullable
   public DbException getError() {
     return error;

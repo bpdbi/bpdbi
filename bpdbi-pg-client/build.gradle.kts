@@ -5,7 +5,7 @@ plugins {
 dependencies {
     api(project(":bpdbi-core"))
     compileOnly(libs.jspecify)
-    implementation("com.ongres.scram:scram-client:3.1")
+    implementation(libs.scram.client)
 
     testImplementation(testFixtures(project(":bpdbi-core")))
     testImplementation(platform(libs.junit.bom))

@@ -55,24 +55,24 @@ Over a network with 1ms latency, that means at least 4ms is saved on every HTTP 
 as you likely do more than just one query.
 
 Multiple db queries for which you **do** want results can also be combined in a pipeline.
-TODO: refer to the place that explains how we return placeholders/proxies/futures(?) in those cases.
+`enqueue()` returns an index, and `flush()` returns a `List<RowSet>` — see [Pipelining](#pipelining).
 
 ## Benchmarks
 
 JMH benchmarks with **1ms simulated network latency** per direction (2ms round-trip via Toxiproxy),
 JDK 21, single-threaded. All numbers are **ops/s** (higher is better).
 
-| Scenario | bpdbi | JDBC (pgjdbc) | Speedup |
-|---|--:|--:|---|
-| **Pipelined lookups** (10 SELECTs) | 310 | 18 | **17x** |
-| **Pipelined read-only tx** (BEGIN+SELECT+COMMIT) | 360 | 185 | **~2x** |
+| Scenario | bpdbi | JDBC (pgjdbc) |  Speedup |
+|---|--:|--:|---------:|
+| **Pipelined lookups** (10 SELECTs) | 310 | 18 |  **17x** |
+| **Pipelined read-only tx** (BEGIN+SELECT+COMMIT) | 360 | 185 |   **2x** |
 | **Pipelined inserts in tx** (10 INSERTs) | 116 | 18 | **6.5x** |
 | **Bulk insert** (100 rows) | 313 | 171 | **1.8x** |
 | **Cursor fetch** (1000 rows) | 281 | 30 | **9.3x** |
 | **Large value streaming** | 152 | 82 | **1.9x** |
-| Single row lookup | 370 | 370 | 1x |
-| Multi-row fetch (10 rows) | 358 | 358 | 1x |
-| Join query | 271 | 271 | 1x |
+| Single row lookup | 370 | 370 |       1x |
+| Multi-row fetch (10 rows) | 358 | 358 |       1x |
+| Join query | 271 | 271 |       1x |
 
 Anything that touches the network more than once — transactions, batches, sequential lookups —
 gets a **5-17x** speedup from pipelining. Single-query performance is at parity with raw pgjdbc:
@@ -149,8 +149,8 @@ These tests are straightforward to generate with AI assistance and catch schema 
 typos, and type errors at test time rather than compile time — with far less machinery.
 
 **Dependency minimalism** Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
-the Postgres JDBC driver (~1.1MB). It also provides named parameters,
-row mapping, and type binding commonly found in libraries like Jdbi (~1MB) or Spring Data JDBC (~
+the Postgres JDBC driver (&tilde;1.1MB). It also provides named parameters,
+row mapping, and type binding commonly found in libraries like Jdbi (&tilde;1MB) or Spring Data JDBC (&tilde;
 3MB). Bpdbi can be used without the JVM reflection API, some optional mapper modules do use it.
 Mind you that libraries like Hibernate and jOOQ weigh in at about 15MB as well.
 
@@ -310,6 +310,50 @@ before execution. They work with `query()`, `enqueue()`, and `prepare()`. The `:
 (e.g. `$1::int`) is correctly handled and not treated as a named parameter.
 
 Collections and arrays are automatically expanded — see [IN-list Expansion](#in-list-expansion).
+
+### Fluent Parameter Binding
+
+For queries with many named parameters, the fluent `sql()` builder is more readable
+than constructing a `Map`:
+
+```java
+List<User> users = conn.sql("SELECT * FROM users WHERE name = :name AND age > :age")
+    .bind("name", "Alice")
+    .bind("age", 30)
+    .mapTo(userMapper);
+
+// Pipelining with fluent binding
+int idx = conn.sql("INSERT INTO log (msg, level) VALUES (:msg, :level)")
+    .bind("msg", "hello")
+    .bind("level", "INFO")
+    .enqueue();
+List<RowSet> results = conn.flush();
+
+// Streaming
+conn.sql("SELECT * FROM big_table WHERE status = :status")
+    .bind("status", "active")
+    .queryStream(row -> process(row));
+```
+
+<details><summary>Kotlin equivalent</summary>
+
+```kotlin
+val users = conn.sql("SELECT * FROM users WHERE name = :name AND age > :age")
+    .bind("name", "Alice")
+    .bind("age", 30)
+    .mapTo(userMapper)
+
+// With kotlinx.serialization
+val user = conn.sql("SELECT id, name, email FROM users WHERE id = :id")
+    .bind("id", 42)
+    .query()
+    .deserializeFirstOrNull<User>()
+```
+
+</details>
+
+The builder supports all execution modes: `query()`, `enqueue()`, `stream()`, `queryStream()`,
+and convenience methods `mapTo()`, `mapFirst()`, `mapFirstOrNull()`.
 
 ### Pipelining
 
@@ -683,7 +727,7 @@ few cases where streaming doesn't fit.
 **Why the performance difference?** Streaming reads all rows from a single server response — one
 network round-trip for the entire result. Cursors issue a `FETCH <n>` command per batch, each
 requiring its own round-trip. With 1ms network latency and a fetch size of 100, reading 1000 rows
-via a cursor adds ~20ms of round-trip overhead (10 fetches x 2ms) that streaming avoids entirely.
+via a cursor adds &tilde;20ms of round-trip overhead (10 fetches x 2ms) that streaming avoids entirely.
 In benchmarks, streaming is roughly **8x faster** than cursors for the same 1000-row result.
 
 For most workloads — ETL pipelines, report generation, data export — streaming is the right choice.
@@ -1231,8 +1275,9 @@ Early development. Not yet published to Maven Central — the dependency coordin
 ## Todo
 
 * Double check we have all kotlin's time types implemented
-* Consider abstracting over parameter injection syntax: may be a bad idea (what
-  does Jdbi do?)
+* Look into in-list expansion (it is almost never a good idea, as it breaks preparing: right?)
+* Can tx be made more ergonomic? (see Jdbi)
+* Should parameter binding be more ergonomic? (see Jdbi)
 * Document how parameter binding is sometimes binary and sometimes text-based: allow extensions on both.
 * Publish to Maven Central
 
