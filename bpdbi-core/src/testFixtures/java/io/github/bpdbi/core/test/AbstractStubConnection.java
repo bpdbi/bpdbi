@@ -62,6 +62,12 @@ public abstract class AbstractStubConnection implements Connection {
   }
 
   @Override
+  public @NonNull List<RowSet> executeManyNamed(
+      @NonNull String sql, @NonNull List<Map<String, Object>> paramSets) {
+    return List.of();
+  }
+
+  @Override
   public @NonNull PreparedStatement prepare(@NonNull String sql) {
     throw new UnsupportedOperationException();
   }

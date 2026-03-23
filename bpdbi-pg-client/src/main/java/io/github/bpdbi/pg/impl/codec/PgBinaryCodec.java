@@ -1,6 +1,7 @@
 package io.github.bpdbi.pg.impl.codec;
 
 import io.github.bpdbi.core.BinaryCodec;
+import io.github.bpdbi.core.impl.ByteBuffer;
 import io.github.bpdbi.pg.data.BitString;
 import io.github.bpdbi.pg.data.Box;
 import io.github.bpdbi.pg.data.Cidr;
@@ -15,8 +16,8 @@ import io.github.bpdbi.pg.data.Money;
 import io.github.bpdbi.pg.data.Path;
 import io.github.bpdbi.pg.data.Point;
 import io.github.bpdbi.pg.data.Polygon;
-import io.github.bpdbi.pg.impl.PgArrayParser;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -35,7 +36,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -50,8 +50,11 @@ public final class PgBinaryCodec implements BinaryCodec {
   private static final int NUMERIC_POS = 0x0000;
   private static final int NUMERIC_NEG = 0x4000;
   private static final int NUMERIC_NAN = 0xC000;
-
-  private static final int[] DIGIT_DIVISORS = {1000, 100, 10, 1};
+  private static final int NUMERIC_PINF = 0xD000;
+  private static final int NUMERIC_NINF = 0xF000;
+  private static final int NUMERIC_DSCALE_MASK = 0x3FFF;
+  private static final BigInteger BI_TEN_THOUSAND = BigInteger.valueOf(10000);
+  private static final int[] INT_TEN_POWERS = {1, 10, 100, 1000, 10000};
 
   private static final char[] HEX = "0123456789abcdef".toCharArray();
 
@@ -67,18 +70,8 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public boolean decodeBool(byte @NonNull [] value) {
-    return decodeBool(value, 0);
-  }
-
-  @Override
   public short decodeInt2(byte @NonNull [] buf, int offset) {
     return (short) decodeInt2At(buf, offset);
-  }
-
-  @Override
-  public short decodeInt2(byte @NonNull [] value) {
-    return decodeInt2(value, 0);
   }
 
   @Override
@@ -87,18 +80,8 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public int decodeInt4(byte @NonNull [] value) {
-    return decodeInt4(value, 0);
-  }
-
-  @Override
   public long decodeInt8(byte @NonNull [] buf, int offset) {
     return decodeInt8At(buf, offset);
-  }
-
-  @Override
-  public long decodeInt8(byte @NonNull [] value) {
-    return decodeInt8(value, 0);
   }
 
   @Override
@@ -107,18 +90,8 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public float decodeFloat4(byte @NonNull [] value) {
-    return decodeFloat4(value, 0);
-  }
-
-  @Override
   public double decodeFloat8(byte @NonNull [] buf, int offset) {
     return Double.longBitsToDouble(decodeInt8At(buf, offset));
-  }
-
-  @Override
-  public double decodeFloat8(byte @NonNull [] value) {
-    return decodeFloat8(value, 0);
   }
 
   @Override
@@ -127,20 +100,10 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public @NonNull String decodeString(byte @NonNull [] value) {
-    return decodeString(value, 0, value.length);
-  }
-
-  @Override
   public @NonNull UUID decodeUuid(byte @NonNull [] buf, int offset, int length) {
     long msb = decodeInt8At(buf, offset);
     long lsb = decodeInt8At(buf, offset + 8);
     return new UUID(msb, lsb);
-  }
-
-  @Override
-  public @NonNull UUID decodeUuid(byte @NonNull [] value) {
-    return decodeUuid(value, 0, value.length);
   }
 
   @Override
@@ -156,19 +119,9 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public @NonNull LocalDate decodeDate(byte @NonNull [] value) {
-    return decodeDate(value, 0, value.length);
-  }
-
-  @Override
   public @NonNull LocalTime decodeTime(byte @NonNull [] buf, int offset, int length) {
     long micros = decodeInt8At(buf, offset);
     return LocalTime.ofNanoOfDay(micros * 1000);
-  }
-
-  @Override
-  public @NonNull LocalTime decodeTime(byte @NonNull [] value) {
-    return decodeTime(value, 0, value.length);
   }
 
   @Override
@@ -184,11 +137,6 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public @NonNull LocalDateTime decodeTimestamp(byte @NonNull [] value) {
-    return decodeTimestamp(value, 0, value.length);
-  }
-
-  @Override
   public @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] buf, int offset, int length) {
     LocalDateTime ldt = decodeTimestamp(buf, offset, length);
     if (ldt == LocalDateTime.MAX) {
@@ -201,81 +149,185 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] value) {
-    return decodeTimestamptz(value, 0, value.length);
-  }
-
-  @Override
-  public byte @NonNull [] decodeBytes(byte @NonNull [] value) {
-    return value;
-  }
-
-  @Override
   public @NonNull BigDecimal decodeNumeric(byte @NonNull [] buf, int offset, int length) {
-    int nDigits = decodeInt2At(buf, offset);
+    int nDigits = decodeInt2At(buf, offset) & 0xFFFF;
     int weight = (short) decodeInt2At(buf, offset + 2);
     int sign = decodeInt2At(buf, offset + 4);
     int dScale = decodeInt2At(buf, offset + 6);
 
-    if (sign == NUMERIC_NAN) {
-      throw new ArithmeticException("Postgres NUMERIC value is NaN");
+    switch (sign) {
+      case NUMERIC_POS, NUMERIC_NEG -> {}
+      case NUMERIC_NAN -> throw new ArithmeticException("Postgres NUMERIC value is NaN");
+      case NUMERIC_PINF ->
+          throw new ArithmeticException("Postgres NUMERIC value is positive infinity");
+      case NUMERIC_NINF ->
+          throw new ArithmeticException("Postgres NUMERIC value is negative infinity");
+      default ->
+          throw new IllegalArgumentException(
+              "Invalid sign in NUMERIC value: 0x" + Integer.toHexString(sign));
     }
+
+    if ((dScale & NUMERIC_DSCALE_MASK) != dScale) {
+      throw new IllegalArgumentException("Invalid scale in NUMERIC value: " + dScale);
+    }
+
     if (nDigits == 0) {
       return BigDecimal.ZERO.setScale(dScale, RoundingMode.UNNECESSARY);
     }
 
-    // Build the unscaled value using long arithmetic, promoting to BigInteger only if needed.
-    // Each Postgres digit is base-10000.
+    int idx = offset + 8;
+    short d = (short) decodeInt2At(buf, idx);
 
-    // Fast path: try staying in long (up to 4 base-10000 digits = 16 decimal digits)
-    if (nDigits <= 4) {
-      long unscaled = 0;
-      for (int i = 0; i < nDigits; i++) {
-        int d = decodeInt2At(buf, offset + 8 + i * 2);
-        unscaled = unscaled * 10000 + d;
+    // --- Path 1: absolute value < 1 (weight < 0) ---
+    if (weight < 0) {
+      int effectiveScale = dScale;
+      weight++;
+      if (weight < 0) {
+        effectiveScale += 4 * weight;
       }
-      // The raw scale from digit positions: each digit past weight represents 4 decimal places
-      int rawScale = (nDigits - weight - 1) * 4;
-      // Adjust to target dScale by multiplying or dividing by powers of 10
-      if (rawScale < dScale) {
-        int shift = dScale - rawScale;
-        for (int i = 0; i < shift; i++) {
-          unscaled *= 10;
+
+      int i = 1;
+      for (; i < nDigits && d == 0; i++) {
+        effectiveScale -= 4;
+        idx += 2;
+        d = (short) decodeInt2At(buf, idx);
+      }
+
+      if (effectiveScale >= 4) {
+        effectiveScale -= 4;
+      } else {
+        d = (short) (d / INT_TEN_POWERS[4 - effectiveScale]);
+        effectiveScale = 0;
+      }
+
+      BigInteger unscaledBI = null;
+      long unscaledInt = d;
+      for (; i < nDigits; i++) {
+        if (i == 4 && effectiveScale > 2) {
+          unscaledBI = BigInteger.valueOf(unscaledInt);
         }
-      } else if (rawScale > dScale) {
-        int shift = rawScale - dScale;
-        for (int i = 0; i < shift; i++) {
-          unscaled /= 10;
+        idx += 2;
+        d = (short) decodeInt2At(buf, idx);
+        if (effectiveScale >= 4) {
+          if (unscaledBI == null) {
+            unscaledInt *= 10000;
+          } else {
+            unscaledBI = unscaledBI.multiply(BI_TEN_THOUSAND);
+          }
+          effectiveScale -= 4;
+        } else {
+          if (unscaledBI == null) {
+            unscaledInt *= INT_TEN_POWERS[effectiveScale];
+          } else {
+            unscaledBI = unscaledBI.multiply(BigInteger.TEN.pow(effectiveScale));
+          }
+          d = (short) (d / INT_TEN_POWERS[4 - effectiveScale]);
+          effectiveScale = 0;
         }
+        if (unscaledBI == null) {
+          unscaledInt += d;
+        } else if (d != 0) {
+          unscaledBI = unscaledBI.add(BigInteger.valueOf(d));
+        }
+      }
+
+      if (unscaledBI == null) {
+        unscaledBI = BigInteger.valueOf(unscaledInt);
+      }
+      if (effectiveScale > 0) {
+        unscaledBI = unscaledBI.multiply(BigInteger.TEN.pow(effectiveScale));
       }
       if (sign == NUMERIC_NEG) {
-        unscaled = -unscaled;
+        unscaledBI = unscaledBI.negate();
       }
-      return BigDecimal.valueOf(unscaled, dScale);
+      return new BigDecimal(unscaledBI, dScale);
     }
 
-    // Slow path: use BigInteger for large numbers
-    java.math.BigInteger unscaled = java.math.BigInteger.ZERO;
-    java.math.BigInteger base = java.math.BigInteger.valueOf(10000);
-    for (int i = 0; i < nDigits; i++) {
-      int d = decodeInt2At(buf, offset + 8 + i * 2);
-      unscaled = unscaled.multiply(base).add(java.math.BigInteger.valueOf(d));
+    // --- Path 2: integer (scale == 0) ---
+    if (dScale == 0) {
+      BigInteger unscaledBI = null;
+      long unscaledInt = d;
+      for (int i = 1; i < nDigits; i++) {
+        if (i == 4) {
+          unscaledBI = BigInteger.valueOf(unscaledInt);
+        }
+        idx += 2;
+        d = (short) decodeInt2At(buf, idx);
+        if (unscaledBI == null) {
+          unscaledInt = unscaledInt * 10000 + d;
+        } else {
+          unscaledBI = unscaledBI.multiply(BI_TEN_THOUSAND);
+          if (d != 0) {
+            unscaledBI = unscaledBI.add(BigInteger.valueOf(d));
+          }
+        }
+      }
+      if (unscaledBI == null) {
+        unscaledBI = BigInteger.valueOf(unscaledInt);
+      }
+      if (sign == NUMERIC_NEG) {
+        unscaledBI = unscaledBI.negate();
+      }
+      int bigDecScale = (nDigits - (weight + 1)) * 4;
+      return bigDecScale == 0
+          ? new BigDecimal(unscaledBI)
+          : new BigDecimal(unscaledBI, bigDecScale).setScale(0);
     }
-    int rawScale = (nDigits - weight - 1) * 4;
-    if (rawScale < dScale) {
-      unscaled = unscaled.multiply(java.math.BigInteger.TEN.pow(dScale - rawScale));
-    } else if (rawScale > dScale) {
-      unscaled = unscaled.divide(java.math.BigInteger.TEN.pow(rawScale - dScale));
+
+    // --- Path 3: general case (has both integer and fractional parts) ---
+    BigInteger unscaledBI = null;
+    long unscaledInt = d;
+    int effectiveWeight = weight;
+    int effectiveScale = dScale;
+    for (int i = 1; i < nDigits; i++) {
+      if (i == 4) {
+        unscaledBI = BigInteger.valueOf(unscaledInt);
+      }
+      idx += 2;
+      d = (short) decodeInt2At(buf, idx);
+      if (effectiveWeight > 0) {
+        effectiveWeight--;
+        if (unscaledBI == null) {
+          unscaledInt *= 10000;
+        } else {
+          unscaledBI = unscaledBI.multiply(BI_TEN_THOUSAND);
+        }
+      } else if (effectiveScale >= 4) {
+        effectiveScale -= 4;
+        if (unscaledBI == null) {
+          unscaledInt *= 10000;
+        } else {
+          unscaledBI = unscaledBI.multiply(BI_TEN_THOUSAND);
+        }
+      } else {
+        if (unscaledBI == null) {
+          unscaledInt *= INT_TEN_POWERS[effectiveScale];
+        } else {
+          unscaledBI = unscaledBI.multiply(BigInteger.TEN.pow(effectiveScale));
+        }
+        d = (short) (d / INT_TEN_POWERS[4 - effectiveScale]);
+        effectiveScale = 0;
+      }
+      if (unscaledBI == null) {
+        unscaledInt += d;
+      } else if (d != 0) {
+        unscaledBI = unscaledBI.add(BigInteger.valueOf(d));
+      }
+    }
+
+    if (unscaledBI == null) {
+      unscaledBI = BigInteger.valueOf(unscaledInt);
+    }
+    if (effectiveWeight > 0) {
+      unscaledBI = unscaledBI.multiply(BigInteger.TEN.pow(effectiveWeight * 4));
+    }
+    if (effectiveScale > 0) {
+      unscaledBI = unscaledBI.multiply(BigInteger.TEN.pow(effectiveScale));
     }
     if (sign == NUMERIC_NEG) {
-      unscaled = unscaled.negate();
+      unscaledBI = unscaledBI.negate();
     }
-    return new BigDecimal(unscaled, dScale);
-  }
-
-  @Override
-  public @NonNull BigDecimal decodeNumeric(byte @NonNull [] value) {
-    return decodeNumeric(value, 0, value.length);
+    return new BigDecimal(unscaledBI, dScale);
   }
 
   @Override
@@ -284,11 +336,6 @@ public final class PgBinaryCodec implements BinaryCodec {
       return new String(buf, offset + 1, length - 1, StandardCharsets.UTF_8);
     }
     return new String(buf, offset, length, StandardCharsets.UTF_8);
-  }
-
-  @Override
-  public @NonNull String decodeJson(byte @NonNull [] value, int typeOID) {
-    return decodeJson(value, 0, value.length, typeOID);
   }
 
   // =====================================================================
@@ -303,11 +350,7 @@ public final class PgBinaryCodec implements BinaryCodec {
         LocalTime.ofNanoOfDay(micros * 1000), ZoneOffset.ofTotalSeconds(offsetSeconds));
   }
 
-  @Override
-  public @NonNull OffsetTime decodeTimetz(byte @NonNull [] value) {
-    return decodeTimetz(value, 0, value.length);
-  }
-
+  /** Used by tests only (round-trip verification). */
   public static byte @NonNull [] encodeTimetz(@NonNull OffsetTime value) {
     byte[] result = new byte[12];
     long micros = value.toLocalTime().getLong(ChronoField.MICRO_OF_DAY);
@@ -317,7 +360,8 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   // =====================================================================
-  // Geometric types — ported from Vert.x DataTypeCodec
+  // Geometric types — ported from Vert.x DataTypeCodec.
+  // Encode methods in this section are used by tests only (round-trip verification).
   // =====================================================================
 
   public @NonNull Point decodePoint(byte @NonNull [] value) {
@@ -486,7 +530,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   // =====================================================================
 
   public @NonNull Money decodeMoney(byte @NonNull [] value) {
-    long cents = decodeInt8(value);
+    long cents = decodeInt8(value, 0);
     return new Money(BigDecimal.valueOf(cents, 2));
   }
 
@@ -512,7 +556,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   public static byte @NonNull [] encodeInet(@NonNull Inet value) {
-    return encodeInetOrCidrToBytes(value.address(), value.netmask(), InetOrCidr.Inet);
+    return encodeInetOrCidrToBytes(value.address(), value.netmask(), true);
   }
 
   public @NonNull Cidr decodeCidr(byte @NonNull [] value) {
@@ -529,7 +573,7 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   public static byte @NonNull [] encodeCidr(@NonNull Cidr value) {
-    return encodeInetOrCidrToBytes(value.address(), value.netmask(), InetOrCidr.Cidr);
+    return encodeInetOrCidrToBytes(value.address(), value.netmask(), false);
   }
 
   private static @NonNull InetAddress decodeInetAddress(byte @NonNull [] value, String typeName) {
@@ -543,13 +587,8 @@ public final class PgBinaryCodec implements BinaryCodec {
     }
   }
 
-  enum InetOrCidr {
-    Inet,
-    Cidr
-  }
-
   private static byte @NonNull [] encodeInetOrCidrToBytes(
-      InetAddress address, Integer value1, InetOrCidr inetOrCidr) {
+      InetAddress address, Integer value1, boolean isInet) {
     byte family;
     byte[] data;
     int netmask;
@@ -567,7 +606,7 @@ public final class PgBinaryCodec implements BinaryCodec {
     byte[] result = new byte[4 + data.length];
     result[0] = family;
     result[1] = (byte) netmask;
-    result[2] = (byte) (inetOrCidr == InetOrCidr.Inet ? 0 : 1);
+    result[2] = (byte) (isInet ? 0 : 1);
     result[3] = (byte) data.length;
     System.arraycopy(data, 0, result, 4, data.length);
     return result;
@@ -746,15 +785,6 @@ public final class PgBinaryCodec implements BinaryCodec {
 
   @Override
   public <T> @Nullable List<T> decodeArray(
-      byte @NonNull [] value, @NonNull Function<byte[], T> elementDecoder) {
-    return decodeArray(
-        value,
-        (BinaryCodec.ElementDecoder<T>)
-            (buf, off, len) -> elementDecoder.apply(copySlice(buf, off, len)));
-  }
-
-  @Override
-  public <T> @Nullable List<T> decodeArray(
       byte @NonNull [] value, BinaryCodec.@NonNull ElementDecoder<T> elementDecoder) {
     if (value.length < 12) {
       return List.of();
@@ -789,11 +819,6 @@ public final class PgBinaryCodec implements BinaryCodec {
     }
     int elemType = decodeInt4At(value, 8);
     return decodeArray(value, (buf, off, len) -> decodeElementToString(elemType, buf, off, len));
-  }
-
-  @Override
-  public @NonNull String decodeToString(byte @NonNull [] value, int typeOID) {
-    return decodeElementToString(typeOID, value, 0, value.length);
   }
 
   @Override
@@ -854,7 +879,8 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   // =====================================================================
-  // Binary encode methods (for parameters)
+  // Binary encode methods. Used by tests for round-trip verification of decoders.
+  // Only encodeNumeric() is called from production code (via BinaryParamEncoder).
   // =====================================================================
 
   public static byte @NonNull [] encodeBool(boolean value) {
@@ -885,11 +911,81 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   public static byte @NonNull [] encodeFloat4(float value) {
-    return encodeInt4(Float.floatToIntBits(value));
+    return encodeInt4(Float.floatToRawIntBits(value));
   }
 
   public static byte @NonNull [] encodeFloat8(double value) {
-    return encodeInt8(Double.doubleToLongBits(value));
+    return encodeInt8(Double.doubleToRawLongBits(value));
+  }
+
+  public static void encodeNumeric(@NonNull BigDecimal value, @NonNull ByteBuffer buf) {
+    int dscale = Math.max(0, value.scale());
+
+    if (value.signum() == 0) {
+      buf.writeInt(8);
+      buf.writeShort(0); // ndigits
+      buf.writeShort(0); // weight
+      buf.writeShort(NUMERIC_POS);
+      buf.writeShort(dscale);
+      return;
+    }
+
+    int sign = value.signum() > 0 ? NUMERIC_POS : NUMERIC_NEG;
+
+    // Get all significant digits as a decimal string
+    BigInteger unscaled = value.unscaledValue().abs();
+    String digits = unscaled.toString();
+    int scale = value.scale();
+
+    // For negative scale (e.g. 1.2E+10), expand trailing zeros
+    if (scale < 0) {
+      digits = digits + "0".repeat(-scale);
+      scale = 0;
+    }
+
+    // Number of digits before/after the decimal point
+    int intLen = digits.length() - scale;
+
+    // If intLen <= 0, prepend zeros so all digits are fractional
+    if (intLen <= 0) {
+      digits = "0".repeat(-intLen) + digits;
+      intLen = 0;
+    }
+
+    // Pad so integer part is a multiple of 4 (left) and fractional part is a multiple of 4 (right)
+    int leftPad = (4 - (intLen % 4)) % 4;
+    int fracLen = digits.length() - intLen;
+    int rightPad = fracLen > 0 ? (4 - (fracLen % 4)) % 4 : 0;
+    String padded = "0".repeat(leftPad) + digits + "0".repeat(rightPad);
+
+    // Split into base-10000 groups
+    int ndigits = padded.length() / 4;
+    int weight = (intLen + leftPad) / 4 - 1;
+
+    // Strip trailing zero groups (they're implied by dscale)
+    int actualNdigits = ndigits;
+    while (actualNdigits > 0) {
+      int groupStart = (actualNdigits - 1) * 4;
+      if (parseGroup(padded, groupStart) != 0) break;
+      actualNdigits--;
+    }
+
+    // header: 4 shorts = 8 bytes, plus 2 bytes per digit group
+    buf.writeInt(8 + actualNdigits * 2);
+    buf.writeShort(actualNdigits);
+    buf.writeShort(weight);
+    buf.writeShort(sign);
+    buf.writeShort(dscale);
+    for (int i = 0; i < actualNdigits; i++) {
+      buf.writeShort(parseGroup(padded, i * 4));
+    }
+  }
+
+  private static int parseGroup(@NonNull String s, int offset) {
+    return (s.charAt(offset) - '0') * 1000
+        + (s.charAt(offset + 1) - '0') * 100
+        + (s.charAt(offset + 2) - '0') * 10
+        + (s.charAt(offset + 3) - '0');
   }
 
   public static byte @NonNull [] encodeUuid(@NonNull UUID uuid) {
@@ -1092,10 +1188,5 @@ public final class PgBinaryCodec implements BinaryCodec {
     byte[] slice = new byte[length];
     System.arraycopy(buf, offset, slice, 0, length);
     return slice;
-  }
-
-  @Override
-  public @NonNull List<String> parseTextArray(@NonNull String text) {
-    return PgArrayParser.parse(text);
   }
 }

@@ -18,12 +18,12 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Registry of {@link Binder}s for converting Java objects to SQL parameter strings.
- *
- * <p>Used internally by the connection when encoding query parameters. The default registry (from
- * {@link #defaults()}) handles common types: {@code String}, {@code Integer}, {@code Long}, {@code
- * Boolean}, {@code BigDecimal}, {@code UUID}, {@code LocalDate}, {@code LocalDateTime}, {@code
- * OffsetDateTime}, {@code byte[]}, and more.
+ * Registry of {@link Binder}s for converting Java objects to SQL parameter strings. This is the
+ * <b>text fallback</b> path — most built-in types ({@code Integer}, {@code Long}, {@code UUID},
+ * {@code LocalDate}, {@code BigDecimal}, arrays, etc.) are binary-encoded directly into the
+ * Postgres wire protocol for better performance and zero intermediate String allocations. Text
+ * encoding via this registry is only used for types that the binary encoder does not handle: {@code
+ * String} (inherently text), custom domain types, and JSON-mapped types.
  *
  * <p>Register custom binders for domain types:
  *
@@ -42,10 +42,24 @@ public final class BinderRegistry {
 
   private final Map<Class<?>, Binder<?>> binders = new LinkedHashMap<>();
   private final Map<QualifiedType<?>, Binder<?>> qualifiedBinders = new LinkedHashMap<>();
+  private final Map<Class<?>, ParamEncoder<?>> encoders = new LinkedHashMap<>();
   private final Set<Class<?>> jsonTypes = new LinkedHashSet<>();
 
   public <T> @NonNull BinderRegistry register(@NonNull Class<T> type, @NonNull Binder<T> binder) {
     binders.put(type, binder);
+    return this;
+  }
+
+  /**
+   * Register a parameter encoder that converts a domain type into a type the binary encoder
+   * handles. This enables binary wire encoding for custom types without exposing wire-format
+   * details.
+   *
+   * @see ParamEncoder
+   */
+  public <T> @NonNull BinderRegistry registerEncoder(
+      @NonNull Class<T> type, @NonNull ParamEncoder<T> encoder) {
+    encoders.put(type, encoder);
     return this;
   }
 
@@ -108,19 +122,30 @@ public final class BinderRegistry {
     if (value == null) {
       return null;
     }
-    Class<?> type = value.getClass();
-    Binder<Object> binder = (Binder<Object>) binders.get(type);
+    Binder<Object> binder = (Binder<Object>) findByType(binders, value.getClass());
     if (binder != null) {
       return binder.bind(value);
     }
-    // Check supertypes
-    for (var entry : binders.entrySet()) {
-      if (entry.getKey().isAssignableFrom(type)) {
-        return ((Binder<Object>) entry.getValue()).bind(value);
-      }
-    }
     // Fallback: no registered binder found, use toString()
     return value.toString();
+  }
+
+  /**
+   * Apply a registered {@link ParamEncoder} to convert the value to a binary-encodable type.
+   * Returns the original value unchanged if no encoder is registered or the value is null.
+   */
+  @SuppressWarnings("unchecked") // safe: encoders are registered with matching Class<T> keys
+  public @Nullable Object encode(@Nullable Object value) {
+    if (value == null || encoders.isEmpty()) {
+      return value;
+    }
+    ParamEncoder<Object> encoder = (ParamEncoder<Object>) findByType(encoders, value.getClass());
+    return encoder != null ? encoder.encode(value) : value;
+  }
+
+  /** Returns true if any param encoders have been registered. */
+  public boolean hasEncoders() {
+    return !encoders.isEmpty();
   }
 
   /** Create a registry with built-in binders for common types. */
@@ -145,6 +170,20 @@ public final class BinderRegistry {
     reg.register(OffsetTime.class, Object::toString);
     reg.register(byte[].class, BinderRegistry::hexEncode);
     return reg;
+  }
+
+  /** Find a value by exact type match first, then by supertype scan. */
+  private static <V> @Nullable V findByType(Map<Class<?>, V> map, Class<?> type) {
+    V exact = map.get(type);
+    if (exact != null) {
+      return exact;
+    }
+    for (var entry : map.entrySet()) {
+      if (entry.getKey().isAssignableFrom(type)) {
+        return entry.getValue();
+      }
+    }
+    return null;
   }
 
   static @NonNull String hexEncode(byte @NonNull [] bytes) {

@@ -5,16 +5,23 @@ import io.github.bpdbi.core.RowSet
 import kotlinx.serialization.serializer
 
 /** Deserialize all rows to a list of [T]. */
-inline fun <reified T : Any> RowSet.deserializeToList(): List<T> =
-    mapTo { row -> serializer<T>().deserialize(RowDecoder(row)) }
+inline fun <reified T : Any> RowSet.deserializeToList(): List<T> {
+    val ser = serializer<T>()
+    return mapTo { row -> ser.deserialize(RowDecoder(row)) }
+}
 
 /** Deserialize the first row to [T]. Throws if empty. */
-inline fun <reified T : Any> RowSet.deserializeFirst(): T =
-    mapFirst { row -> serializer<T>().deserialize(RowDecoder(row)) }
+inline fun <reified T : Any> RowSet.deserializeFirst(): T {
+    val ser = serializer<T>()
+    return mapFirst { row -> ser.deserialize(RowDecoder(row)) }
+}
 
 /** Deserialize the first row to [T], or null if empty. */
-inline fun <reified T : Any> RowSet.deserializeFirstOrNull(): T? =
-    if (isEmpty()) null else deserializeFirst<T>()
+inline fun <reified T : Any> RowSet.deserializeFirstOrNull(): T? {
+    if (isEmpty()) return null
+    val ser = serializer<T>()
+    return mapFirst { row -> ser.deserialize(RowDecoder(row)) }
+}
 
 /** Query and deserialize all rows to a list of [T]. */
 inline fun <reified T : Any> Connection.queryAs(sql: String, vararg params: Any?): List<T> =

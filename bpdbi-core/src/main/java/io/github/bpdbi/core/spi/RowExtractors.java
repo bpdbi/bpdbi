@@ -1,10 +1,13 @@
-package io.github.bpdbi.core;
+package io.github.bpdbi.core.spi;
 
+import io.github.bpdbi.core.Row;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -78,35 +81,41 @@ public final class RowExtractors {
           Map.entry(LocalDate.class, Row::getLocalDate),
           Map.entry(LocalTime.class, Row::getLocalTime),
           Map.entry(LocalDateTime.class, Row::getLocalDateTime),
-          Map.entry(OffsetDateTime.class, Row::getOffsetDateTime));
+          Map.entry(OffsetDateTime.class, Row::getOffsetDateTime),
+          Map.entry(OffsetTime.class, Row::getOffsetTime),
+          Map.entry(Instant.class, Row::getInstant));
 
   /**
    * Resolve an extractor for the given type, including enum support. Returns {@code null} if the
    * type is not a supported scalar type.
    */
-  @SuppressWarnings({"unchecked", "rawtypes"}) // safe: type.isEnum() guarantees Enum subclass
   public static @Nullable BiFunction<Row, Integer, Object> extractorFor(@NonNull Class<?> type) {
     BiFunction<Row, Integer, Object> extractor = EXTRACTORS.get(type);
     if (extractor != null) {
       return extractor;
     }
     if (type.isEnum()) {
-      Class<? extends Enum> enumType = (Class<? extends Enum>) type;
       return (r, c) -> {
         String v = r.getString(c);
-        if (v == null) {
-          return null;
-        }
-        @SuppressWarnings("unchecked") // safe: enumType is a concrete enum class
-        Object result = Enum.valueOf(enumType, v);
-        return result;
+        return v == null ? null : enumValueOf(type, v);
       };
     }
     return null;
   }
 
+  /**
+   * Type-safe enum lookup. Raw {@code Enum} type is unavoidable here because Java's type system
+   * cannot express "an unknown concrete enum class" — there is no way to call {@code
+   * Enum.valueOf()} without a raw type when the enum class is only known at runtime.
+   */
+  @SuppressWarnings({"unchecked", "rawtypes"}) // safe: callers guard with type.isEnum()
+  private static Object enumValueOf(Class<?> enumType, String name) {
+    return Enum.valueOf((Class<? extends Enum>) enumType, name);
+  }
+
   /** The supported-type list for error messages. */
   public static final String SUPPORTED_TYPES_MESSAGE =
       "String, int, long, short, float, double, boolean (and boxed), "
-          + "BigDecimal, UUID, byte[], LocalDate, LocalTime, LocalDateTime, OffsetDateTime, enums";
+          + "BigDecimal, UUID, byte[], LocalDate, LocalTime, LocalDateTime, OffsetDateTime, "
+          + "OffsetTime, Instant, enums";
 }

@@ -11,8 +11,8 @@ import kotlinx.serialization.serializer
  * A [RowMapper] that maps rows to Kotlin `@Serializable` data classes using `kotlinx.serialization`.
  *
  * Columns are consumed in declaration order, with nested data classes flattened into consecutive
- * columns — same as [RecordRowMapper][io.github.bpdbi.mapper.RecordRowMapper] and
- * [JavaBeanRowMapper][io.github.bpdbi.mapper.JavaBeanRowMapper].
+ * columns — same as [RecordRowMapper][io.github.bpdbi.mapper.record.RecordRowMapper] and
+ * [JavaBeanRowMapper][io.github.bpdbi.mapper.javabean.JavaBeanRowMapper].
  *
  * ```kotlin
  * @Serializable

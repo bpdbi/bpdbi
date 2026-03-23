@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.bpdbi.core.test.StubBinaryCodec;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
@@ -17,7 +18,7 @@ class RowStreamTest {
   private static Row makeRow(String value) {
     ColumnDescriptor[] cols = {col("v")};
     byte[][] vals = {value.getBytes(StandardCharsets.UTF_8)};
-    return new Row(cols, vals, null, null);
+    return new Row(cols, vals, StubBinaryCodec.INSTANCE, null);
   }
 
   @Test

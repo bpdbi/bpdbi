@@ -4,13 +4,14 @@ plugins {
 
 dependencies {
     api(project(":bpdbi-core"))
+    compileOnly(libs.jspecify)
     implementation("com.ongres.scram:scram-client:3.1")
 
     testImplementation(testFixtures(project(":bpdbi-core")))
-    testImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation("org.testcontainers:postgresql:1.20.4")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.testcontainers.postgresql)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {

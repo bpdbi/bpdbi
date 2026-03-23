@@ -1,4 +1,4 @@
-package io.github.bpdbi.mapper;
+package io.github.bpdbi.mapper.record;
 
 import static io.github.bpdbi.core.test.TestRows.row;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;

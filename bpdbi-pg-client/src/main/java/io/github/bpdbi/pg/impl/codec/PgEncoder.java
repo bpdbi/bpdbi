@@ -81,14 +81,6 @@ public final class PgEncoder {
     buf.setInt(pos, buf.writerIndex() - pos);
   }
 
-  public void writeQuery(@NonNull String sql) {
-    int pos = buf.writerIndex();
-    buf.writeByte(PgProtocolConstants.QUERY);
-    buf.writeInt(0); // length placeholder
-    buf.writeCString(sql);
-    buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
-  }
-
   public void writeParse(@NonNull String sql, int @Nullable [] paramTypeOIDs) {
     writeParse("", sql, paramTypeOIDs);
   }
@@ -108,104 +100,6 @@ public final class PgEncoder {
         buf.writeInt(oid);
       }
     }
-    buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
-  }
-
-  /**
-   * Write the 'Bind' message with text parameters and binary results (unnamed portal and
-   * statement).
-   */
-  public void writeBind(@Nullable String @NonNull [] paramValues) {
-    writeBindBytes(EMPTY_CSTRING, EMPTY_CSTRING, paramValues);
-  }
-
-  /** Write the 'Bind' with String names (convenience, allocates byte[] for names). */
-  public void writeBind(
-      @NonNull String portal,
-      @NonNull String statementName,
-      @Nullable String @NonNull [] paramValues) {
-    writeBindBytes(toCString(portal), toCString(statementName), paramValues);
-  }
-
-  /**
-   * Write the 'Bind' with pre-encoded C string names (zero-allocation for names on the hot path).
-   *
-   * <p>Null elements in {@code paramValues} encode SQL NULL (wire format: length = -1).
-   */
-  public void writeBindBytes(
-      byte @NonNull [] portal,
-      byte @NonNull [] statementName,
-      @Nullable String @NonNull [] paramValues) {
-    int pos = buf.writerIndex();
-    buf.writeByte(PgProtocolConstants.BIND);
-    buf.writeInt(0); // length placeholder
-    buf.writeCStringBytes(portal);
-    buf.writeCStringBytes(statementName);
-    // Parameter format codes: all text (0) — text params for now
-    buf.writeShort(0); // 0 = use default (text) for all
-    // Parameter values
-    buf.writeShort(paramValues.length);
-    for (String paramValue : paramValues) {
-      if (paramValue == null) {
-        buf.writeInt(-1); // NULL
-      } else {
-        byte[] bytes = paramValue.getBytes(UTF_8);
-        buf.writeInt(bytes.length);
-        buf.writeBytes(bytes);
-      }
-    }
-    // Result format codes: request all binary (1)
-    buf.writeShort(1); // 1 format code applies to all columns
-    buf.writeShort(1); // binary format
-    buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
-  }
-
-  /**
-   * Write the 'Bind' message with binary parameter encoding. Parameters are pre-encoded as byte
-   * arrays.
-   *
-   * <p>Null elements in {@code binaryParams} encode SQL NULL (wire format: length = -1).
-   */
-  public void writeBindBinary(
-      @NonNull String portal,
-      @NonNull String statementName,
-      byte @Nullable [] @NonNull [] binaryParams) {
-    writeBindBinaryBytes(toCString(portal), toCString(statementName), binaryParams);
-  }
-
-  /**
-   * Write the 'Bind' (binary params) with pre-encoded C string names.
-   *
-   * <p>Null elements in {@code binaryParams} encode SQL NULL (wire format: length = -1).
-   */
-  // IntelliJ misreads JSpecify type-use annotations on nested arrays — the outer @NonNull
-  // guarantees non-null
-  @SuppressWarnings({"DataFlowIssue", "ConstantValue"})
-  public void writeBindBinaryBytes(
-      byte @NonNull [] portal,
-      byte @NonNull [] statementName,
-      byte @Nullable [] @NonNull [] binaryParams) {
-    int pos = buf.writerIndex();
-    buf.writeByte(PgProtocolConstants.BIND);
-    buf.writeInt(0); // length placeholder
-    buf.writeCStringBytes(portal);
-    buf.writeCStringBytes(statementName);
-    // Parameter format codes: all binary (1)
-    buf.writeShort(1); // 1 format code for all params
-    buf.writeShort(1); // binary format
-    // Parameter values
-    buf.writeShort(binaryParams.length);
-    for (byte[] binaryParam : binaryParams) {
-      if (binaryParam == null) {
-        buf.writeInt(-1); // NULL
-      } else {
-        buf.writeInt(binaryParam.length);
-        buf.writeBytes(binaryParam);
-      }
-    }
-    // Result format codes: request all binary (1)
-    buf.writeShort(1);
-    buf.writeShort(1); // binary format
     buf.setInt(pos + 1, buf.writerIndex() - pos - 1);
   }
 

@@ -4,12 +4,14 @@ plugins {
 }
 
 dependencies {
-    api("org.jspecify:jspecify:1.0.0")
-    testImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    testFixturesImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testFixturesImplementation("org.junit.jupiter:junit-jupiter")
+    compileOnly(libs.jspecify)
+    testCompileOnly(libs.jspecify)
+    testFixturesCompileOnly(libs.jspecify)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testFixturesImplementation(platform(libs.junit.bom))
+    testFixturesImplementation(libs.junit.jupiter)
 }
 
 tasks.test {

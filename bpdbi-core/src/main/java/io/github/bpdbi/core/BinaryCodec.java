@@ -9,7 +9,6 @@ import java.time.OffsetDateTime;
 import java.time.OffsetTime;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -20,12 +19,12 @@ import org.jspecify.annotations.Nullable;
  * types.
  *
  * <p><b>Not user-extensible.</b> This interface is implemented per-driver and handles the fixed set
- * of wire-format types defined by each database protocol. To decode custom types (e.g. domain
- * types, composite types, or enums), use the text-format extension points instead:
+ * of wire-format types defined by each database protocol. To handle custom types (e.g. domain
+ * types, composite types, or enums), use these extension points:
  *
  * <ul>
- *   <li>{@link ColumnMapperRegistry} — register a {@link ColumnMapper} to convert text column
- *       values to Java types via {@link Row#get(int, Class)}
+ *   <li>{@link ColumnMapperRegistry} — register a {@link ColumnMapper} to convert column values to
+ *       Java types via {@link Row#get(int, Class)}
  *   <li>{@link BinderRegistry} — register a {@link Binder} to convert Java objects to SQL parameter
  *       strings when binding query parameters
  *   <li>{@link JsonMapper} — plug in a JSON library (Jackson, Gson, etc.) for automatic
@@ -34,50 +33,58 @@ import org.jspecify.annotations.Nullable;
  */
 public interface BinaryCodec {
 
-  boolean decodeBool(byte @NonNull [] value);
+  // --- Offset-based decode methods (primary API) ---
 
-  short decodeInt2(byte @NonNull [] value);
+  boolean decodeBool(byte @NonNull [] buf, int offset);
 
-  int decodeInt4(byte @NonNull [] value);
+  short decodeInt2(byte @NonNull [] buf, int offset);
 
-  long decodeInt8(byte @NonNull [] value);
+  int decodeInt4(byte @NonNull [] buf, int offset);
 
-  float decodeFloat4(byte @NonNull [] value);
+  long decodeInt8(byte @NonNull [] buf, int offset);
 
-  double decodeFloat8(byte @NonNull [] value);
+  float decodeFloat4(byte @NonNull [] buf, int offset);
 
-  @NonNull String decodeString(byte @NonNull [] value);
+  double decodeFloat8(byte @NonNull [] buf, int offset);
 
-  @NonNull UUID decodeUuid(byte @NonNull [] value);
+  @NonNull String decodeString(byte @NonNull [] buf, int offset, int length);
 
-  @NonNull LocalDate decodeDate(byte @NonNull [] value);
+  @NonNull UUID decodeUuid(byte @NonNull [] buf, int offset, int length);
 
-  @NonNull LocalTime decodeTime(byte @NonNull [] value);
+  @NonNull LocalDate decodeDate(byte @NonNull [] buf, int offset, int length);
 
-  @NonNull LocalDateTime decodeTimestamp(byte @NonNull [] value);
+  @NonNull LocalTime decodeTime(byte @NonNull [] buf, int offset, int length);
 
-  @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] value);
+  @NonNull LocalDateTime decodeTimestamp(byte @NonNull [] buf, int offset, int length);
 
-  @NonNull OffsetTime decodeTimetz(byte @NonNull [] value);
+  @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] buf, int offset, int length);
 
-  byte @NonNull [] decodeBytes(byte @NonNull [] value);
+  @NonNull OffsetTime decodeTimetz(byte @NonNull [] buf, int offset, int length);
 
-  @NonNull BigDecimal decodeNumeric(byte @NonNull [] value);
+  @NonNull BigDecimal decodeNumeric(byte @NonNull [] buf, int offset, int length);
 
   /**
    * Decode a JSON/JSONB column to a string. The type OID distinguishes JSON from JSONB (which may
    * have a version prefix that needs stripping).
    */
-  @NonNull String decodeJson(byte @NonNull [] value, int typeOID);
+  @NonNull String decodeJson(byte @NonNull [] buf, int offset, int length, int typeOID);
 
   /**
-   * Decode a binary array value, applying the given function to each non-null element's raw bytes.
-   * The binary array header is parsed by the codec; NULL elements are skipped. Returns {@code null}
-   * if this codec does not support binary arrays.
+   * Decode a binary column value to its text representation, using the type OID to select the
+   * correct decoding strategy. Used by {@link Row#get(int, Class)} as the text fallback for column
+   * mappers on binary-format rows. Drivers should override this to produce correct text for
+   * non-string types (dates, numerics, etc.).
    */
-  default <T> @Nullable List<T> decodeArray(
-      byte @NonNull [] value, @NonNull Function<byte[], T> elementDecoder) {
-    return null;
+  @NonNull String decodeToString(byte @NonNull [] buf, int offset, int length, int typeOID);
+
+  /**
+   * Decode bytes from a shared buffer. Always copies — the caller owns the returned array. Drivers
+   * need not override this; the default is correct.
+   */
+  default byte @NonNull [] decodeBytes(byte @NonNull [] buf, int offset, int length) {
+    byte[] result = new byte[length];
+    System.arraycopy(buf, offset, result, 0, length);
+    return result;
   }
 
   /**
@@ -87,17 +94,6 @@ public interface BinaryCodec {
    */
   default @Nullable List<String> decodeArrayElements(byte @NonNull [] value) {
     return null;
-  }
-
-  /**
-   * Decode a binary column value to its text representation, using the type OID to select the
-   * correct decoding strategy. Used by {@link Row#get(int, Class)} as the text fallback for column
-   * mappers on binary-format rows. The default implementation ignores the OID and delegates to
-   * {@link #decodeString(byte[])}; drivers should override this to produce correct text for
-   * non-string types (dates, numerics, etc.).
-   */
-  default @NonNull String decodeToString(byte @NonNull [] value, int typeOID) {
-    return decodeString(value);
   }
 
   /**
@@ -125,108 +121,51 @@ public interface BinaryCodec {
   }
 
   /**
-   * Decode binary bytes directly to the given Java type, bypassing text conversion.
+   * Decode binary bytes directly to the given Java type, bypassing text conversion. Delegates to
+   * the offset-based methods using offset 0 and full array length.
    *
    * @throws IllegalArgumentException if the type is not supported (check {@link #canDecode} first)
    */
-  @SuppressWarnings("unchecked") // For the cast on the return statement
+  @SuppressWarnings("unchecked") // safe: each branch returns the exact type requested
   @NonNull
   default <T> T decode(byte @NonNull [] value, @NonNull Class<T> type) {
     Object result;
     if (type == String.class) {
-      result = decodeString(value);
+      result = decodeString(value, 0, value.length);
     } else if (type == Integer.class) {
-      result = decodeInt4(value);
+      result = decodeInt4(value, 0);
     } else if (type == Long.class) {
-      result = decodeInt8(value);
+      result = decodeInt8(value, 0);
     } else if (type == Short.class) {
-      result = decodeInt2(value);
+      result = decodeInt2(value, 0);
     } else if (type == Float.class) {
-      result = decodeFloat4(value);
+      result = decodeFloat4(value, 0);
     } else if (type == Double.class) {
-      result = decodeFloat8(value);
+      result = decodeFloat8(value, 0);
     } else if (type == Boolean.class) {
-      result = decodeBool(value);
+      result = decodeBool(value, 0);
     } else if (type == BigDecimal.class) {
-      result = decodeNumeric(value);
+      result = decodeNumeric(value, 0, value.length);
     } else if (type == UUID.class) {
-      result = decodeUuid(value);
+      result = decodeUuid(value, 0, value.length);
     } else if (type == LocalDate.class) {
-      result = decodeDate(value);
+      result = decodeDate(value, 0, value.length);
     } else if (type == LocalTime.class) {
-      result = decodeTime(value);
+      result = decodeTime(value, 0, value.length);
     } else if (type == LocalDateTime.class) {
-      result = decodeTimestamp(value);
+      result = decodeTimestamp(value, 0, value.length);
     } else if (type == OffsetDateTime.class) {
-      result = decodeTimestamptz(value);
+      result = decodeTimestamptz(value, 0, value.length);
     } else if (type == OffsetTime.class) {
-      result = decodeTimetz(value);
+      result = decodeTimetz(value, 0, value.length);
     } else if (type == Instant.class) {
-      result = decodeTimestamptz(value).toInstant();
+      result = decodeTimestamptz(value, 0, value.length).toInstant();
     } else if (type == byte[].class) {
-      result = decodeBytes(value);
+      result = decodeBytes(value, 0, value.length);
     } else {
       throw new IllegalArgumentException("BinaryCodec cannot decode type: " + type.getName());
     }
     return (T) result;
-  }
-
-  /**
-   * Parse a text-format array literal (e.g. {@code {1,2,3}}) into element strings. Used as a
-   * fallback when binary array decoding is not available. The default delegates to {@link
-   * #parseTextArrayDefault(String)}. Drivers may override for more complete parsing.
-   */
-  default @NonNull List<String> parseTextArray(@NonNull String text) {
-    return parseTextArrayDefault(text);
-  }
-
-  /**
-   * Default text array parser. Handles {@code {val1,val2,...}} syntax with quoted elements, escape
-   * sequences, and NULL filtering. Exposed as a static method so it can be called without a codec
-   * instance.
-   */
-  static @NonNull List<String> parseTextArrayDefault(@NonNull String text) {
-    if (text.isEmpty() || text.charAt(0) != '{') {
-      return List.of();
-    }
-    if ("{}".equals(text)) {
-      return List.of();
-    }
-    var result = new java.util.ArrayList<String>();
-    int len = text.length();
-    int i = 1; // skip '{'
-    while (i < len) {
-      char c = text.charAt(i);
-      if (c == '}') break;
-      if (c == ',') {
-        i++;
-        continue;
-      }
-      if (c == '"') {
-        i++;
-        var sb = new StringBuilder();
-        while (i < len) {
-          char qc = text.charAt(i);
-          if (qc == '\\' && i + 1 < len) {
-            sb.append(text.charAt(i + 1));
-            i += 2;
-          } else if (qc == '"') {
-            i++;
-            break;
-          } else {
-            sb.append(qc);
-            i++;
-          }
-        }
-        result.add(sb.toString());
-      } else {
-        int start = i;
-        while (i < len && text.charAt(i) != ',' && text.charAt(i) != '}') i++;
-        String element = text.substring(start, i);
-        if (!"NULL".equals(element)) result.add(element);
-      }
-    }
-    return result;
   }
 
   // --- Functional interfaces for offset-based decoding ---
@@ -246,85 +185,6 @@ public interface BinaryCodec {
   interface ElementDecoder<T> {
 
     T decode(byte @NonNull [] buf, int offset, int length);
-  }
-
-  // --- Offset-based decode methods (zero-copy path) ---
-  // Default implementations copy a slice and delegate to the original methods.
-  // Drivers override these with direct offset-based decoding to eliminate copies.
-
-  default boolean decodeBool(byte @NonNull [] buf, int offset) {
-    return decodeBool(copySlice(buf, offset, 1));
-  }
-
-  default short decodeInt2(byte @NonNull [] buf, int offset) {
-    return decodeInt2(copySlice(buf, offset, 2));
-  }
-
-  default int decodeInt4(byte @NonNull [] buf, int offset) {
-    return decodeInt4(copySlice(buf, offset, 4));
-  }
-
-  default long decodeInt8(byte @NonNull [] buf, int offset) {
-    return decodeInt8(copySlice(buf, offset, 8));
-  }
-
-  default float decodeFloat4(byte @NonNull [] buf, int offset) {
-    return decodeFloat4(copySlice(buf, offset, 4));
-  }
-
-  default double decodeFloat8(byte @NonNull [] buf, int offset) {
-    return decodeFloat8(copySlice(buf, offset, 8));
-  }
-
-  default @NonNull UUID decodeUuid(byte @NonNull [] buf, int offset, int length) {
-    return decodeUuid(copySlice(buf, offset, length));
-  }
-
-  default @NonNull String decodeString(byte @NonNull [] buf, int offset, int length) {
-    return decodeString(copySlice(buf, offset, length));
-  }
-
-  /**
-   * Decode bytes from a shared buffer. Always copies — the caller owns the returned array. Drivers
-   * need not override this; the default is correct.
-   */
-  default byte @NonNull [] decodeBytes(byte @NonNull [] buf, int offset, int length) {
-    byte[] result = new byte[length];
-    System.arraycopy(buf, offset, result, 0, length);
-    return result;
-  }
-
-  default @NonNull BigDecimal decodeNumeric(byte @NonNull [] buf, int offset, int length) {
-    return decodeNumeric(copySlice(buf, offset, length));
-  }
-
-  default @NonNull String decodeJson(byte @NonNull [] buf, int offset, int length, int typeOID) {
-    return decodeJson(copySlice(buf, offset, length), typeOID);
-  }
-
-  default @NonNull LocalDate decodeDate(byte @NonNull [] buf, int offset, int length) {
-    return decodeDate(copySlice(buf, offset, length));
-  }
-
-  default @NonNull LocalTime decodeTime(byte @NonNull [] buf, int offset, int length) {
-    return decodeTime(copySlice(buf, offset, length));
-  }
-
-  default @NonNull LocalDateTime decodeTimestamp(byte @NonNull [] buf, int offset, int length) {
-    return decodeTimestamp(copySlice(buf, offset, length));
-  }
-
-  default @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] buf, int offset, int length) {
-    return decodeTimestamptz(copySlice(buf, offset, length));
-  }
-
-  default @NonNull OffsetTime decodeTimetz(byte @NonNull [] buf, int offset, int length) {
-    return decodeTimetz(copySlice(buf, offset, length));
-  }
-
-  default @NonNull String decodeToString(
-      byte @NonNull [] buf, int offset, int length, int typeOID) {
-    return decodeToString(copySlice(buf, offset, length), typeOID);
   }
 
   @SuppressWarnings("unchecked") // delegates to decode(byte[], Class) which handles the cast

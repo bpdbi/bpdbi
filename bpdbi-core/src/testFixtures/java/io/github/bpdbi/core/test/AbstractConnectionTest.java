@@ -31,7 +31,7 @@ public abstract class AbstractConnectionTest {
    */
   protected abstract String tempTableDDL(String name, String columns);
 
-  // ===== Simple query protocol =====
+  // ===== Parameterless queries =====
 
   @Test
   void simpleSelect() {
@@ -66,7 +66,7 @@ public abstract class AbstractConnectionTest {
   }
 
   @Test
-  void simpleQueryError() {
+  void queryError() {
     try (var conn = connect()) {
       var ex =
           assertThrows(DbException.class, () -> conn.query("SELECT * FROM nonexistent_table_xyz"));
@@ -227,7 +227,7 @@ public abstract class AbstractConnectionTest {
   // ===== SQL in exception tests =====
 
   @Test
-  void simpleQueryErrorContainsSql() {
+  void queryErrorContainsSql() {
     try (var conn = connect()) {
       String sql = "SELECT * FROM nonexistent_table_xyz";
       var ex = assertThrows(DbException.class, () -> conn.query(sql));

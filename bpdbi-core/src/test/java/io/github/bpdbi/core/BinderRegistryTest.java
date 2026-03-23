@@ -144,6 +144,55 @@ class BinderRegistryTest {
     assertNull(reg.bind(nvarchar, null));
   }
 
+  // --- ParamEncoder tests ---
+
+  @Test
+  void encoderConvertsType() {
+    record UserId(UUID uuid) {}
+
+    var reg = BinderRegistry.defaults();
+    reg.registerEncoder(UserId.class, id -> id.uuid());
+
+    var id = new UserId(UUID.fromString("550e8400-e29b-41d4-a716-446655440000"));
+    Object encoded = reg.encode(id);
+    assertEquals(UUID.fromString("550e8400-e29b-41d4-a716-446655440000"), encoded);
+  }
+
+  @Test
+  void encoderReturnsOriginalWhenNoEncoderRegistered() {
+    var reg = BinderRegistry.defaults();
+    assertEquals(42, reg.encode(42));
+    assertEquals("hello", reg.encode("hello"));
+  }
+
+  @Test
+  void encoderReturnsNullForNull() {
+    var reg = BinderRegistry.defaults();
+    assertNull(reg.encode(null));
+  }
+
+  @Test
+  void encoderMatchesSupertype() {
+    var reg = BinderRegistry.defaults();
+    reg.registerEncoder(Number.class, n -> n.longValue());
+
+    // Integer extends Number — should match
+    assertEquals(42L, reg.encode(42));
+    assertEquals(100L, reg.encode(100L));
+  }
+
+  @Test
+  void hasEncodersFalseByDefault() {
+    assertFalse(BinderRegistry.defaults().hasEncoders());
+  }
+
+  @Test
+  void hasEncodersTrueAfterRegister() {
+    var reg = BinderRegistry.defaults();
+    reg.registerEncoder(StringBuilder.class, sb -> sb.toString());
+    assertTrue(reg.hasEncoders());
+  }
+
   @Test
   void qualifiedTypeEquality() {
     var qt1 = QualifiedType.of(String.class, NVarchar.class);

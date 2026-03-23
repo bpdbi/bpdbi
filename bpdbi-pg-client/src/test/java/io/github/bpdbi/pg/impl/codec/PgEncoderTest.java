@@ -49,19 +49,6 @@ class PgEncoderTest {
   }
 
   @Test
-  void queryMessage() throws IOException {
-    var encoder = new PgEncoder();
-    encoder.writeQuery("SELECT 1");
-    byte[] bytes = flush(encoder);
-
-    var buf = ByteBuffer.wrap(bytes);
-    assertEquals('Q', buf.readByte());
-    int length = buf.readInt();
-    assertEquals(bytes.length - 1, length); // length doesn't include the type byte
-    assertEquals("SELECT 1", buf.readCString());
-  }
-
-  @Test
   void passwordMessage() throws IOException {
     var encoder = new PgEncoder();
     encoder.writePasswordMessage("secret");
@@ -102,59 +89,6 @@ class PgEncoderTest {
     assertEquals(0, buf.readByte()); // unnamed
     assertEquals("SELECT 1", buf.readCString());
     assertEquals(0, buf.readShort()); // 0 parameters
-  }
-
-  @Test
-  void bindMessage() throws IOException {
-    var encoder = new PgEncoder();
-    encoder.writeBind(new String[] {"42", null, "hello"});
-    byte[] bytes = flush(encoder);
-
-    var buf = ByteBuffer.wrap(bytes);
-    assertEquals('B', buf.readByte());
-    int length = buf.readInt();
-    assertEquals(bytes.length - 1, length);
-    assertEquals(0, buf.readByte()); // unnamed portal
-    assertEquals(0, buf.readByte()); // unnamed statement
-    assertEquals(0, buf.readShort()); // format codes: default (text)
-    assertEquals(3, buf.readShort()); // 3 parameters
-
-    // param 0: "42"
-    int len0 = buf.readInt();
-    assertEquals(2, len0);
-    byte[] p0 = new byte[2];
-    buf.readBytes(p0);
-    assertEquals("42", new String(p0));
-
-    // param 1: NULL
-    assertEquals(-1, buf.readInt());
-
-    // param 2: "hello"
-    int len2 = buf.readInt();
-    assertEquals(5, len2);
-    byte[] p2 = new byte[5];
-    buf.readBytes(p2);
-    assertEquals("hello", new String(p2));
-
-    assertEquals(1, buf.readShort()); // 1 format code for all result columns
-    assertEquals(1, buf.readShort()); // binary format (1)
-  }
-
-  @Test
-  void bindMessageNoParams() throws IOException {
-    var encoder = new PgEncoder();
-    encoder.writeBind(new String[0]);
-    byte[] bytes = flush(encoder);
-
-    var buf = ByteBuffer.wrap(bytes);
-    assertEquals('B', buf.readByte());
-    buf.readInt(); // length
-    assertEquals(0, buf.readByte()); // unnamed portal
-    assertEquals(0, buf.readByte()); // unnamed statement
-    assertEquals(0, buf.readShort()); // format codes
-    assertEquals(0, buf.readShort()); // 0 parameters
-    assertEquals(1, buf.readShort()); // 1 format code for all result columns
-    assertEquals(1, buf.readShort()); // binary format (1)
   }
 
   @Test
@@ -212,22 +146,26 @@ class PgEncoderTest {
   @Test
   void multipleMessagesInSingleFlush() throws IOException {
     var encoder = new PgEncoder();
-    encoder.writeQuery("SELECT 1");
-    encoder.writeQuery("SELECT 2");
+    encoder.writeParse("SELECT 1", null);
+    encoder.writeParse("SELECT 2", null);
     encoder.writeSync();
     byte[] bytes = flush(encoder);
 
     var buf = ByteBuffer.wrap(bytes);
 
-    // First query
-    assertEquals('Q', buf.readByte());
-    int len1 = buf.readInt();
+    // First parse
+    assertEquals('P', buf.readByte());
+    buf.readInt(); // length
+    assertEquals(0, buf.readByte()); // unnamed
     assertEquals("SELECT 1", buf.readCString());
+    assertEquals(0, buf.readShort()); // 0 params
 
-    // Second query
-    assertEquals('Q', buf.readByte());
-    int len2 = buf.readInt();
+    // Second parse
+    assertEquals('P', buf.readByte());
+    buf.readInt(); // length
+    assertEquals(0, buf.readByte()); // unnamed
     assertEquals("SELECT 2", buf.readCString());
+    assertEquals(0, buf.readShort()); // 0 params
 
     // Sync
     assertEquals('S', buf.readByte());
@@ -251,7 +189,7 @@ class PgEncoderTest {
   @Test
   void flushClearsBuffer() throws IOException {
     var encoder = new PgEncoder();
-    encoder.writeQuery("SELECT 1");
+    encoder.writeParse("SELECT 1", null);
     flush(encoder);
 
     // Second flush should produce nothing
@@ -293,39 +231,10 @@ class PgEncoderTest {
     // Pre-size for a large batch
     encoder.ensureCapacity(8192);
     // Should still work correctly
-    encoder.writeQuery("SELECT 1");
+    encoder.writeParse("SELECT 1", null);
     byte[] bytes = flush(encoder);
     var buf = ByteBuffer.wrap(bytes);
-    assertEquals('Q', buf.readByte());
-  }
-
-  @Test
-  void bindBinaryMessage() throws IOException {
-    var encoder = new PgEncoder();
-    byte[][] params = {PgBinaryCodec.encodeInt4(42), null, PgBinaryCodec.encodeBool(true)};
-    encoder.writeBindBinary("", "", params);
-    byte[] bytes = flush(encoder);
-
-    var buf = ByteBuffer.wrap(bytes);
-    assertEquals('B', buf.readByte());
-    int length = buf.readInt();
-    assertEquals(bytes.length - 1, length);
-    assertEquals(0, buf.readByte()); // portal
-    assertEquals(0, buf.readByte()); // statement
-    assertEquals(1, buf.readShort()); // 1 format code
-    assertEquals(1, buf.readShort()); // binary
-    assertEquals(3, buf.readShort()); // 3 params
-    // param 0: int4 = 42
-    assertEquals(4, buf.readInt());
-    assertEquals(0, buf.readByte());
-    assertEquals(0, buf.readByte());
-    assertEquals(0, buf.readByte());
-    assertEquals(42, buf.readByte());
-    // param 1: NULL
-    assertEquals(-1, buf.readInt());
-    // param 2: bool = true
-    assertEquals(1, buf.readInt());
-    assertEquals(1, buf.readByte());
+    assertEquals('P', buf.readByte());
   }
 
   private byte[] flush(PgEncoder encoder) throws IOException {

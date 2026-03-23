@@ -7,6 +7,7 @@ plugins {
 
 dependencies {
     jmh(project(":bpdbi-core"))
+    jmh(libs.jspecify)
     jmh(project(":bpdbi-pg-client"))
     jmh(project(":bpdbi-kotlin"))
     jmh(project(":bpdbi-record-mapper"))
@@ -29,8 +30,8 @@ dependencies {
     jmh("org.openjdk.jmh:jmh-core:1.37")
     jmh("org.openjdk.jmh:jmh-generator-annprocess:1.37")
 
-    jmh("org.testcontainers:postgresql:1.20.4")
-    jmh("org.testcontainers:toxiproxy:1.20.4")
+    jmh(libs.testcontainers.postgresql)
+    jmh("org.testcontainers:toxiproxy:${libs.versions.testcontainers.get()}")
 
     jmh("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 

@@ -1,6 +1,7 @@
 package io.github.bpdbi.core;
 
 import static io.github.bpdbi.core.test.TestRows.col;
+import static io.github.bpdbi.core.test.TestRows.row;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -9,18 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 
 class RowAndRowSetTest {
 
@@ -28,18 +19,8 @@ class RowAndRowSetTest {
   // Helper to create rows
   // =====================================================================
 
-  private static byte[] textBytes(String s) {
-    return s.getBytes(StandardCharsets.UTF_8);
-  }
-
   private Row textRow(String[] colNames, String[] values) {
-    ColumnDescriptor[] cols = new ColumnDescriptor[colNames.length];
-    byte[][] vals = new byte[colNames.length][];
-    for (int i = 0; i < colNames.length; i++) {
-      cols[i] = col(colNames[i]);
-      vals[i] = values[i] == null ? null : textBytes(values[i]);
-    }
-    return new Row(cols, vals, null, ColumnMapperRegistry.defaults());
+    return row(colNames, values, ColumnMapperRegistry.defaults());
   }
 
   // =====================================================================
@@ -94,230 +75,6 @@ class RowAndRowSetTest {
   }
 
   // =====================================================================
-  // Row — numeric types (text mode)
-  // =====================================================================
-
-  @Test
-  void getInteger() {
-    var row = textRow(new String[] {"n"}, new String[] {"42"});
-    assertEquals(42, row.getInteger(0));
-    assertEquals(42, row.getInteger("n"));
-  }
-
-  @Test
-  void getIntegerNull() {
-    var row = textRow(new String[] {"n"}, new String[] {null});
-    assertNull(row.getInteger(0));
-  }
-
-  @Test
-  void getLong() {
-    var row = textRow(new String[] {"n"}, new String[] {"9876543210"});
-    assertEquals(9876543210L, row.getLong(0));
-  }
-
-  @Test
-  void getShort() {
-    var row = textRow(new String[] {"n"}, new String[] {"123"});
-    assertEquals((short) 123, row.getShort(0));
-  }
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getFloat() {
-    var row = textRow(new String[] {"n"}, new String[] {"3.14"});
-    assertEquals(3.14f, row.getFloat(0), 0.001f);
-  }
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getDouble() {
-    var row = textRow(new String[] {"n"}, new String[] {"3.14159"});
-    assertEquals(3.14159, row.getDouble(0), 1e-6);
-  }
-
-  @Test
-  void getBigDecimal() {
-    var row = textRow(new String[] {"n"}, new String[] {"123456789.123456789"});
-    assertEquals(new BigDecimal("123456789.123456789"), row.getBigDecimal(0));
-  }
-
-  @Test
-  void getBigDecimalNull() {
-    var row = textRow(new String[] {"n"}, new String[] {null});
-    assertNull(row.getBigDecimal(0));
-  }
-
-  @ParameterizedTest
-  @CsvSource({"t, true", "true, true", "1, true", "f, false"})
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getBoolean(String rawValue, boolean expected) {
-    var row = textRow(new String[] {"b"}, new String[] {rawValue});
-    assertEquals(expected, row.getBoolean(0));
-  }
-
-  @Test
-  void getBooleanNull() {
-    var row = textRow(new String[] {"b"}, new String[] {null});
-    assertNull(row.getBoolean(0));
-  }
-
-  // =====================================================================
-  // Row — date/time types (text mode)
-  // =====================================================================
-
-  @Test
-  void getLocalDate() {
-    var row = textRow(new String[] {"d"}, new String[] {"2025-06-15"});
-    assertEquals(LocalDate.of(2025, 6, 15), row.getLocalDate(0));
-  }
-
-  @Test
-  void getLocalTime() {
-    var row = textRow(new String[] {"t"}, new String[] {"12:30:45"});
-    assertEquals(LocalTime.of(12, 30, 45), row.getLocalTime(0));
-  }
-
-  @Test
-  void getLocalDateTime() {
-    var row = textRow(new String[] {"ts"}, new String[] {"2025-06-15 12:30:45"});
-    assertEquals(LocalDateTime.of(2025, 6, 15, 12, 30, 45), row.getLocalDateTime(0));
-  }
-
-  @Test
-  void getLocalDateTimeIsoFormat() {
-    var row = textRow(new String[] {"ts"}, new String[] {"2025-06-15T12:30:45"});
-    assertEquals(LocalDateTime.of(2025, 6, 15, 12, 30, 45), row.getLocalDateTime(0));
-  }
-
-  @Test
-  void getOffsetDateTime() {
-    var row = textRow(new String[] {"ts"}, new String[] {"2025-06-15T12:30:45+00:00"});
-    assertEquals(
-        OffsetDateTime.of(2025, 6, 15, 12, 30, 45, 0, ZoneOffset.UTC), row.getOffsetDateTime(0));
-  }
-
-  @Test
-  void getInstantFromTimestamptz() {
-    var row = textRow(new String[] {"ts"}, new String[] {"2025-06-15T12:30:45+00:00"});
-    assertEquals(java.time.Instant.parse("2025-06-15T12:30:45Z"), row.getInstant(0));
-  }
-
-  @Test
-  void getInstantFromTimestampNoTz() {
-    // No timezone — assumed UTC
-    var row = textRow(new String[] {"ts"}, new String[] {"2025-06-15 12:30:45"});
-    assertEquals(java.time.Instant.parse("2025-06-15T12:30:45Z"), row.getInstant(0));
-  }
-
-  @Test
-  void getInstantNull() {
-    var row = textRow(new String[] {"ts"}, new String[] {null});
-    assertNull(row.getInstant(0));
-  }
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getOffsetTimeWithFullOffset() {
-    var row = textRow(new String[] {"t"}, new String[] {"17:55:04+02:00"});
-    var ot = row.getOffsetTime(0);
-    assertEquals(17, ot.getHour());
-    assertEquals(55, ot.getMinute());
-    assertEquals(java.time.ZoneOffset.ofHours(2), ot.getOffset());
-  }
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void getOffsetTimeShortOffset() {
-    // PG format: +02 (not +02:00)
-    var row = textRow(new String[] {"t"}, new String[] {"17:55:04+02"});
-    var ot = row.getOffsetTime(0);
-    assertEquals(17, ot.getHour());
-    assertEquals(java.time.ZoneOffset.ofHours(2), ot.getOffset());
-  }
-
-  @Test
-  void getOffsetTimeNull() {
-    var row = textRow(new String[] {"t"}, new String[] {null});
-    assertNull(row.getOffsetTime(0));
-  }
-
-  @Test
-  void getLocalDateNull() {
-    var row = textRow(new String[] {"d"}, new String[] {null});
-    assertNull(row.getLocalDate(0));
-  }
-
-  // =====================================================================
-  // Row — UUID
-  // =====================================================================
-
-  @Test
-  void getUUID() {
-    String uuid = "550e8400-e29b-41d4-a716-446655440000";
-    var row = textRow(new String[] {"id"}, new String[] {uuid});
-    assertEquals(UUID.fromString(uuid), row.getUUID(0));
-  }
-
-  @Test
-  void getUUIDNull() {
-    var row = textRow(new String[] {"id"}, new String[] {null});
-    assertNull(row.getUUID(0));
-  }
-
-  // =====================================================================
-  // Row — bytes (text mode hex)
-  // =====================================================================
-
-  @Test
-  void getBytesHex() {
-    var row = textRow(new String[] {"data"}, new String[] {"\\x48454c4c4f"});
-    assertArrayEquals(new byte[] {0x48, 0x45, 0x4c, 0x4c, 0x4f}, row.getBytes(0));
-  }
-
-  @Test
-  void getBytesRaw() {
-    var row = textRow(new String[] {"data"}, new String[] {"raw"});
-    assertArrayEquals("raw".getBytes(StandardCharsets.UTF_8), row.getBytes(0));
-  }
-
-  @Test
-  void getBytesNull() {
-    var row = textRow(new String[] {"data"}, new String[] {null});
-    assertNull(row.getBytes(0));
-  }
-
-  // =====================================================================
-  // Row — generic get with ColumnMapperRegistry
-  // =====================================================================
-
-  @Test
-  void getTypedString() {
-    var row = textRow(new String[] {"s"}, new String[] {"hello"});
-    assertEquals("hello", row.get(0, String.class));
-  }
-
-  @Test
-  void getTypedInteger() {
-    var row = textRow(new String[] {"n"}, new String[] {"42"});
-    assertEquals(42, row.get(0, Integer.class));
-  }
-
-  @Test
-  void getTypedNull() {
-    var row = textRow(new String[] {"n"}, new String[] {null});
-    assertNull(row.get(0, Integer.class));
-  }
-
-  @Test
-  void getTypedWithoutColumnMapperRegistry() {
-    ColumnDescriptor[] cols = {col("a")};
-    byte[][] vals = {textBytes("hello")};
-    var row = new Row(cols, vals, null, null);
-    assertThrows(IllegalStateException.class, () -> row.get(0, String.class));
-  }
-
-  // =====================================================================
   // Row — column lookup errors
   // =====================================================================
 
@@ -325,40 +82,6 @@ class RowAndRowSetTest {
   void invalidColumnName() {
     var row = textRow(new String[] {"a"}, new String[] {"1"});
     assertThrows(IllegalArgumentException.class, () -> row.getString("nonexistent"));
-  }
-
-  // =====================================================================
-  // Row — named access
-  // =====================================================================
-
-  @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void allNamedAccessors() {
-    var row =
-        textRow(
-            new String[] {"i", "l", "s", "f", "d", "bd", "b", "ld", "lt", "ldt"},
-            new String[] {
-              "42",
-              "100",
-              "5",
-              "1.5",
-              "2.5",
-              "99.99",
-              "t",
-              "2025-01-01",
-              "10:30:00",
-              "2025-01-01T10:30:00"
-            });
-    assertEquals(42, row.getInteger("i"));
-    assertEquals(100L, row.getLong("l"));
-    assertEquals((short) 5, row.getShort("s"));
-    assertEquals(1.5f, row.getFloat("f"), 0.01f);
-    assertEquals(2.5, row.getDouble("d"), 0.01);
-    assertEquals(new BigDecimal("99.99"), row.getBigDecimal("bd"));
-    assertTrue(row.getBoolean("b"));
-    assertEquals(LocalDate.of(2025, 1, 1), row.getLocalDate("ld"));
-    assertEquals(LocalTime.of(10, 30, 0), row.getLocalTime("lt"));
-    assertEquals(LocalDateTime.of(2025, 1, 1, 10, 30, 0), row.getLocalDateTime("ldt"));
   }
 
   // =====================================================================
@@ -422,22 +145,20 @@ class RowAndRowSetTest {
   // =====================================================================
 
   @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
   void rowSetMapTo() {
-    var r1 = textRow(new String[] {"n"}, new String[] {"1"});
-    var r2 = textRow(new String[] {"n"}, new String[] {"2"});
+    var r1 = textRow(new String[] {"n"}, new String[] {"a"});
+    var r2 = textRow(new String[] {"n"}, new String[] {"b"});
     var rs = new RowSet(List.of(r1, r2), List.of(col("n")), 0);
 
-    List<Integer> result = rs.mapTo(row -> row.getInteger("n"));
-    assertEquals(List.of(1, 2), result);
+    List<String> result = rs.mapTo(row -> row.getString("n"));
+    assertEquals(List.of("a", "b"), result);
   }
 
   @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
   void rowSetMapFirst() {
-    var row = textRow(new String[] {"n"}, new String[] {"42"});
+    var row = textRow(new String[] {"n"}, new String[] {"hello"});
     var rs = new RowSet(List.of(row), List.of(col("n")), 0);
-    assertEquals(Integer.valueOf(42), rs.mapFirst(r -> r.getInteger("n")));
+    assertEquals("hello", rs.mapFirst(r -> r.getString("n")));
   }
 
   @Test
@@ -478,7 +199,6 @@ class RowAndRowSetTest {
     var error = new DbException("ERROR", "42P01", "relation does not exist");
     var rs = new RowSet(error);
 
-    // Throws the stored error directly — same instance each time
     var ex1 = assertThrows(DbException.class, rs::size);
     var ex2 = assertThrows(DbException.class, rs::size);
     assertSame(error, ex1);
@@ -558,57 +278,160 @@ class RowAndRowSetTest {
   }
 
   // =====================================================================
-  // Row — array getters (text mode PG array literals)
+  // Row — typed getters (binary codec path)
   // =====================================================================
 
   @Test
-  void getStringArray() {
-    var row = textRow(new String[] {"a"}, new String[] {"{hello,world,foo}"});
-    var arr = row.getStringArray(0);
-    assertEquals(List.of("hello", "world", "foo"), arr);
+  void getIntValue() {
+    var row = textRow(new String[] {"n"}, new String[] {"1234"});
+    assertEquals(1234, row.getIntValue(0));
   }
 
   @Test
-  void getIntegerArray() {
-    var row = textRow(new String[] {"a"}, new String[] {"{1,2,3}"});
-    var arr = row.getIntegerArray(0);
-    assertEquals(List.of(1, 2, 3), arr);
+  void getIntValueNull() {
+    var row = textRow(new String[] {"n"}, new String[] {null});
+    assertThrows(NullPointerException.class, () -> row.getIntValue(0));
   }
 
   @Test
-  void getLongArray() {
-    var row = textRow(new String[] {"a"}, new String[] {"{100,200}"});
-    var arr = row.getLongArray(0);
-    assertEquals(List.of(100L, 200L), arr);
+  void getIntValueByName() {
+    var row = textRow(new String[] {"n"}, new String[] {"5678"});
+    assertEquals(5678, row.getIntValue("n"));
   }
 
   @Test
-  void getDoubleArray() {
-    var row = textRow(new String[] {"a"}, new String[] {"{1.5,2.5}"});
-    var arr = row.getDoubleArray(0);
-    assertEquals(List.of(1.5, 2.5), arr);
+  void getLong() {
+    var row = textRow(new String[] {"n"}, new String[] {"12345678"});
+    assertEquals(12345678L, row.getLong(0));
   }
 
   @Test
-  void getFloatArray() {
-    var row = textRow(new String[] {"a"}, new String[] {"{1.5,2.5}"});
-    var arr = row.getFloatArray(0);
-    assertEquals(List.of(1.5f, 2.5f), arr);
+  void getLongNull() {
+    var row = textRow(new String[] {"n"}, new String[] {null});
+    assertNull(row.getLong(0));
   }
 
   @Test
-  void getShortArray() {
-    var row = textRow(new String[] {"a"}, new String[] {"{10,20}"});
-    var arr = row.getShortArray(0);
-    assertEquals(List.of((short) 10, (short) 20), arr);
+  void getLongByName() {
+    var row = textRow(new String[] {"n"}, new String[] {"12345678"});
+    assertEquals(12345678L, row.getLong("n"));
   }
 
   @Test
-  void getBooleanArray() {
-    var row = textRow(new String[] {"a"}, new String[] {"{t,f,t}"});
-    var arr = row.getBooleanArray(0);
-    assertEquals(List.of(true, false, true), arr);
+  void getLongValue() {
+    var row = textRow(new String[] {"n"}, new String[] {"12345678"});
+    assertEquals(12345678L, row.getLongValue(0));
   }
+
+  @Test
+  void getLongValueNull() {
+    var row = textRow(new String[] {"n"}, new String[] {null});
+    assertThrows(NullPointerException.class, () -> row.getLongValue(0));
+  }
+
+  @Test
+  void getLongValueByName() {
+    var row = textRow(new String[] {"n"}, new String[] {"12345678"});
+    assertEquals(12345678L, row.getLongValue("n"));
+  }
+
+  @Test
+  void getShort() {
+    var row = textRow(new String[] {"n"}, new String[] {"42"});
+    assertEquals((short) 42, row.getShort(0));
+  }
+
+  @Test
+  void getShortNull() {
+    var row = textRow(new String[] {"n"}, new String[] {null});
+    assertNull(row.getShort(0));
+  }
+
+  @Test
+  void getShortByName() {
+    var row = textRow(new String[] {"n"}, new String[] {"42"});
+    assertEquals((short) 42, row.getShort("n"));
+  }
+
+  @Test
+  void getBoolValue() {
+    var row = textRow(new String[] {"b"}, new String[] {"t"});
+    assertTrue(row.getBoolValue(0));
+  }
+
+  @Test
+  void getBoolValueFalse() {
+    var row = textRow(new String[] {"b"}, new String[] {"f"});
+    assertFalse(row.getBoolValue(0));
+  }
+
+  @Test
+  void getBoolValueNull() {
+    var row = textRow(new String[] {"b"}, new String[] {null});
+    assertThrows(NullPointerException.class, () -> row.getBoolValue(0));
+  }
+
+  @Test
+  void getBoolValueByName() {
+    var row = textRow(new String[] {"b"}, new String[] {"t"});
+    assertTrue(row.getBoolValue("b"));
+  }
+
+  @Test
+  void getDouble() {
+    var row = textRow(new String[] {"n"}, new String[] {"3.140000"});
+    assertEquals(3.14, row.getDouble(0), 0.001);
+  }
+
+  @Test
+  void getDoubleNull() {
+    var row = textRow(new String[] {"n"}, new String[] {null});
+    assertNull(row.getDouble(0));
+  }
+
+  @Test
+  void getDoubleByName() {
+    var row = textRow(new String[] {"n"}, new String[] {"3.140000"});
+    assertEquals(3.14, row.getDouble("n"), 0.001);
+  }
+
+  @Test
+  void getBytes() {
+    var row = textRow(new String[] {"b"}, new String[] {"hello"});
+    assertArrayEquals("hello".getBytes(), row.getBytes(0));
+  }
+
+  @Test
+  void getBytesNull() {
+    var row = textRow(new String[] {"b"}, new String[] {null});
+    assertNull(row.getBytes(0));
+  }
+
+  @Test
+  void getBytesByName() {
+    var row = textRow(new String[] {"b"}, new String[] {"world"});
+    assertArrayEquals("world".getBytes(), row.getBytes("b"));
+  }
+
+  // =====================================================================
+  // Row — generic get(int, Class) via BinaryCodec
+  // =====================================================================
+
+  @Test
+  void getTypedString() {
+    var row = textRow(new String[] {"s"}, new String[] {"hello"});
+    assertEquals("hello", row.get(0, String.class));
+  }
+
+  @Test
+  void getTypedNull() {
+    var row = textRow(new String[] {"s"}, new String[] {null});
+    assertNull(row.get(0, String.class));
+  }
+
+  // =====================================================================
+  // Row — null arrays
+  // =====================================================================
 
   @Test
   void getArrayReturnsNullForNullColumn() {

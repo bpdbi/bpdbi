@@ -206,6 +206,25 @@ public interface Connection extends AutoCloseable {
   @NonNull List<RowSet> executeMany(@NonNull String sql, @NonNull List<Object[]> paramSets);
 
   /**
+   * Execute the same SQL statement with multiple named parameter sets in a single pipeline.
+   *
+   * <pre>{@code
+   * List<RowSet> results = conn.executeManyNamed(
+   *     "INSERT INTO users (name, age) VALUES (:name, :age)",
+   *     List.of(
+   *         Map.of("name", "Alice", "age", 30),
+   *         Map.of("name", "Bob", "age", 25)
+   *     ));
+   * }</pre>
+   *
+   * @param sql the SQL statement with {@code :name} placeholders
+   * @param paramSets list of parameter maps, one per execution
+   * @return list of RowSet results, one per parameter set
+   */
+  @NonNull List<RowSet> executeManyNamed(
+      @NonNull String sql, @NonNull List<Map<String, Object>> paramSets);
+
+  /**
    * Check that this connection is alive and usable.
    *
    * <p>Sends a lightweight server roundtrip to verify the connection is usable. Throws {@link

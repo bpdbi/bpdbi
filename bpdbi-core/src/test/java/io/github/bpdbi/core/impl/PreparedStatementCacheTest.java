@@ -35,8 +35,8 @@ class PreparedStatementCacheTest {
 
     // Adding "d" should evict "b" (least recently used), not "a"
     var evicted = cache.cache("d", stmt("d"));
-    assertEquals(1, evicted.size());
-    assertEquals("b", evicted.get(0).sql());
+    assertNotNull(evicted);
+    assertEquals("b", evicted.sql());
     assertNotNull(cache.get("a"));
     assertNull(cache.get("b"));
   }
@@ -48,16 +48,16 @@ class PreparedStatementCacheTest {
     cache.cache("b", stmt("b"));
 
     var evicted = cache.cache("c", stmt("c"));
-    assertEquals(1, evicted.size());
-    assertEquals("a", evicted.get(0).sql());
+    assertNotNull(evicted);
+    assertEquals("a", evicted.sql());
     assertEquals(2, cache.size());
   }
 
   @Test
-  void cacheReturnsEmptyListWhenNoEviction() {
+  void cacheReturnsNullWhenNoEviction() {
     var cache = new PreparedStatementCache(10);
     var evicted = cache.cache("a", stmt("a"));
-    assertTrue(evicted.isEmpty());
+    assertNull(evicted);
   }
 
   @Test
@@ -107,8 +107,8 @@ class PreparedStatementCacheTest {
     assertTrue(cache.isFull());
 
     var evicted = cache.cache("b", stmt("b"));
-    assertEquals(1, evicted.size());
-    assertEquals("a", evicted.get(0).sql());
+    assertNotNull(evicted);
+    assertEquals("a", evicted.sql());
     assertEquals(1, cache.size());
     assertNotNull(cache.get("b"));
   }
@@ -136,9 +136,9 @@ class PreparedStatementCacheTest {
     assertTrue(longSql.length() > 50);
 
     var rejected = cache.cache(longSql, stmt(longSql));
-    // Rejected: returned list contains the statement itself
-    assertEquals(1, rejected.size());
-    assertEquals(longSql, rejected.get(0).sql());
+    // Rejected: returned the statement itself
+    assertNotNull(rejected);
+    assertEquals(longSql, rejected.sql());
     // Cache is still empty
     assertEquals(0, cache.size());
     assertTrue(cache.isOversized(longSql));
@@ -151,7 +151,7 @@ class PreparedStatementCacheTest {
     assertFalse(cache.isOversized(shortSql));
 
     var evicted = cache.cache(shortSql, stmt(shortSql));
-    assertTrue(evicted.isEmpty());
+    assertNull(evicted);
     assertEquals(1, cache.size());
     assertEquals(shortSql.length(), cache.totalSqlBytes());
   }

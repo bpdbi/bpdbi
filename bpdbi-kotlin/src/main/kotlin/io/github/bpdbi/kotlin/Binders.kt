@@ -3,11 +3,23 @@ package io.github.bpdbi.kotlin
 import io.github.bpdbi.core.BinderRegistry
 import io.github.bpdbi.core.ColumnMapperRegistry
 import io.github.bpdbi.core.Connection
-import io.github.bpdbi.core.impl.BaseConnection
 import kotlin.time.Instant
+import kotlin.time.toJavaInstant
+import kotlin.uuid.toJavaUuid
 
-/** Register Binders for Kotlin-specific types. */
+/**
+ * Register Binders and ParamEncoders for Kotlin-specific types. ParamEncoders convert Kotlin types
+ * to Java equivalents so the binary encoder can handle them (e.g. kotlin.uuid.Uuid → java.util.UUID).
+ * Text Binders are kept as fallback for non-binary-capable drivers.
+ */
 fun BinderRegistry.registerKotlinTypes(): BinderRegistry = apply {
+    // ParamEncoders: convert Kotlin types to Java equivalents for binary encoding
+    registerEncoder(kotlin.uuid.Uuid::class.java) { it.toJavaUuid() }
+    registerEncoder(kotlin.time.Instant::class.java) { it.toJavaInstant() }
+    registerEncoder(UInt::class.java) { it.toLong() }
+    registerEncoder(ULong::class.java) { it.toLong() }
+
+    // Text binders: fallback when binary encoding is not available
     register(kotlin.uuid.Uuid::class.java) { it.toString() }
     register(kotlin.time.Instant::class.java) { it.toString() }
     register(UInt::class.java) { it.toLong().toString() }
@@ -22,10 +34,8 @@ fun ColumnMapperRegistry.registerKotlinTypes(): ColumnMapperRegistry = apply {
 
 /** Register Kotlin type binders and mappers on this connection. */
 fun Connection.useKotlinTypes() {
-    if (this is BaseConnection) {
-        binderRegistry().registerKotlinTypes()
-        mapperRegistry().registerKotlinTypes()
-    }
+    binderRegistry().registerKotlinTypes()
+    mapperRegistry().registerKotlinTypes()
 }
 
 /**

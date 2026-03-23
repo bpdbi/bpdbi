@@ -11,7 +11,7 @@ import org.jspecify.annotations.NonNull;
  * Money price = row.get("price", Money.class);
  * }</pre>
  *
- * <h3>How column mappers fit into the decoding pipeline</h3>
+ * <p><b>How column mappers fit into the decoding pipeline</b>
  *
  * <p>When {@link Row#get(int, Class)} is called, it first tries the {@link BinaryCodec} for types
  * it knows natively (primitives, dates, UUID, etc.). Column mappers are the <em>fallback</em>: they

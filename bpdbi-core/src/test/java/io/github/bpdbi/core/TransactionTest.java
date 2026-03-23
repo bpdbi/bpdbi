@@ -71,6 +71,13 @@ class TransactionTest {
     }
 
     @Override
+    public @NonNull List<RowSet> executeManyNamed(
+        @NonNull String sql, @NonNull List<Map<String, Object>> paramSets) {
+      queries.add("executeManyNamed:" + sql);
+      return List.of();
+    }
+
+    @Override
     public void ping() {
       queries.add("ping");
     }

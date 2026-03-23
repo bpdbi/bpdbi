@@ -78,11 +78,11 @@ public abstract class BaseConnection implements Connection {
   }
 
   /**
-   * Handle evicted statements by closing them server-side. Subclasses implement the actual close.
+   * Handle an evicted statement by closing it server-side. Subclasses implement the actual close.
    */
-  protected void handleEvicted(@NonNull List<PreparedStatementCache.CachedStatement> evicted) {
-    for (var stmt : evicted) {
-      closeCachedStatement(stmt);
+  protected void handleEvicted(PreparedStatementCache.@Nullable CachedStatement evicted) {
+    if (evicted != null) {
+      closeCachedStatement(evicted);
     }
   }
 
@@ -111,7 +111,7 @@ public abstract class BaseConnection implements Connection {
 
   @Override
   public @NonNull RowSet query(@NonNull String sql, @NonNull Map<String, Object> params) {
-    var parsed = NamedParamParser.parse(sql, params, placeholderPrefix());
+    var parsed = NamedParamParser.parse(sql, params, "$");
     enqueue(parsed.sql(), parsed.params());
     var result = flush().getLast();
     if (result.getError() != null) {
@@ -147,7 +147,7 @@ public abstract class BaseConnection implements Connection {
 
   @Override
   public int enqueue(@NonNull String sql, @NonNull Map<String, Object> params) {
-    var parsed = NamedParamParser.parse(sql, params, placeholderPrefix());
+    var parsed = NamedParamParser.parse(sql, params, "$");
     return enqueue(parsed.sql(), parsed.params());
   }
 
@@ -159,6 +159,20 @@ public abstract class BaseConnection implements Connection {
     }
     List<RowSet> allResults = flush();
     // Return only the results for the paramSets we enqueued, not pre-existing pending statements
+    if (offset == 0) {
+      return allResults;
+    }
+    return allResults.subList(offset, allResults.size());
+  }
+
+  @Override
+  public @NonNull List<RowSet> executeManyNamed(
+      @NonNull String sql, @NonNull List<Map<String, Object>> paramSets) {
+    int offset = pending.size();
+    for (Map<String, Object> params : paramSets) {
+      enqueue(sql, params);
+    }
+    List<RowSet> allResults = flush();
     if (offset == 0) {
       return allResults;
     }
@@ -222,29 +236,12 @@ public abstract class BaseConnection implements Connection {
     return createExtendedQueryRowStream(sql, params.length == 0 ? EMPTY_PARAMS : params);
   }
 
-  protected String[] encodeParams(Object[] params) {
-    String[] textParams = new String[params.length];
-    for (int i = 0; i < params.length; i++) {
-      textParams[i] = encodeParamToText(params[i]);
-    }
-    return textParams;
-  }
-
   /** Text-encode a single parameter value, handling JSON types via jsonMapper if configured. */
   protected String encodeParamToText(@Nullable Object value) {
     if (value != null && jsonMapper != null && binderRegistry.isJsonType(value.getClass())) {
       return jsonMapper.toJson(value);
     }
     return binderRegistry.bind(value);
-  }
-
-  /**
-   * Create a Row with the connection's binary codec and mapper registry. Subclasses should use this
-   * instead of calling the Row constructor directly.
-   */
-  protected @NonNull Row createRow(@NonNull ColumnDescriptor[] columns, byte @NonNull [][] values) {
-    return new Row(
-        columns, values, binaryCodec(), mapperRegistry, jsonMapper, binderRegistry.jsonTypes());
   }
 
   /**
@@ -259,22 +256,6 @@ public abstract class BaseConnection implements Connection {
         columns,
         columnNameIndex,
         values,
-        binaryCodec(),
-        mapperRegistry,
-        jsonMapper,
-        binderRegistry.jsonTypes());
-  }
-
-  /**
-   * Create a Row backed by column buffers. The Row is a lightweight view that reads from the shared
-   * buffers on demand.
-   */
-  protected @NonNull Row createBufferedRow(
-      @NonNull ColumnDescriptor[] columns, @NonNull ColumnBuffer[] buffers, int rowIndex) {
-    return new Row(
-        columns,
-        buffers,
-        rowIndex,
         binaryCodec(),
         mapperRegistry,
         jsonMapper,
@@ -328,11 +309,6 @@ public abstract class BaseConnection implements Connection {
   protected abstract void sendTerminate();
 
   protected abstract void closeTransport();
-
-  /** Return the placeholder prefix for positional parameters ($1, $2, ...). */
-  protected @NonNull String placeholderPrefix() {
-    return "$";
-  }
 
   // --- Streaming abstract methods ---
 

@@ -43,6 +43,7 @@ public final class NamedParamParser {
     var paramNames = new ArrayList<String>();
     int paramIndex = 0;
     int len = sql.length();
+    boolean isPg = "$".equals(placeholderPrefix);
 
     for (int i = 0; i < len; i++) {
       char c = sql.charAt(i);
@@ -65,7 +66,7 @@ public final class NamedParamParser {
         }
         String name = sql.substring(nameStart, nameEnd);
         paramIndex++;
-        if ("$".equals(placeholderPrefix)) {
+        if (isPg) {
           result.append('$').append(paramIndex);
         } else {
           result.append('?');
@@ -140,6 +141,7 @@ public final class NamedParamParser {
     var paramValues = new ArrayList<>();
     int paramIndex = 0;
     int len = sql.length();
+    boolean isPg = "$".equals(placeholderPrefix);
 
     for (int i = 0; i < len; i++) {
       char c = sql.charAt(i);
@@ -174,7 +176,7 @@ public final class NamedParamParser {
               result.append(", ");
             }
             paramIndex++;
-            if ("$".equals(placeholderPrefix)) {
+            if (isPg) {
               result.append('$').append(paramIndex);
             } else {
               result.append('?');
@@ -188,7 +190,7 @@ public final class NamedParamParser {
           }
         } else {
           paramIndex++;
-          if ("$".equals(placeholderPrefix)) {
+          if (isPg) {
             result.append('$').append(paramIndex);
           } else {
             result.append('?');

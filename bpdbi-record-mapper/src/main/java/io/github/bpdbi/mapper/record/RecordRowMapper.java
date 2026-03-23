@@ -1,8 +1,8 @@
-package io.github.bpdbi.mapper;
+package io.github.bpdbi.mapper.record;
 
 import io.github.bpdbi.core.Row;
-import io.github.bpdbi.core.RowExtractors;
 import io.github.bpdbi.core.RowMapper;
+import io.github.bpdbi.core.spi.RowExtractors;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.util.function.BiFunction;

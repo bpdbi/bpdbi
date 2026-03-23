@@ -26,30 +26,17 @@ import io.github.bpdbi.pg.impl.codec.BinaryParamEncoder;
 import io.github.bpdbi.pg.impl.codec.PgBinaryCodec;
 import io.github.bpdbi.pg.impl.codec.PgDecoder;
 import io.github.bpdbi.pg.impl.codec.PgEncoder;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyStore;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.X509TrustManager;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -61,8 +48,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PgConnection extends BaseConnection {
 
-  private static final String[] EMPTY_STRING_ARRAY = {};
-
   private final Socket socket;
   private final OutputStream out;
   private final PgEncoder encoder;
@@ -72,7 +57,6 @@ public final class PgConnection extends BaseConnection {
   private int processId;
   private int secretKey;
   private long stmtCounter = 0;
-  private int deallocateEpoch = 0;
   private int maxResultBufferBytes = 0;
 
   /**
@@ -140,7 +124,7 @@ public final class PgConnection extends BaseConnection {
       }
 
       if (config.sslMode() != SslMode.DISABLE) {
-        socket = upgradeToSsl(socket, config);
+        socket = io.github.bpdbi.pg.impl.PgSsl.upgradeToSsl(socket, config);
       }
 
       var out = new UnsyncBufferedOutputStream(socket.getOutputStream(), 8192);
@@ -153,148 +137,10 @@ public final class PgConnection extends BaseConnection {
       conn.maxResultBufferBytes = config.maxResultBufferBytes();
       conn.performStartup(
           config.username(), config.database(), config.password(), config.properties());
-      // Ensure full double precision in text-format float8 results
-      conn.query("SET extra_float_digits = 3");
       return conn;
     } catch (IOException e) {
       throw new DbConnectionException(
           "Failed to connect to Postgres at " + config.host() + ":" + config.port(), e);
-    }
-  }
-
-  /**
-   * Upgrade a plain socket to SSL/TLS using the Postgres SSLRequest protocol. Sends the 8-byte
-   * SSLRequest message, reads the server's single-byte response, and wraps the socket in an
-   * SSLSocket if the server accepts.
-   */
-  private static Socket upgradeToSsl(Socket socket, ConnectionConfig config) throws IOException {
-    SslMode sslMode = config.sslMode();
-    String host = config.host();
-    int port = config.port() > 0 ? config.port() : 5432;
-
-    // Send SSLRequest (not a normal startup message — no type byte)
-    var encoder = new PgEncoder();
-    encoder.writeSSLRequest();
-    encoder.flush(socket.getOutputStream());
-
-    // Read single byte response: 'S' = upgrade, 'N' = no SSL
-    int response = socket.getInputStream().read();
-    if (response == 'S') {
-      try {
-        SSLContext ctx = buildSslContext(config);
-        SSLSocketFactory factory = ctx.getSocketFactory();
-        SSLSocket sslSocket = (SSLSocket) factory.createSocket(socket, host, port, true);
-        sslSocket.setUseClientMode(true);
-
-        // Enable hostname verification for VERIFY_FULL
-        if (sslMode == SslMode.VERIFY_FULL || config.hostnameVerification()) {
-          SSLParameters sslParams = sslSocket.getSSLParameters();
-          sslParams.setEndpointIdentificationAlgorithm("HTTPS");
-          sslSocket.setSSLParameters(sslParams);
-        }
-
-        sslSocket.startHandshake();
-        return sslSocket;
-      } catch (Exception e) {
-        throw new IOException("SSL handshake failed", e);
-      }
-    } else if (response == 'N') {
-      if (sslMode == SslMode.REQUIRE
-          || sslMode == SslMode.VERIFY_CA
-          || sslMode == SslMode.VERIFY_FULL) {
-        socket.close();
-        throw new IOException("Server does not support SSL but sslMode=" + sslMode);
-      }
-      // PREFER: fall back to non-SSL
-      return socket;
-    } else {
-      socket.close();
-      throw new IOException("Unexpected SSL response: " + (char) response);
-    }
-  }
-
-  /**
-   * Build an SSLContext based on the connection configuration.
-   *
-   * <p>Priority order:
-   *
-   * <ol>
-   *   <li>User-provided {@link ConnectionConfig#sslContext()} — used as-is
-   *   <li>PEM certificate file via {@link ConnectionConfig#pemCertPath()}
-   *   <li>JKS trust store via {@link ConnectionConfig#trustStorePath()}
-   *   <li>For VERIFY_CA/VERIFY_FULL — system default trust store
-   *   <li>For REQUIRE/PREFER — trust-all (no certificate verification)
-   * </ol>
-   */
-  private static SSLContext buildSslContext(ConnectionConfig config) {
-    // 1. User-provided SSLContext
-    if (config.sslContext() != null) {
-      return config.sslContext();
-    }
-
-    try {
-      SSLContext ctx = SSLContext.getInstance("TLS");
-
-      // 2. PEM certificate file
-      if (config.pemCertPath() != null) {
-        KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-        ks.load(null, null);
-        try (InputStream certIn = new FileInputStream(config.pemCertPath())) {
-          CertificateFactory cf = CertificateFactory.getInstance("X.509");
-          int i = 0;
-          for (var cert : cf.generateCertificates(certIn)) {
-            ks.setCertificateEntry("cert-" + (i++), cert);
-          }
-        }
-        TrustManagerFactory tmf =
-            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(ks);
-        ctx.init(null, tmf.getTrustManagers(), null);
-        return ctx;
-      }
-
-      // 3. JKS trust store
-      if (config.trustStorePath() != null) {
-        KeyStore ks = KeyStore.getInstance("JKS");
-        char[] pass =
-            config.trustStorePassword() != null ? config.trustStorePassword().toCharArray() : null;
-        try (InputStream tsIn = new FileInputStream(config.trustStorePath())) {
-          ks.load(tsIn, pass);
-        }
-        TrustManagerFactory tmf =
-            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(ks);
-        ctx.init(null, tmf.getTrustManagers(), null);
-        return ctx;
-      }
-
-      // 4. For VERIFY_CA/VERIFY_FULL — use system default trust store
-      if (config.sslMode() == SslMode.VERIFY_CA || config.sslMode() == SslMode.VERIFY_FULL) {
-        TrustManagerFactory tmf =
-            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init((KeyStore) null); // uses default system trust store
-        ctx.init(null, tmf.getTrustManagers(), null);
-        return ctx;
-      }
-
-      // 5. REQUIRE/PREFER — trust-all (no certificate verification)
-      ctx.init(
-          null,
-          new TrustManager[] {
-            new X509TrustManager() {
-              public void checkClientTrusted(X509Certificate[] certs, String authType) {}
-
-              public void checkServerTrusted(X509Certificate[] certs, String authType) {}
-
-              public X509Certificate[] getAcceptedIssuers() {
-                return new X509Certificate[0];
-              }
-            }
-          },
-          null);
-      return ctx;
-    } catch (Exception e) {
-      throw new DbConnectionException("Failed to create SSL context", e);
     }
   }
 
@@ -352,6 +198,7 @@ public final class PgConnection extends BaseConnection {
         BackendMessage msg = decoder.readMessage();
         switch (msg) {
           case BackendMessage.RowDescription rd -> columns = rd.columns();
+          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ErrorResponse err -> {
             drainUntilReady();
             throw PgException.fromErrorResponse(err);
@@ -364,7 +211,7 @@ public final class PgConnection extends BaseConnection {
               handleEvicted(psCache.cache(sql, cached));
               return new CachedPgPreparedStatement(cached);
             }
-            return new PgPreparedStatement(stmtName, columns, paramNames);
+            return new PgPreparedStatement(stmtName, stmtNameCString, paramNames);
           }
           default -> {}
         }
@@ -377,10 +224,11 @@ public final class PgConnection extends BaseConnection {
   @Override
   public @NonNull Cursor cursor(@NonNull String sql, @Nullable Object... params) {
     String portalName = "_bpdbi_p" + (stmtCounter++);
-    Object[] cursorParams = (params != null && params.length > 0) ? params : new Object[0];
+    Object[] cursorParams =
+        applyEncoders((params != null && params.length > 0) ? params : new Object[0]);
     try {
       // Parse unnamed + Bind into named portal + Describe portal + Sync
-      encoder.writeParse("", sql, computeParamTypeOIDs(params != null ? params : new Object[0]));
+      encoder.writeParse("", sql, computeParamTypeOIDs(cursorParams));
       encoder.writeBindInline(
           PgEncoder.toCString(portalName), PgEncoder.EMPTY_CSTRING, cursorParams, textEncoder());
       encoder.writeDescribePortal(portalName);
@@ -392,6 +240,7 @@ public final class PgConnection extends BaseConnection {
         BackendMessage msg = decoder.readMessage();
         switch (msg) {
           case BackendMessage.RowDescription rd -> columns = rd.columns();
+          case BackendMessage.ParameterStatus ps -> handleParameterStatus(ps);
           case BackendMessage.ErrorResponse err -> {
             drainUntilReady();
             throw PgException.fromErrorResponse(err);
@@ -483,135 +332,36 @@ public final class PgConnection extends BaseConnection {
     }
   }
 
-  /**
-   * Convert resolved named params for use with Postgres prepared statements. Collection/array
-   * values are converted to Postgres array literal format ({v1,v2,...}) so they can be used with
-   * {@code = ANY(:param)} syntax.
-   */
-  private String @NonNull [] toTextParams(Object @Nullable [] params) {
-    if (params == null || params.length == 0) {
-      return EMPTY_STRING_ARRAY;
-    }
-    return encodeParams(params);
-  }
-
-  private static Object[] convertPgParams(Object[] params) {
-    for (int i = 0; i < params.length; i++) {
-      params[i] = toPgValue(params[i]);
-    }
-    return params;
-  }
-
-  private static Object toPgValue(Object value) {
-    if (value instanceof Collection<?> c) {
-      return toPgArrayLiteral(c);
-    }
-    // Explicit primitive array handling instead of java.lang.reflect.Array, so that the core
-    // driver stays reflection-free (important for GraalVM native-image and the project's
-    // zero-reflection guarantee for bpdbi-core and bpdbi-pg-client).
-    if (value instanceof Object[] a) return toPgArrayLiteral(List.of(a));
-    if (value instanceof int[] a) {
-      var list = new ArrayList<Object>(a.length);
-      for (int v : a) list.add(v);
-      return toPgArrayLiteral(list);
-    }
-    if (value instanceof long[] a) {
-      var list = new ArrayList<Object>(a.length);
-      for (long v : a) list.add(v);
-      return toPgArrayLiteral(list);
-    }
-    if (value instanceof double[] a) {
-      var list = new ArrayList<Object>(a.length);
-      for (double v : a) list.add(v);
-      return toPgArrayLiteral(list);
-    }
-    if (value instanceof float[] a) {
-      var list = new ArrayList<Object>(a.length);
-      for (float v : a) list.add(v);
-      return toPgArrayLiteral(list);
-    }
-    if (value instanceof short[] a) {
-      var list = new ArrayList<Object>(a.length);
-      for (short v : a) list.add(v);
-      return toPgArrayLiteral(list);
-    }
-    if (value instanceof boolean[] a) {
-      var list = new ArrayList<Object>(a.length);
-      for (boolean v : a) list.add(v);
-      return toPgArrayLiteral(list);
-    }
-    return value;
-  }
-
-  /**
-   * Format a collection as a Postgres array literal: {v1,v2,v3}. Values containing special
-   * characters are double-quoted.
-   */
-  private static String toPgArrayLiteral(Collection<?> elements) {
-    var sb = new StringBuilder();
-    sb.append('{');
-    boolean first = true;
-    for (Object element : elements) {
-      if (!first) {
-        sb.append(',');
-      }
-      if (element == null) {
-        sb.append("NULL");
-      } else {
-        String s = element.toString();
-        if (needsPgArrayQuoting(s)) {
-          sb.append('"');
-          for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '"' || c == '\\') {
-              sb.append('\\');
-            }
-            sb.append(c);
-          }
-          sb.append('"');
-        } else {
-          sb.append(s);
-        }
-      }
-      first = false;
-    }
-    sb.append('}');
-    return sb.toString();
-  }
-
-  private static boolean needsPgArrayQuoting(String s) {
-    if (s.isEmpty()) {
-      return true;
-    }
-    if (s.equalsIgnoreCase("NULL")) {
-      return true;
-    }
-    for (int i = 0; i < s.length(); i++) {
-      char c = s.charAt(i);
-      if (c == ',' || c == '{' || c == '}' || c == '"' || c == '\\' || c == ' ') {
-        return true;
-      }
-    }
-    return false;
-  }
-
   // --- Inner classes for prepared statements and cursors ---
+
+  /**
+   * Execute a prepared statement query: Bind + DescribePortal + Execute + Sync + flush, then read
+   * the response. Shared by both PgPreparedStatement and CachedPgPreparedStatement.
+   */
+  private RowSet executePreparedQuery(byte[] stmtNameCString, Object[] params) {
+    params = applyEncoders(params);
+    try {
+      encoder.writeBindInline(PgEncoder.EMPTY_CSTRING, stmtNameCString, params, textEncoder());
+      encoder.writeDescribePortal();
+      encoder.writeExecute();
+      encoder.writeSync();
+      encoder.flush(out);
+      return readExtendedQueryResponse();
+    } catch (IOException e) {
+      throw new DbConnectionException("I/O error executing prepared statement", e);
+    }
+  }
 
   private final class PgPreparedStatement implements PreparedStatement {
 
     private final String name;
-
-    // Retained from the server's RowDescription response during prepare();
-    // not currently used but available for future column metadata access on prepared statements.
-    @SuppressWarnings("unused") // kept for future PreparedStatement.getColumns() API
-    private final ColumnDescriptor[] columns;
-
+    private final byte[] nameCString;
     private final List<String> parameterNames;
     private boolean closed = false;
 
-    PgPreparedStatement(String name, ColumnDescriptor[] columns, List<String> parameterNames) {
+    PgPreparedStatement(String name, byte[] nameCString, List<String> parameterNames) {
       this.name = name;
-      this.columns = columns;
+      this.nameCString = nameCString;
       this.parameterNames = parameterNames;
     }
 
@@ -620,20 +370,7 @@ public final class PgConnection extends BaseConnection {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
-      // PreparedStatement.query() uses text encoding because 'Parse' was sent with OID=0
-      // (server-inferred types), so we cannot safely send binary params without knowing
-      // the server's inferred types.
-      String[] textParams = toTextParams(convertPgParams(params));
-      try {
-        encoder.writeBind("", name, textParams);
-        encoder.writeDescribePortal();
-        encoder.writeExecute();
-        encoder.writeSync();
-        encoder.flush(out);
-        return readExtendedQueryResponse();
-      } catch (IOException e) {
-        throw new DbConnectionException("I/O error executing prepared statement", e);
-      }
+      return executePreparedQuery(nameCString, params);
     }
 
     @Override
@@ -642,7 +379,7 @@ public final class PgConnection extends BaseConnection {
         throw new IllegalStateException(
             "This statement was not prepared with named parameters (:name syntax)");
       }
-      return query(convertPgParams(NamedParamParser.resolveParams(parameterNames, params)));
+      return query(NamedParamParser.resolveParams(parameterNames, params));
     }
 
     @Override
@@ -685,19 +422,7 @@ public final class PgConnection extends BaseConnection {
       if (closed) {
         throw new IllegalStateException("PreparedStatement is closed");
       }
-      // CachedPgPreparedStatement uses text encoding because Parse was sent with OID=0
-      String[] textParams = toTextParams(convertPgParams(params));
-      try {
-        encoder.writeBindBytes(
-            PgEncoder.EMPTY_CSTRING, cached.pgStatementNameCString(), textParams);
-        encoder.writeDescribePortal();
-        encoder.writeExecute();
-        encoder.writeSync();
-        encoder.flush(out);
-        return readExtendedQueryResponse();
-      } catch (IOException e) {
-        throw new DbConnectionException("I/O error executing prepared statement", e);
-      }
+      return executePreparedQuery(cached.pgStatementNameCString(), params);
     }
 
     @Override
@@ -706,8 +431,7 @@ public final class PgConnection extends BaseConnection {
         throw new IllegalStateException(
             "This statement was not prepared with named parameters (:name syntax)");
       }
-      return query(
-          convertPgParams(NamedParamParser.resolveParams(cached.parameterNames(), params)));
+      return query(NamedParamParser.resolveParams(cached.parameterNames(), params));
     }
 
     @Override
@@ -724,6 +448,19 @@ public final class PgConnection extends BaseConnection {
   // --- BaseConnection protocol methods ---
 
   /**
+   * Apply registered {@link io.github.bpdbi.core.ParamEncoder}s to convert domain types into
+   * binary-encodable types. Returns the original array if no encoders are registered.
+   */
+  private Object[] applyEncoders(Object[] params) {
+    if (!binderRegistry().hasEncoders() || params.length == 0) return params;
+    Object[] result = new Object[params.length];
+    for (int i = 0; i < params.length; i++) {
+      result[i] = binderRegistry().encode(params[i]);
+    }
+    return result;
+  }
+
+  /**
    * Compute Postgres type OIDs from Java parameter types. Used in Parse messages so the server
    * knows how to interpret binary params. Returns null for empty params.
    */
@@ -736,13 +473,16 @@ public final class PgConnection extends BaseConnection {
     return oids;
   }
 
+  private final Function<Object, String> textEncoder = this::encodeParamToText;
+
   /** Returns a text encoding function for params that cannot be binary-encoded. */
   private Function<Object, String> textEncoder() {
-    return this::encodeParamToText;
+    return textEncoder;
   }
 
   @Override
   protected @NonNull RowSet executeExtendedQuery(@NonNull String sql, @NonNull Object[] params) {
+    params = applyEncoders(params);
     invalidateCacheIfNeeded(sql);
 
     if (isCacheable(sql)) {
@@ -755,11 +495,7 @@ public final class PgConnection extends BaseConnection {
             PgEncoder.EMPTY_CSTRING, cached.pgStatementNameCString(), params, textEncoder());
         encoder.writeExecute();
         encoder.writeSync();
-        try {
-          encoder.flush(out);
-        } catch (IOException e) {
-          throw new DbConnectionException("I/O error during flush", e);
-        }
+        flushToNetwork();
         RowSet result = readExtendedQueryResponse(cached.columns());
         if (result.getError() != null && isStalePlanError(result.getError())) {
           // Evict this specific stale statement and re-execute
@@ -779,11 +515,7 @@ public final class PgConnection extends BaseConnection {
         encoder.writeDescribePortal();
         encoder.writeExecute();
         encoder.writeSync();
-        try {
-          encoder.flush(out);
-        } catch (IOException e) {
-          throw new DbConnectionException("I/O error during flush", e);
-        }
+        flushToNetwork();
         RowSet result = readExtendedQueryResponse();
         // Cache after successful execution, including column metadata for future Describe skipping
         if (result.getError() == null) {
@@ -845,13 +577,14 @@ public final class PgConnection extends BaseConnection {
       PendingStatement stmt = statements.get(i);
       estimatedResponseBytes += ESTIMATED_RESPONSE_BYTES_PER_QUERY;
 
+      Object[] stmtParams = applyEncoders(stmt.params());
       boolean sqlChanged = !stmt.sql().equals(lastParsedSql);
       if (sqlChanged) {
-        encoder.writeParse(stmt.sql(), computeParamTypeOIDs(stmt.params()));
+        encoder.writeParse(stmt.sql(), computeParamTypeOIDs(stmtParams));
         lastParsedSql = stmt.sql();
       }
       encoder.writeBindInline(
-          PgEncoder.EMPTY_CSTRING, PgEncoder.EMPTY_CSTRING, stmt.params(), fallback);
+          PgEncoder.EMPTY_CSTRING, PgEncoder.EMPTY_CSTRING, stmtParams, fallback);
       if (sqlChanged) {
         encoder.writeDescribePortal();
       }
@@ -1167,6 +900,7 @@ public final class PgConnection extends BaseConnection {
   @Override
   protected void executeExtendedQueryStreaming(
       @NonNull String sql, @NonNull Object[] params, @NonNull Consumer<Row> consumer) {
+    params = applyEncoders(params);
     encoder.writeParse(sql, computeParamTypeOIDs(params));
     encoder.writeBindInline(
         PgEncoder.EMPTY_CSTRING, PgEncoder.EMPTY_CSTRING, params, textEncoder());
@@ -1224,6 +958,7 @@ public final class PgConnection extends BaseConnection {
   @Override
   protected @NonNull RowStream createExtendedQueryRowStream(
       @NonNull String sql, @NonNull Object[] params) {
+    params = applyEncoders(params);
     encoder.writeParse(sql, computeParamTypeOIDs(params));
     encoder.writeBindInline(
         PgEncoder.EMPTY_CSTRING, PgEncoder.EMPTY_CSTRING, params, textEncoder());
@@ -1418,15 +1153,11 @@ public final class PgConnection extends BaseConnection {
    */
   private void invalidatePreparedStatementCache() {
     if (psCache != null && !psCache.isEmpty()) {
-      deallocateEpoch++;
-      handleEvicted(new ArrayList<>(psCache.values()));
+      for (var stmt : psCache.values()) {
+        closeCachedStatement(stmt);
+      }
       psCache.clear();
     }
-  }
-
-  /** Return the current deallocate epoch (for testing). */
-  int deallocateEpoch() {
-    return deallocateEpoch;
   }
 
   // --- Package-private accessors for PgCursor ---

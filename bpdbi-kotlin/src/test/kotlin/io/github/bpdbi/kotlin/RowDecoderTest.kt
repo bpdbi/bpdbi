@@ -120,9 +120,9 @@ class RowDecoderTest {
 
     @Test
     fun `decode all primitive types`() {
-        val r = testRow("true", "7", "42", "123456789", "1.5", "3.14", "hello")
+        val r = testRow("true", "7", "42", "123456789", "1.5", "3.140", "hello")
         val result = serializer<AllPrimitives>().deserialize(RowDecoder(r))
-        assertEquals(AllPrimitives(true, 7, 42, 123456789L, 1.5f, 3.14, "hello"), result)
+        assertEquals(AllPrimitives(true, 7, 42, 123456789L, 1.5f, 3.140, "hello"), result)
     }
 
     @Test
@@ -223,21 +223,6 @@ class RowDecoderTest {
         val value = "2026-02-04 04:31:16.935337"
         val instant = parseInstant(value)
         assertNotNull(instant)
-    }
-
-    @Test
-    fun `parsePgArray empty`() {
-        assertEquals(emptyList<String>(), parsePgArray("{}"))
-    }
-
-    @Test
-    fun `parsePgArray with values`() {
-        assertEquals(listOf("a", "b", "c"), parsePgArray("{a,b,c}"))
-    }
-
-    @Test
-    fun `parsePgArray with quoted values`() {
-        assertEquals(listOf("hello world", "foo"), parsePgArray("""{"hello world","foo"}"""))
     }
 
     // --- Value class tests ---

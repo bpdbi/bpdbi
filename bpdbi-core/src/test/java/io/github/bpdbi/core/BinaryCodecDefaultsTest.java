@@ -20,108 +20,106 @@ import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests the default offset-based methods in the BinaryCodec interface. These defaults copy a slice
- * and delegate to the non-offset methods. We test them via a minimal stub that only implements the
- * non-offset abstract methods — the offset-based defaults are inherited.
+ * Tests the default methods in the BinaryCodec interface ({@code decode(byte[], Class)}, {@code
+ * canDecode}, {@code decodeBytes}) via a minimal stub that implements only the abstract methods.
  */
 class BinaryCodecDefaultsTest {
 
   /**
-   * Minimal BinaryCodec that implements only the required abstract methods. All offset-based
-   * default methods are inherited and will copy-then-delegate to these implementations.
+   * Minimal BinaryCodec that implements the required abstract methods. Default methods ({@code
+   * decode}, {@code canDecode}, {@code decodeBytes}) are inherited and tested.
    */
   @SuppressWarnings("NullAway") // Test stub — intentionally minimal
   private static final BinaryCodec STUB =
       new BinaryCodec() {
         @Override
-        public boolean decodeBool(byte @NonNull [] value) {
-          return value[0] != 0;
+        public boolean decodeBool(byte @NonNull [] buf, int offset) {
+          return buf[offset] != 0;
         }
 
         @Override
-        public short decodeInt2(byte @NonNull [] value) {
-          return (short) ((value[0] << 8) | (value[1] & 0xFF));
+        public short decodeInt2(byte @NonNull [] buf, int offset) {
+          return (short) ((buf[offset] << 8) | (buf[offset + 1] & 0xFF));
         }
 
         @Override
-        public int decodeInt4(byte @NonNull [] value) {
-          return (value[0] << 24)
-              | ((value[1] & 0xFF) << 16)
-              | ((value[2] & 0xFF) << 8)
-              | (value[3] & 0xFF);
+        public int decodeInt4(byte @NonNull [] buf, int offset) {
+          return (buf[offset] << 24)
+              | ((buf[offset + 1] & 0xFF) << 16)
+              | ((buf[offset + 2] & 0xFF) << 8)
+              | (buf[offset + 3] & 0xFF);
         }
 
         @Override
-        public long decodeInt8(byte @NonNull [] value) {
-          return ((long) decodeInt4(value) << 32)
-              | (decodeInt4(new byte[] {value[4], value[5], value[6], value[7]}) & 0xFFFFFFFFL);
+        public long decodeInt8(byte @NonNull [] buf, int offset) {
+          return ((long) decodeInt4(buf, offset) << 32)
+              | (decodeInt4(buf, offset + 4) & 0xFFFFFFFFL);
         }
 
         @Override
-        public float decodeFloat4(byte @NonNull [] value) {
-          return Float.intBitsToFloat(decodeInt4(value));
+        public float decodeFloat4(byte @NonNull [] buf, int offset) {
+          return Float.intBitsToFloat(decodeInt4(buf, offset));
         }
 
         @Override
-        public double decodeFloat8(byte @NonNull [] value) {
-          return Double.longBitsToDouble(decodeInt8(value));
+        public double decodeFloat8(byte @NonNull [] buf, int offset) {
+          return Double.longBitsToDouble(decodeInt8(buf, offset));
         }
 
         @Override
-        public @NonNull String decodeString(byte @NonNull [] value) {
-          return new String(value, StandardCharsets.UTF_8);
+        public @NonNull String decodeString(byte @NonNull [] buf, int offset, int length) {
+          return new String(buf, offset, length, StandardCharsets.UTF_8);
         }
 
         @Override
-        public @NonNull UUID decodeUuid(byte @NonNull [] value) {
-          long msb = decodeInt8(value);
-          long lsb =
-              decodeInt8(
-                  new byte[] {
-                    value[8], value[9], value[10], value[11], value[12], value[13], value[14],
-                    value[15]
-                  });
+        public @NonNull UUID decodeUuid(byte @NonNull [] buf, int offset, int length) {
+          long msb = decodeInt8(buf, offset);
+          long lsb = decodeInt8(buf, offset + 8);
           return new UUID(msb, lsb);
         }
 
         @Override
-        public @NonNull LocalDate decodeDate(byte @NonNull [] value) {
-          return LocalDate.of(2000, 1, 1).plusDays(decodeInt4(value));
+        public @NonNull LocalDate decodeDate(byte @NonNull [] buf, int offset, int length) {
+          return LocalDate.of(2000, 1, 1).plusDays(decodeInt4(buf, offset));
         }
 
         @Override
-        public @NonNull LocalTime decodeTime(byte @NonNull [] value) {
-          return LocalTime.ofNanoOfDay(decodeInt8(value) * 1000);
+        public @NonNull LocalTime decodeTime(byte @NonNull [] buf, int offset, int length) {
+          return LocalTime.ofNanoOfDay(decodeInt8(buf, offset) * 1000);
         }
 
         @Override
-        public @NonNull LocalDateTime decodeTimestamp(byte @NonNull [] value) {
-          return LocalDateTime.of(2000, 1, 1, 0, 0).plusNanos(decodeInt8(value) * 1000);
+        public @NonNull LocalDateTime decodeTimestamp(
+            byte @NonNull [] buf, int offset, int length) {
+          return LocalDateTime.of(2000, 1, 1, 0, 0).plusNanos(decodeInt8(buf, offset) * 1000);
         }
 
         @Override
-        public @NonNull OffsetDateTime decodeTimestamptz(byte @NonNull [] value) {
-          return decodeTimestamp(value).atOffset(ZoneOffset.UTC);
+        public @NonNull OffsetDateTime decodeTimestamptz(
+            byte @NonNull [] buf, int offset, int length) {
+          return decodeTimestamp(buf, offset, length).atOffset(ZoneOffset.UTC);
         }
 
         @Override
-        public @NonNull OffsetTime decodeTimetz(byte @NonNull [] value) {
+        public @NonNull OffsetTime decodeTimetz(byte @NonNull [] buf, int offset, int length) {
           return OffsetTime.of(LocalTime.NOON, ZoneOffset.UTC);
         }
 
         @Override
-        public byte @NonNull [] decodeBytes(byte @NonNull [] value) {
-          return value;
+        public @NonNull BigDecimal decodeNumeric(byte @NonNull [] buf, int offset, int length) {
+          return new BigDecimal(decodeString(buf, offset, length));
         }
 
         @Override
-        public @NonNull BigDecimal decodeNumeric(byte @NonNull [] value) {
-          return new BigDecimal(decodeString(value));
+        public @NonNull String decodeJson(
+            byte @NonNull [] buf, int offset, int length, int typeOID) {
+          return decodeString(buf, offset, length);
         }
 
         @Override
-        public @NonNull String decodeJson(byte @NonNull [] value, int typeOID) {
-          return decodeString(value);
+        public @NonNull String decodeToString(
+            byte @NonNull [] buf, int offset, int length, int typeOID) {
+          return decodeString(buf, offset, length);
         }
       };
 
@@ -287,11 +285,6 @@ class BinaryCodecDefaultsTest {
   }
 
   // ===== Default array methods return null =====
-
-  @Test
-  void decodeArrayDefaultReturnsNull() {
-    assertNull(STUB.decodeArray(new byte[] {}, bytes -> "x"));
-  }
 
   @Test
   void decodeArrayElementsDefaultReturnsNull() {

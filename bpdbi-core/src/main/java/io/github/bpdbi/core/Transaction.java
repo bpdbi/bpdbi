@@ -129,6 +129,13 @@ public final class Transaction implements Connection {
   }
 
   @Override
+  public @NonNull List<RowSet> executeManyNamed(
+      @NonNull String sql, @NonNull List<Map<String, Object>> paramSets) {
+    checkNotFinished();
+    return conn.executeManyNamed(sql, paramSets);
+  }
+
+  @Override
   public void ping() {
     checkNotFinished();
     conn.ping();

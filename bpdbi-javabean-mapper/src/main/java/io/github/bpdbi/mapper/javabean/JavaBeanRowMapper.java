@@ -1,8 +1,8 @@
-package io.github.bpdbi.mapper;
+package io.github.bpdbi.mapper.javabean;
 
 import io.github.bpdbi.core.Row;
-import io.github.bpdbi.core.RowExtractors;
 import io.github.bpdbi.core.RowMapper;
+import io.github.bpdbi.core.spi.RowExtractors;
 import java.beans.BeanInfo;
 import java.beans.IntrospectionException;
 import java.beans.Introspector;
@@ -49,12 +49,10 @@ import org.jspecify.annotations.NonNull;
 public final class JavaBeanRowMapper<T> implements RowMapper<T> {
 
   private final Slot[] slots;
-  private final Class<T> beanType;
   private final Constructor<T> constructor;
 
   private JavaBeanRowMapper(Class<T> beanType) {
     this.constructor = resolveConstructor(beanType);
-    this.beanType = beanType;
     this.slots = buildSlots(beanType);
   }
 
@@ -135,7 +133,7 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
             n.setter().invoke(instance, nested);
           }
         }
-      } catch (Exception e) {
+      } catch (ReflectiveOperationException | IndexOutOfBoundsException e) {
         throw new IllegalStateException(
             "Failed to set property on " + ctor.getDeclaringClass().getName(), e);
       }

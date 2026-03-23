@@ -22,7 +22,6 @@ public final class ColumnBuffer {
   private int[] lengths; // -1 = NULL
   private int rowCount;
   private int dataPos;
-  private long totalValueBytes; // tracks total non-null bytes appended for average calculation
   private int nonNullCount;
 
   public ColumnBuffer(int initialRows, int estimatedAvgSize) {
@@ -49,7 +48,6 @@ public final class ColumnBuffer {
       lengths[rowCount] = value.length;
       System.arraycopy(value, 0, data, dataPos, value.length);
       dataPos += value.length;
-      totalValueBytes += value.length;
       nonNullCount++;
     }
     rowCount++;
@@ -87,16 +85,16 @@ public final class ColumnBuffer {
       pos += read;
     }
     dataPos += length;
-    totalValueBytes += length;
     nonNullCount++;
     rowCount++;
   }
 
   /**
    * Get the raw bytes for a given row, or null if the value is SQL NULL. Returns a copy — the
-   * caller owns the returned array.
+   * caller owns the returned array. Used by tests only; production code uses the zero-copy path via
+   * {@link #buffer(int)}, {@link #offset(int)}, {@link #length(int)}.
    */
-  public byte[] get(int rowIndex) {
+  byte[] get(int rowIndex) {
     if (lengths[rowIndex] == -1) {
       return null;
     }
@@ -106,10 +104,15 @@ public final class ColumnBuffer {
     return result;
   }
 
+  /** Whether the value at the given row index is SQL NULL. */
   public boolean isNull(int rowIndex) {
     return lengths[rowIndex] == -1;
   }
 
+  /**
+   * Get the shared backing array for the given row, or null if the value is SQL NULL. The returned
+   * array is shared — use {@link #offset(int)} and {@link #length(int)} to locate the value.
+   */
   public byte[] buffer(int rowIndex) {
     if (lengths[rowIndex] == -1) {
       return null;
@@ -117,14 +120,17 @@ public final class ColumnBuffer {
     return data;
   }
 
+  /** Start offset of the value within {@link #buffer(int)} for the given row. */
   public int offset(int rowIndex) {
     return offsets[rowIndex];
   }
 
+  /** Byte length of the value for the given row. Returns {@code -1} for SQL NULL. */
   public int length(int rowIndex) {
     return lengths[rowIndex];
   }
 
+  /** Number of rows appended so far. */
   public int rowCount() {
     return rowCount;
   }
@@ -134,7 +140,7 @@ public final class ColumnBuffer {
    * appended. Useful for sizing future ColumnBuffers based on observed data.
    */
   public int averageValueSize() {
-    return nonNullCount == 0 ? 0 : (int) (totalValueBytes / nonNullCount);
+    return nonNullCount == 0 ? 0 : dataPos / nonNullCount;
   }
 
   /**
@@ -144,7 +150,6 @@ public final class ColumnBuffer {
   public void reset() {
     rowCount = 0;
     dataPos = 0;
-    totalValueBytes = 0;
     nonNullCount = 0;
   }
 

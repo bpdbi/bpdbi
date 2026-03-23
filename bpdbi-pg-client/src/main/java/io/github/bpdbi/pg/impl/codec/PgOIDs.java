@@ -6,6 +6,7 @@ final class PgOIDs {
   static final int BOOL = 16;
   static final int BYTEA = 17;
   static final int CHAR = 18;
+  static final int NAME = 19;
   static final int INT8 = 20;
   static final int INT2 = 21;
   static final int INT4 = 23;
@@ -41,6 +42,23 @@ final class PgOIDs {
   static final int JSONB = 3802;
   static final int TSVECTOR = 3614;
   static final int TSQUERY = 3615;
+
+  // Array types
+  static final int BOOL_ARRAY = 1000;
+  static final int BYTEA_ARRAY = 1001;
+  static final int INT2_ARRAY = 1005;
+  static final int INT4_ARRAY = 1007;
+  static final int TEXT_ARRAY = 1009;
+  static final int INT8_ARRAY = 1016;
+  static final int FLOAT4_ARRAY = 1021;
+  static final int FLOAT8_ARRAY = 1022;
+  static final int UUID_ARRAY = 2951;
+  static final int DATE_ARRAY = 1182;
+  static final int TIME_ARRAY = 1183;
+  static final int TIMESTAMP_ARRAY = 1115;
+  static final int TIMESTAMPTZ_ARRAY = 1185;
+  static final int NUMERIC_ARRAY = 1231;
+  static final int TIMETZ_ARRAY = 1270;
 
   private PgOIDs() {}
 }

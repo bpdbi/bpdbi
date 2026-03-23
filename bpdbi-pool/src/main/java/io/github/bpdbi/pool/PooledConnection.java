@@ -116,6 +116,12 @@ final class PooledConnection implements Connection {
   }
 
   @Override
+  public @NonNull List<RowSet> executeManyNamed(
+      @NonNull String sql, @NonNull List<Map<String, Object>> paramSets) {
+    return delegate.executeManyNamed(sql, paramSets);
+  }
+
+  @Override
   public @NonNull PreparedStatement prepare(@NonNull String sql) {
     return delegate.prepare(sql);
   }
@@ -125,6 +131,12 @@ final class PooledConnection implements Connection {
     return delegate.cursor(sql, params);
   }
 
+  /**
+   * Delegates to the real connection so that the Transaction wraps the delegate, not this
+   * PooledConnection. This is critical for withTransaction() correctness: the default interface
+   * method calls this.begin(), so if we didn't delegate, the Transaction would hold a reference to
+   * the PooledConnection and tx.close() could return it to the pool mid-transaction.
+   */
   @Override
   public @NonNull Transaction begin() {
     return delegate.begin();

@@ -1,7 +1,7 @@
 [
   {
     "type": {
-      "name": "io.github.bpdbi.mapper.RecordRowMapper"
+      "name": "io.github.bpdbi.mapper.record.RecordRowMapper"
     },
     "allDeclaredConstructors": true,
     "allDeclaredMethods": true

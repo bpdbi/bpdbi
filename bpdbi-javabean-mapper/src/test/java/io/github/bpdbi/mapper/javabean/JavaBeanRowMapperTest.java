@@ -1,4 +1,4 @@
-package io.github.bpdbi.mapper;
+package io.github.bpdbi.mapper.javabean;
 
 import static io.github.bpdbi.core.test.TestRows.row;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -711,17 +711,17 @@ class JavaBeanRowMapperTest {
     Row r =
         row(
             new String[] {"id", "name", "lat", "lng", "name", "lat", "lng"},
-            new String[] {"1", "Home", "52.37", "4.89", "Office", "52.35", "4.91"});
+            new String[] {"1", "Home", "52.370", "4.890", "Office", "52.350", "4.910"});
 
     Trip trip = mapper.map(r);
 
     assertEquals(1, trip.getId());
     assertEquals("Home", trip.getOrigin().getName());
-    assertEquals(52.37, trip.getOrigin().getCoord().getLat());
-    assertEquals(4.89, trip.getOrigin().getCoord().getLng());
+    assertEquals(52.370, trip.getOrigin().getCoord().getLat());
+    assertEquals(4.890, trip.getOrigin().getCoord().getLng());
     assertEquals("Office", trip.getDestination().getName());
-    assertEquals(52.35, trip.getDestination().getCoord().getLat());
-    assertEquals(4.91, trip.getDestination().getCoord().getLng());
+    assertEquals(52.350, trip.getDestination().getCoord().getLat());
+    assertEquals(4.910, trip.getDestination().getCoord().getLng());
   }
 
   @Test

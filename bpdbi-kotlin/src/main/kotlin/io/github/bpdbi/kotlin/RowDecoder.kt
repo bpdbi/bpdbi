@@ -208,12 +208,12 @@ class RowDecoder(
         }
 
         // Kotlin time types: read directly via Row typed getters (binary-aware, nullable)
-        if (isTimeType(childDesc.serialName) || isTimeType(deserializer.descriptor.serialName)) {
+        val timeSerialName = childDesc.serialName.takeIf { isTimeType(it) }
+            ?: deserializer.descriptor.serialName.takeIf { isTimeType(it) }
+        if (timeSerialName != null) {
             return handleNullableValue(descriptor, index) {
-                val serialName = if (isTimeType(childDesc.serialName)) childDesc.serialName
-                    else deserializer.descriptor.serialName
-                @Suppress("UNCHECKED_CAST")
-                readTimeType(serialName, row, columnIndex++) as? T
+                @Suppress("UNCHECKED_CAST") // safe: timeSerialName matched a known time type
+                readTimeType(timeSerialName, row, columnIndex++) as? T
             }
         }
 
@@ -239,8 +239,7 @@ class RowDecoder(
     /**
      * Read a typed array from the Row using the appropriate typed getter based on the element kind.
      * Binary path: wire bytes → typed value directly, no string intermediary.
-     * Text path: PG array text → parse each element string to the target type.
-     * Returns null if the column is SQL NULL or not a PG array.
+     * Returns null if the column is SQL NULL.
      */
     private fun readTypedArray(listDescriptor: SerialDescriptor, col: Int): Any? {
         val elementKind = listDescriptor.getElementDescriptor(0).kind
@@ -298,15 +297,6 @@ private fun readTimeType(serialName: String, row: Row, col: Int): Any? = when (s
 
 /** Check if a descriptor represents a Set collection (vs List). */
 private fun isSetDescriptor(descriptor: SerialDescriptor): Boolean =
-    descriptor.serialName.contains("Set")
+    descriptor.serialName.startsWith("kotlin.collections.LinkedHashSet")
+        || descriptor.serialName.startsWith("kotlin.collections.HashSet")
 
-/**
- * Parse a Postgres text-format array like `{val1,val2,val3}` into a List<String>.
- */
-internal fun parsePgArray(value: String): List<String> {
-    if (value == "{}") return emptyList()
-    val inner = value.removePrefix("{").removeSuffix("}")
-    if (inner.isEmpty()) return emptyList()
-    // Simple split — doesn't handle quoted/escaped values with commas
-    return inner.split(",").map { it.trim().removeSurrounding("\"") }
-}

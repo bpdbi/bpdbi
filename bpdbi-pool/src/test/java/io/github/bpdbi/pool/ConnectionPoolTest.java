@@ -11,7 +11,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.bpdbi.core.Connection;
 import io.github.bpdbi.core.test.AbstractStubConnection;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -813,6 +816,206 @@ class ConnectionPoolTest {
     var c1 = pool.acquire();
     assertNotNull(c1);
     c1.close();
+    pool.close();
+  }
+
+  // =====================================================================
+  // PooledConnection delegation
+  // =====================================================================
+
+  @SuppressWarnings("NullAway") // test stub — annotations omitted for brevity
+  static class RecordingStubConnection extends AbstractStubConnection {
+
+    final Set<String> calls = new LinkedHashSet<>();
+
+    @Override
+    public io.github.bpdbi.core.RowSet query(String sql) {
+      calls.add("query");
+      return super.query(sql);
+    }
+
+    @Override
+    public io.github.bpdbi.core.RowSet query(String sql, Object... params) {
+      calls.add("queryParams");
+      return super.query(sql, params);
+    }
+
+    @Override
+    public io.github.bpdbi.core.RowSet query(String sql, Map<String, Object> params) {
+      calls.add("queryMap");
+      return super.query(sql, params);
+    }
+
+    @Override
+    public int enqueue(String sql) {
+      calls.add("enqueue");
+      return super.enqueue(sql);
+    }
+
+    @Override
+    public int enqueue(String sql, Object... params) {
+      calls.add("enqueueParams");
+      return super.enqueue(sql, params);
+    }
+
+    @Override
+    public int enqueue(String sql, Map<String, Object> params) {
+      calls.add("enqueueMap");
+      return super.enqueue(sql, params);
+    }
+
+    @Override
+    public List<io.github.bpdbi.core.RowSet> flush() {
+      calls.add("flush");
+      return super.flush();
+    }
+
+    @Override
+    public List<io.github.bpdbi.core.RowSet> executeMany(String sql, List<Object[]> paramSets) {
+      calls.add("executeMany");
+      return super.executeMany(sql, paramSets);
+    }
+
+    @Override
+    public void ping() {
+      calls.add("ping");
+    }
+
+    @Override
+    public Map<String, String> parameters() {
+      calls.add("parameters");
+      return super.parameters();
+    }
+
+    @Override
+    public void queryStream(String sql, java.util.function.Consumer<io.github.bpdbi.core.Row> c) {
+      calls.add("queryStream");
+    }
+
+    @Override
+    public void queryStream(
+        String sql, Object[] params, java.util.function.Consumer<io.github.bpdbi.core.Row> c) {
+      calls.add("queryStreamParams");
+    }
+
+    @Override
+    public io.github.bpdbi.core.RowStream stream(String sql, Object... params) {
+      calls.add("stream");
+      return super.stream(sql, params);
+    }
+
+    @Override
+    public io.github.bpdbi.core.BinderRegistry binderRegistry() {
+      calls.add("binderRegistry");
+      return super.binderRegistry();
+    }
+
+    @Override
+    public void setBinderRegistry(io.github.bpdbi.core.BinderRegistry registry) {
+      calls.add("setBinderRegistry");
+    }
+
+    @Override
+    public io.github.bpdbi.core.ColumnMapperRegistry mapperRegistry() {
+      calls.add("mapperRegistry");
+      return super.mapperRegistry();
+    }
+
+    @Override
+    public void setMapperRegistry(io.github.bpdbi.core.ColumnMapperRegistry registry) {
+      calls.add("setMapperRegistry");
+    }
+
+    @Override
+    public io.github.bpdbi.core.JsonMapper jsonMapper() {
+      calls.add("jsonMapper");
+      return super.jsonMapper();
+    }
+
+    @Override
+    public void setJsonMapper(io.github.bpdbi.core.JsonMapper mapper) {
+      calls.add("setJsonMapper");
+    }
+
+    @Override
+    public io.github.bpdbi.core.Transaction begin() {
+      calls.add("begin");
+      return super.begin();
+    }
+
+    @Override
+    public void close() {
+      calls.add("close");
+    }
+  }
+
+  @Test
+  void pooledConnectionDelegatesAllMethods() {
+    var recording = new RecordingStubConnection();
+    var created = new AtomicBoolean(false);
+    var pool =
+        new ConnectionPool(
+            () -> {
+              if (created.getAndSet(true)) {
+                throw new IllegalStateException("should only create one connection");
+              }
+              return recording;
+            },
+            new PoolConfig().maxSize(1));
+
+    try (var conn = pool.acquire()) {
+      conn.query("SELECT 1");
+      conn.query("SELECT $1", 42);
+      conn.query("SELECT :x", Map.of("x", 1));
+      conn.enqueue("SELECT 1");
+      conn.enqueue("SELECT $1", 42);
+      conn.enqueue("SELECT :x", Map.of("x", 1));
+      conn.flush();
+      conn.executeMany("SELECT $1", List.of());
+      conn.ping();
+      conn.parameters();
+      conn.queryStream("SELECT 1", row -> {});
+      conn.queryStream("SELECT $1", new Object[] {42}, row -> {});
+      conn.stream("SELECT 1");
+      conn.begin();
+      conn.binderRegistry();
+      conn.mapperRegistry();
+      conn.jsonMapper();
+      conn.setBinderRegistry(conn.binderRegistry());
+      conn.setMapperRegistry(conn.mapperRegistry());
+      conn.setJsonMapper(null);
+    }
+
+    var expected =
+        Set.of(
+            "query",
+            "queryParams",
+            "queryMap",
+            "enqueue",
+            "enqueueParams",
+            "enqueueMap",
+            "flush",
+            "executeMany",
+            "ping",
+            "parameters",
+            "queryStream",
+            "queryStreamParams",
+            "stream",
+            "begin",
+            "binderRegistry",
+            "mapperRegistry",
+            "jsonMapper",
+            "setBinderRegistry",
+            "setMapperRegistry",
+            "setJsonMapper");
+
+    assertEquals(expected, recording.calls, "All delegated methods should have been called");
+
+    // close() on PooledConnection should NOT delegate to the real connection
+    assertFalse(
+        recording.calls.contains("close"),
+        "PooledConnection.close() should return to pool, not delegate");
+
     pool.close();
   }
 }

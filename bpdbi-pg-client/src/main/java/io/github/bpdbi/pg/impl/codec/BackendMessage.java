@@ -36,6 +36,9 @@ public sealed interface BackendMessage {
 
   record EmptyQueryResponse() implements BackendMessage {}
 
+  /** Singleton — avoids allocation on every empty query response. */
+  EmptyQueryResponse EMPTY_QUERY_RESPONSE = new EmptyQueryResponse();
+
   record ParseComplete() implements BackendMessage {}
 
   /** Singleton — avoids allocation on every pipelined query response. */
@@ -48,12 +51,18 @@ public sealed interface BackendMessage {
 
   record CloseComplete() implements BackendMessage {}
 
+  /** Singleton — avoids allocation on every pipelined query response. */
+  CloseComplete CLOSE_COMPLETE = new CloseComplete();
+
   record NoData() implements BackendMessage {}
 
   /** Singleton — avoids allocation on every pipelined query response. */
   NoData NO_DATA = new NoData();
 
   record PortalSuspended() implements BackendMessage {}
+
+  /** Singleton — avoids allocation on every portal suspension. */
+  PortalSuspended PORTAL_SUSPENDED = new PortalSuspended();
 
   record ParameterDescription(int @NonNull [] typeOIDs) implements BackendMessage {}
 

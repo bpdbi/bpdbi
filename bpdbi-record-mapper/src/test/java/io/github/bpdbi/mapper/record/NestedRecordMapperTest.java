@@ -1,4 +1,4 @@
-package io.github.bpdbi.mapper;
+package io.github.bpdbi.mapper.record;
 
 import static io.github.bpdbi.core.test.TestRows.row;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -55,13 +55,13 @@ class NestedRecordRowMapperTest {
     Row r =
         row(
             new String[] {"id", "name", "lat", "lng", "name", "lat", "lng"},
-            new String[] {"1", "Home", "52.37", "4.89", "Office", "52.35", "4.91"});
+            new String[] {"1", "Home", "52.370", "4.890", "Office", "52.350", "4.910"});
 
     Trip trip = mapper.map(r);
 
     assertEquals(1, trip.id());
-    assertEquals(new Location("Home", new Coordinate(52.37, 4.89)), trip.origin());
-    assertEquals(new Location("Office", new Coordinate(52.35, 4.91)), trip.destination());
+    assertEquals(new Location("Home", new Coordinate(52.370, 4.890)), trip.origin());
+    assertEquals(new Location("Office", new Coordinate(52.350, 4.910)), trip.destination());
   }
 
   @Test

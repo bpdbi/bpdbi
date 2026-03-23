@@ -1196,6 +1196,17 @@ See [`examples/`](examples/) for runnable examples.
 - Only for `bpdbi-kotlin`: `kotlin-stdlib` (for `kotlin.time` and `kotlin.uuid`) and
   `kotlinx-serialization`
 
+## Limitations
+
+- **Arrays**: Only one-dimensional Postgres arrays are supported. Multi-dimensional arrays
+  (e.g., `int[][]`) are not decoded and will return an empty list. This is a deliberate
+  trade-off — multi-dimensional arrays are rarely used in practice, and supporting them adds
+  significant complexity to the binary array codec.
+- **Exception hierarchy**: `DbException` is the base for all database errors.
+  `PoolException` (with subtypes `PoolExhaustedException` and `PoolTimeoutException`)
+  is a separate hierarchy for pool-specific errors. When using pooled connections,
+  catch both if you want to handle all bpdbi-related errors.
+
 ## Develop
 
 **Code formatting** — The project uses [Google Java Format](https://github.com/google/google-java-format)
@@ -1219,13 +1230,10 @@ Early development. Not yet published to Maven Central — the dependency coordin
 
 ## Todo
 
-* Look into the testcases of our lib/jdbi RowMapper -- see if we have parity in Bpdbi
-* Test for nested records
 * Double check we have all kotlin's time types implemented
-* Make explicit when it's positional mapping and when ist' "by name"
 * Consider abstracting over parameter injection syntax: may be a bad idea (what
   does Jdbi do?)
-* allow nested transactions
+* Document how parameter binding is sometimes binary and sometimes text-based: allow extensions on both.
 * Publish to Maven Central
 
 ## License

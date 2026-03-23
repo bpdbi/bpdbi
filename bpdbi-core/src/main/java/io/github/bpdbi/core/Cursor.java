@@ -7,14 +7,15 @@ import org.jspecify.annotations.NonNull;
  * transaction.
  *
  * <pre>{@code
- * conn.query("BEGIN");
- * try (var cursor = conn.cursor("SELECT * FROM big_table")) {
- *     while (cursor.hasMore()) {
- *         RowSet batch = cursor.read(100);
- *         processBatch(batch);
+ * try (var tx = conn.begin()) {
+ *     try (var cursor = tx.cursor("SELECT * FROM big_table")) {
+ *         while (cursor.hasMore()) {
+ *             RowSet batch = cursor.read(100);
+ *             processBatch(batch);
+ *         }
  *     }
+ *     tx.commit();
  * }
- * conn.query("COMMIT");
  * }</pre>
  */
 public interface Cursor extends AutoCloseable {

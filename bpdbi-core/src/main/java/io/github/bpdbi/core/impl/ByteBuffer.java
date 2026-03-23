@@ -42,10 +42,6 @@ public final class ByteBuffer {
     return readerIndex;
   }
 
-  public void readerIndex(int index) {
-    this.readerIndex = index;
-  }
-
   public int writerIndex() {
     return writerIndex;
   }
@@ -78,6 +74,7 @@ public final class ByteBuffer {
     return v;
   }
 
+  /** Used by tests to verify encoded values. No production callers. */
   public long readLong() {
     long v =
         (long) (data[readerIndex] & 0xFF) << 56
@@ -92,10 +89,12 @@ public final class ByteBuffer {
     return v;
   }
 
+  /** Used by tests to verify encoded values. No production callers. */
   public float readFloat() {
     return Float.intBitsToFloat(readInt());
   }
 
+  /** Used by tests to verify encoded values. No production callers. */
   public double readDouble() {
     return Double.longBitsToDouble(readLong());
   }
@@ -113,10 +112,7 @@ public final class ByteBuffer {
     readerIndex += count;
   }
 
-  public byte getByte(int index) {
-    return data[index];
-  }
-
+  /** Used by tests to verify encoded values at specific offsets. */
   public int getInt(int index) {
     return (data[index] & 0xFF) << 24
         | (data[index + 1] & 0xFF) << 16
@@ -176,11 +172,11 @@ public final class ByteBuffer {
   }
 
   public void writeFloat(float value) {
-    writeInt(Float.floatToIntBits(value));
+    writeInt(Float.floatToRawIntBits(value));
   }
 
   public void writeDouble(double value) {
-    writeLong(Double.doubleToLongBits(value));
+    writeLong(Double.doubleToRawLongBits(value));
   }
 
   public void writeBytes(byte @NonNull [] src) {
@@ -194,11 +190,8 @@ public final class ByteBuffer {
   }
 
   public void writeCString(@NonNull String s) {
-    byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
-    ensureCapacity(bytes.length + 1);
-    System.arraycopy(bytes, 0, data, writerIndex, bytes.length);
-    writerIndex += bytes.length;
-    data[writerIndex++] = 0;
+    writeStringUtf8(s);
+    writeByte(0);
   }
 
   /**
@@ -212,8 +205,7 @@ public final class ByteBuffer {
   }
 
   public void writeString(@NonNull String s) {
-    byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
-    writeBytes(bytes);
+    writeStringUtf8(s);
   }
 
   public void setInt(int index, int value) {

@@ -253,18 +253,6 @@ keeping the client-side view in sync with the server.
 
 ## Architectural
 
-### `extra_float_digits` at connection init
-
-*Inspired by pgjdbc's startup `SET extra_float_digits = 3`.*
-
-When Postgres sends `float8` columns as text (parameterless queries use the
-simple/text protocol), it rounds values by default, losing precision on
-round-trips. Setting `extra_float_digits = 3` at connection startup tells the
-server to emit enough decimal digits to preserve the exact IEEE 754 bit
-pattern. This is a one-time `SET` after handshake — zero ongoing cost.
-
-`bpdbi-pg-client/…/PgConnection.java` — `connect(ConnectionConfig)`
-
 ### Adaptive cursor fetch size
 
 *Inspired by pgjdbc's `AdaptiveFetchCache`.*

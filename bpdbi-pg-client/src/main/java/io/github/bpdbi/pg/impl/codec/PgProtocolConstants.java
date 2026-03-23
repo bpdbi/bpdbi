@@ -7,13 +7,8 @@ public final class PgProtocolConstants {
 
   // Authentication types
   public static final int AUTH_OK = 0;
-  public static final int AUTH_KERBEROS_V5 = 2;
   public static final int AUTH_CLEARTEXT_PASSWORD = 3;
   public static final int AUTH_MD5_PASSWORD = 5;
-  public static final int AUTH_SCM_CREDENTIAL = 6;
-  public static final int AUTH_GSS = 7;
-  public static final int AUTH_GSS_CONTINUE = 8;
-  public static final int AUTH_SSPI = 9;
   public static final int AUTH_SASL = 10;
   public static final int AUTH_SASL_CONTINUE = 11;
   public static final int AUTH_SASL_FINAL = 12;
@@ -36,10 +31,8 @@ public final class PgProtocolConstants {
   public static final byte PARSE_COMPLETE = '1';
   public static final byte BIND_COMPLETE = '2';
   public static final byte CLOSE_COMPLETE = '3';
-  public static final byte FUNCTION_RESULT = 'V';
 
   // Frontend message types
-  public static final byte QUERY = 'Q';
   public static final byte PARSE = 'P';
   public static final byte BIND = 'B';
   public static final byte DESCRIBE = 'D';
@@ -56,8 +49,6 @@ public final class PgProtocolConstants {
   public static final byte FIELD_DETAIL = 'D';
   public static final byte FIELD_HINT = 'H';
   public static final byte FIELD_POSITION = 'P';
-  public static final byte FIELD_INTERNAL_POSITION = 'p';
-  public static final byte FIELD_INTERNAL_QUERY = 'q';
   public static final byte FIELD_WHERE = 'W';
   public static final byte FIELD_FILE = 'F';
   public static final byte FIELD_LINE = 'L';

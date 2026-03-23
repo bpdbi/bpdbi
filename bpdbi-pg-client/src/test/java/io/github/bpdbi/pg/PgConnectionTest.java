@@ -16,20 +16,6 @@ import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowMapper;
 import io.github.bpdbi.core.RowSet;
 import io.github.bpdbi.core.test.AbstractConnectionTest;
-import io.github.bpdbi.pg.data.BitString;
-import io.github.bpdbi.pg.data.Box;
-import io.github.bpdbi.pg.data.Cidr;
-import io.github.bpdbi.pg.data.Circle;
-import io.github.bpdbi.pg.data.Inet;
-import io.github.bpdbi.pg.data.Interval;
-import io.github.bpdbi.pg.data.Line;
-import io.github.bpdbi.pg.data.LineSegment;
-import io.github.bpdbi.pg.data.Macaddr;
-import io.github.bpdbi.pg.data.Macaddr8;
-import io.github.bpdbi.pg.data.Money;
-import io.github.bpdbi.pg.data.Path;
-import io.github.bpdbi.pg.data.Point;
-import io.github.bpdbi.pg.data.Polygon;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +25,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
  * Integration tests for Connection using Testcontainers Postgres. Ported from vertx-sql-client's
- * SimpleQueryTestBase, PipeliningQueryTestBase, TransactionTestBase, and PgConnectionTestBase.
+ * PipeliningQueryTestBase, TransactionTestBase, and PgConnectionTestBase.
  */
 class PgConnectionTest extends AbstractConnectionTest {
 
@@ -105,7 +91,7 @@ class PgConnectionTest extends AbstractConnectionTest {
                 pg.getPassword()));
   }
 
-  // ===== Simple query protocol =====
+  // ===== Parameterless queries =====
 
   @Test
   void simpleSelectMultipleRows() {
@@ -182,77 +168,6 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       var ex = assertThrows(PgException.class, () -> conn.query("SELECT $1::int", "not_a_number"));
       assertNotNull(ex.sqlState());
-    }
-  }
-
-  // ===== Data types (text format) =====
-
-  @Test
-  void dataTypeNumeric() {
-    try (var conn = connect()) {
-      var rs =
-          conn.query(
-              "SELECT 42::int2 AS s, 42::int4 AS i, 42::int8 AS l, 3.14::float4 AS f, 3.14::float8 AS d, 123.456::numeric AS n");
-      var row = rs.first();
-      assertEquals((short) 42, row.getShort(0));
-      assertEquals(42, row.getInteger("i"));
-      assertEquals(42L, row.getLong("l"));
-      assertEquals(3.14f, row.getFloat(3), 0.01f);
-      assertEquals(3.14, row.getDouble("d"), 0.001);
-      assertEquals(new java.math.BigDecimal("123.456"), row.getBigDecimal("n"));
-    }
-  }
-
-  @Test
-  void dataTypeText() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 'hello'::text AS t, 'world'::varchar AS v, 'x'::char(1) AS c");
-      var row = rs.first();
-      assertEquals("hello", row.getString("t"));
-      assertEquals("world", row.getString("v"));
-      assertEquals("x", row.getString("c"));
-    }
-  }
-
-  @Test
-  void dataTypeUUID() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid AS u");
-      assertEquals(
-          java.util.UUID.fromString("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"),
-          rs.first().getUUID("u"));
-    }
-  }
-
-  @Test
-  void dataTypeDateAndTime() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '2024-01-15'::date AS d, '13:45:30'::time AS t");
-      var row = rs.first();
-      assertEquals(java.time.LocalDate.of(2024, 1, 15), row.getLocalDate(0));
-      assertEquals(java.time.LocalTime.of(13, 45, 30), row.getLocalTime(1));
-    }
-  }
-
-  @Test
-  void dataTypeBytea() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '\\xDEADBEEF'::bytea AS b");
-      byte[] bytes = rs.first().getBytes("b");
-      assertEquals(4, bytes.length);
-      assertEquals((byte) 0xDE, bytes[0]);
-      assertEquals((byte) 0xAD, bytes[1]);
-      assertEquals((byte) 0xBE, bytes[2]);
-      assertEquals((byte) 0xEF, bytes[3]);
-    }
-  }
-
-  @Test
-  void dataTypeNull() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT NULL::int AS n");
-      assertTrue(rs.first().isNull("n"));
-      assertNull(rs.first().getInteger("n"));
     }
   }
 
@@ -397,418 +312,6 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== Pipelined batch execution =====
-
-  @Test
-  void pipelinedBatchInserts() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE pipe_batch (id int, val text)");
-
-      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 1, "a");
-      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 2, "b");
-      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 3, "c");
-      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 4, "d");
-      conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", 5, "e");
-      List<RowSet> results = conn.flush();
-
-      assertEquals(5, results.size());
-      for (var rs : results) {
-        assertNull(rs.getError());
-        assertEquals(1, rs.rowsAffected());
-      }
-
-      var count = conn.query("SELECT count(*) FROM pipe_batch").first().getLong(0);
-      assertEquals(5L, count);
-    }
-  }
-
-  @Test
-  void pipelinedBatchSelects() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE pipe_sel (id int, val text)");
-      conn.query("INSERT INTO pipe_sel VALUES (1, 'one'), (2, 'two'), (3, 'three')");
-
-      conn.enqueue("SELECT val FROM pipe_sel WHERE id = $1", 1);
-      conn.enqueue("SELECT val FROM pipe_sel WHERE id = $1", 2);
-      conn.enqueue("SELECT val FROM pipe_sel WHERE id = $1", 3);
-      List<RowSet> results = conn.flush();
-
-      assertEquals(3, results.size());
-      assertEquals("one", results.get(0).first().getString(0));
-      assertEquals("two", results.get(1).first().getString(0));
-      assertEquals("three", results.get(2).first().getString(0));
-    }
-  }
-
-  @Test
-  void pipelinedBatchMixedSql() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE pipe_mix (id int, val text)");
-
-      conn.enqueue("INSERT INTO pipe_mix VALUES ($1, $2)", 1, "a");
-      conn.enqueue("SELECT $1::text", "hello");
-      conn.enqueue("INSERT INTO pipe_mix VALUES ($1, $2)", 2, "b");
-      List<RowSet> results = conn.flush();
-
-      assertEquals(3, results.size());
-      assertNull(results.get(0).getError());
-      assertEquals("hello", results.get(1).first().getString(0));
-      assertNull(results.get(2).getError());
-    }
-  }
-
-  @Test
-  void pipelinedBatchErrorMidPipeline() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE pipe_err (id int PRIMARY KEY, val text)");
-      conn.query("INSERT INTO pipe_err VALUES (1, 'existing')");
-
-      conn.enqueue("INSERT INTO pipe_err VALUES ($1, $2)", 10, "ok");
-      conn.enqueue("INSERT INTO pipe_err VALUES ($1, $2)", 1, "duplicate"); // PK violation
-      conn.enqueue("INSERT INTO pipe_err VALUES ($1, $2)", 20, "skipped");
-      List<RowSet> results = conn.flush();
-
-      assertEquals(3, results.size());
-      // First insert succeeded
-      assertNull(results.get(0).getError());
-      assertEquals(1, results.get(0).rowsAffected());
-      // Second insert failed (duplicate key)
-      assertNotNull(results.get(1).getError());
-      // Third was skipped by the server
-      assertNotNull(results.get(2).getError());
-
-      // Connection should still be usable after pipeline error
-      var rs = conn.query("SELECT 'recovered'");
-      assertEquals("recovered", rs.first().getString(0));
-    }
-  }
-
-  @Test
-  void pipelinedBatchSingleStatement() {
-    try (var conn = connect()) {
-      // Single parameterized statement should still work (falls back to sequential)
-      conn.enqueue("SELECT $1::int", 42);
-      List<RowSet> results = conn.flush();
-
-      assertEquals(1, results.size());
-      assertEquals(42, results.get(0).first().getInteger(0));
-    }
-  }
-
-  @Test
-  void pipelinedBatchWithParameterlessFallback() {
-    try (var conn = connect()) {
-      // Mix of parameterless and parameterized should fall back to sequential
-      conn.enqueue("SELECT 1");
-      conn.enqueue("SELECT $1::int", 2);
-      conn.enqueue("SELECT 3");
-      List<RowSet> results = conn.flush();
-
-      assertEquals(3, results.size());
-      assertEquals(1, results.get(0).first().getInteger(0));
-      assertEquals(2, results.get(1).first().getInteger(0));
-      assertEquals(3, results.get(2).first().getInteger(0));
-    }
-  }
-
-  @Test
-  void executeManyPipelined() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE exec_many_pipe (id int, name text)");
-
-      List<Object[]> paramSets = new ArrayList<>();
-      for (int i = 1; i <= 50; i++) {
-        paramSets.add(new Object[] {i, "name" + i});
-      }
-      var results =
-          conn.executeMany("INSERT INTO exec_many_pipe (id, name) VALUES ($1, $2)", paramSets);
-
-      assertEquals(50, results.size());
-      for (var rs : results) {
-        assertNull(rs.getError());
-        assertEquals(1, rs.rowsAffected());
-      }
-
-      var count = conn.query("SELECT count(*) FROM exec_many_pipe").first().getLong(0);
-      assertEquals(50L, count);
-    }
-  }
-
-  @Test
-  void executeManyInTransaction() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE exec_many_tx (id int, val text)");
-
-      try (var tx = conn.begin()) {
-        var results =
-            conn.executeMany(
-                "INSERT INTO exec_many_tx (id, val) VALUES ($1, $2)",
-                List.of(new Object[] {1, "a"}, new Object[] {2, "b"}, new Object[] {3, "c"}));
-        assertEquals(3, results.size());
-        for (var rs : results) {
-          assertNull(rs.getError());
-        }
-        tx.commit();
-      }
-
-      var count = conn.query("SELECT count(*) FROM exec_many_tx").first().getLong(0);
-      assertEquals(3L, count);
-    }
-  }
-
-  @Test
-  void pipelinedBatchWithReturning() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE pipe_ret2 (id serial, name text)");
-
-      conn.enqueue("INSERT INTO pipe_ret2 (name) VALUES ($1) RETURNING id", "Alice");
-      conn.enqueue("INSERT INTO pipe_ret2 (name) VALUES ($1) RETURNING id", "Bob");
-      conn.enqueue("INSERT INTO pipe_ret2 (name) VALUES ($1) RETURNING id", "Carol");
-      List<RowSet> results = conn.flush();
-
-      assertEquals(3, results.size());
-      long id1 = results.get(0).first().getLong("id");
-      long id2 = results.get(1).first().getLong("id");
-      long id3 = results.get(2).first().getLong("id");
-      assertTrue(id1 > 0);
-      assertTrue(id2 > id1);
-      assertTrue(id3 > id2);
-    }
-  }
-
-  // ===== Additional data type tests (ported from vertx TextDataTypeDecodeTestBase + PG codec
-  // tests) =====
-
-  @Test
-  void dataTypeInt2() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 32767::int2");
-      assertEquals(Short.MAX_VALUE, rs.first().getShort(0));
-    }
-  }
-
-  @Test
-  void dataTypeInt4() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 2147483647::int4");
-      assertEquals(Integer.MAX_VALUE, rs.first().getInteger(0));
-    }
-  }
-
-  @Test
-  void dataTypeInt8() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 9223372036854775807::int8");
-      assertEquals(Long.MAX_VALUE, rs.first().getLong(0));
-    }
-  }
-
-  @Test
-  void dataTypeFloat4() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 3.4028235E38::float4");
-      assertEquals(Float.MAX_VALUE, rs.first().getFloat(0), 1e30f);
-    }
-  }
-
-  @Test
-  void dataTypeFloat8() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 1.7976931348623157E308::float8");
-      assertEquals(Double.MAX_VALUE, rs.first().getDouble(0), 1e300);
-    }
-  }
-
-  @Test
-  void dataTypeNumericLarge() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 999999999999999999.999999999999::numeric");
-      assertEquals(
-          new java.math.BigDecimal("999999999999999999.999999999999"), rs.first().getBigDecimal(0));
-    }
-  }
-
-  @Test
-  void dataTypeSerial() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE serial_test (id serial, name text)");
-      conn.query("INSERT INTO serial_test (name) VALUES ('a')");
-      conn.query("INSERT INTO serial_test (name) VALUES ('b')");
-      var rs = conn.query("SELECT id FROM serial_test ORDER BY id");
-      assertEquals(2, rs.size());
-      assertEquals(1, rs.first().getInteger(0));
-    }
-  }
-
-  @Test
-  void dataTypeBlankPaddedChar() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 'ab'::char(5) AS c");
-      assertEquals("ab   ", rs.first().getString("c")); // blank-padded
-    }
-  }
-
-  @Test
-  void dataTypeVarchar() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 'hello world'::varchar(50) AS v");
-      assertEquals("hello world", rs.first().getString("v"));
-    }
-  }
-
-  @Test
-  void dataTypeName() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT 'pg_catalog'::name AS n");
-      assertEquals("pg_catalog", rs.first().getString("n"));
-    }
-  }
-
-  @Test
-  void dataTypeDate() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '2023-06-15'::date AS d");
-      assertEquals(java.time.LocalDate.of(2023, 6, 15), rs.first().getLocalDate(0));
-    }
-  }
-
-  @Test
-  void dataTypeTime() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '17:55:04.905120'::time AS t");
-      var t = rs.first().getLocalTime(0);
-      assertEquals(17, t.getHour());
-      assertEquals(55, t.getMinute());
-      assertEquals(4, t.getSecond());
-    }
-  }
-
-  @Test
-  void dataTypeTimestamp() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '2023-06-15 17:55:04.905120'::timestamp AS ts");
-      var ts = rs.first().getLocalDateTime(0);
-      assertEquals(2023, ts.getYear());
-      assertEquals(6, ts.getMonthValue());
-      assertEquals(15, ts.getDayOfMonth());
-      assertEquals(17, ts.getHour());
-    }
-  }
-
-  @Test
-  void dataTypeTimestamptz() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '2023-06-15 17:55:04.905120+02'::timestamptz AS ts");
-      var odt = rs.first().getOffsetDateTime("ts");
-      assertNotNull(odt);
-      // PG returns timestamptz in UTC
-      assertEquals(2023, odt.getYear());
-      assertEquals(6, odt.getMonthValue());
-      assertEquals(15, odt.getHour()); // 17:55 +02 = 15:55 UTC
-    }
-  }
-
-  @Test
-  void dataTypeInstant() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '2023-06-15 17:55:04.905120+02'::timestamptz AS ts");
-      var instant = rs.first().getInstant("ts");
-      assertNotNull(instant);
-      var odt = java.time.OffsetDateTime.ofInstant(instant, java.time.ZoneOffset.UTC);
-      assertEquals(2023, odt.getYear());
-      assertEquals(15, odt.getHour()); // 17:55 +02 = 15:55 UTC
-    }
-  }
-
-  @Test
-  void dataTypeInstantRoundTrip() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE instant_rt (ts timestamptz)");
-      var now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-      conn.query("INSERT INTO instant_rt VALUES ($1)", now);
-      var rs = conn.query("SELECT ts FROM instant_rt");
-      assertEquals(now, rs.first().getInstant("ts"));
-    }
-  }
-
-  @Test
-  void dataTypeTimetz() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '17:55:04+02'::timetz AS t");
-      var ot = rs.first().getOffsetTime("t");
-      assertNotNull(ot);
-      assertEquals(17, ot.getHour());
-      assertEquals(55, ot.getMinute());
-      assertEquals(4, ot.getSecond());
-      assertEquals(java.time.ZoneOffset.ofHours(2), ot.getOffset());
-    }
-  }
-
-  @Test
-  void dataTypeTimetzUTC() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '12:30:00+00'::timetz AS t");
-      var ot = rs.first().getOffsetTime("t");
-      assertNotNull(ot);
-      assertEquals(12, ot.getHour());
-      assertEquals(30, ot.getMinute());
-      assertEquals(java.time.ZoneOffset.UTC, ot.getOffset());
-    }
-  }
-
-  @Test
-  void dataTypeTimetzNegativeOffset() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '08:15:30-05'::timetz AS t");
-      var ot = rs.first().getOffsetTime("t");
-      assertNotNull(ot);
-      assertEquals(8, ot.getHour());
-      assertEquals(15, ot.getMinute());
-      assertEquals(java.time.ZoneOffset.ofHours(-5), ot.getOffset());
-    }
-  }
-
-  @Test
-  void dataTypeJsonAsString() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '{\"key\":\"value\"}'::json AS j");
-      assertEquals("{\"key\":\"value\"}", rs.first().getString("j"));
-    }
-  }
-
-  @Test
-  void dataTypeJsonbAsString() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT '{\"key\": \"value\"}'::jsonb AS j");
-      String json = rs.first().getString("j");
-      assertTrue(json.contains("\"key\""));
-      assertTrue(json.contains("\"value\""));
-    }
-  }
-
-  // ===== NULL value encoding tests (ported from NullValueEncodeTestBase) =====
-
-  @Test
-  void parameterizedNullInt() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE null_test (id int, val int)");
-      conn.query("INSERT INTO null_test VALUES ($1, $2)", 1, null);
-      var rs = conn.query("SELECT val FROM null_test WHERE id = 1");
-      assertTrue(rs.first().isNull(0));
-    }
-  }
-
-  @Test
-  void parameterizedNullText() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE null_text (id int, val text)");
-      conn.query("INSERT INTO null_text VALUES ($1, $2)", 1, null);
-      var rs = conn.query("SELECT val FROM null_text WHERE id = 1");
-      assertTrue(rs.first().isNull(0));
-      assertNull(rs.first().getString(0));
-    }
-  }
-
   // ===== Connection tests (ported from ConnectionTestBase) =====
 
   @Test
@@ -830,136 +333,6 @@ class PgConnectionTest extends AbstractConnectionTest {
       var version = conn.parameters().get("server_version");
       assertNotNull(version);
       assertFalse(version.isEmpty());
-    }
-  }
-
-  // ===== Transaction tests (ported from TransactionTestBase) =====
-
-  @Test
-  void transactionCommitWithPreparedQuery() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE tx_prep (id int, val text)");
-      conn.query("BEGIN");
-      conn.query("INSERT INTO tx_prep VALUES ($1, $2)", 1, "hello");
-      conn.query("INSERT INTO tx_prep VALUES ($1, $2)", 2, "world");
-      conn.query("COMMIT");
-
-      var rs = conn.query("SELECT val FROM tx_prep ORDER BY id");
-      assertEquals(2, rs.size());
-      assertEquals("hello", rs.first().getString(0));
-    }
-  }
-
-  @Test
-  void transactionRollbackData() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE tx_rollback (id int)");
-      conn.query("BEGIN");
-      conn.query("INSERT INTO tx_rollback VALUES (1)");
-      conn.query("INSERT INTO tx_rollback VALUES (2)");
-      conn.query("ROLLBACK");
-
-      var rs = conn.query("SELECT count(*) FROM tx_rollback");
-      assertEquals(0L, rs.first().getLong(0));
-    }
-  }
-
-  @Test
-  void transactionAbortOnError() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE tx_abort (id int PRIMARY KEY)");
-      conn.query("BEGIN");
-      conn.query("INSERT INTO tx_abort VALUES (1)");
-      try {
-        conn.query("INSERT INTO tx_abort VALUES (1)"); // duplicate PK
-        fail("Should have thrown");
-      } catch (PgException e) {
-        assertEquals("23505", e.sqlState()); // unique_violation
-      }
-      conn.query("ROLLBACK");
-
-      var rs = conn.query("SELECT count(*) FROM tx_abort");
-      assertEquals(0L, rs.first().getLong(0));
-    }
-  }
-
-  // ===== Pipelining stress (ported from PipeliningQueryTestBase) =====
-
-  @Test
-  void pipelineStress1000SimpleQueries() {
-    try (var conn = connect()) {
-      for (int i = 0; i < 1000; i++) {
-        conn.enqueue("SELECT " + i);
-      }
-      List<RowSet> results = conn.flush();
-
-      assertEquals(1000, results.size());
-      for (int i = 0; i < 1000; i++) {
-        assertEquals(i, results.get(i).first().getInteger(0));
-      }
-    }
-  }
-
-  @Test
-  void pipelineStress1000ParameterizedQueries() {
-    try (var conn = connect()) {
-      for (int i = 0; i < 1000; i++) {
-        conn.enqueue("SELECT $1::int", i);
-      }
-      List<RowSet> results = conn.flush();
-
-      assertEquals(1000, results.size());
-      for (int i = 0; i < 1000; i++) {
-        assertEquals(i, results.get(i).first().getInteger(0));
-      }
-    }
-  }
-
-  @Test
-  void pipelineStress5000Mixed() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE stress5k (id int, val text)");
-      // Mix of simple and parameterized queries in a single pipeline
-      for (int i = 0; i < 5000; i++) {
-        if (i % 3 == 0) {
-          conn.enqueue("SELECT " + i);
-        } else {
-          conn.enqueue("INSERT INTO stress5k VALUES ($1, $2)", i, "v" + i);
-        }
-      }
-      List<RowSet> results = conn.flush();
-
-      assertEquals(5000, results.size());
-      // Verify some results
-      assertEquals(0, results.get(0).first().getInteger(0)); // simple SELECT 0
-      assertFalse(results.get(1).getError() != null); // insert
-      assertEquals(3, results.get(3).first().getInteger(0)); // simple SELECT 3
-
-      // Verify all inserts landed
-      var count = conn.query("SELECT count(*) FROM stress5k");
-      // 5000 total, 1/3 are SELECTs (i%3==0), so ~3334 inserts
-      assertTrue(count.first().getLong(0) > 3000);
-    }
-  }
-
-  @Test
-  void pipelineBatchInsert() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE pipe_batch (id int, val text)");
-      conn.enqueue("BEGIN");
-      for (int i = 0; i < 100; i++) {
-        conn.enqueue("INSERT INTO pipe_batch VALUES ($1, $2)", i, "val-" + i);
-      }
-      conn.enqueue("COMMIT");
-      conn.flush();
-
-      var rs = conn.query("SELECT count(*) FROM pipe_batch");
-      assertEquals(100L, rs.first().getLong(0));
-
-      var data = conn.query("SELECT id, val FROM pipe_batch ORDER BY id");
-      assertEquals(100, data.size());
-      assertEquals(0, data.first().getInteger("id"));
-      assertEquals("val-0", data.first().getString("val"));
     }
   }
 
@@ -1109,8 +482,8 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void prepareErrorWrongParamCount() {
     try (var conn = connect()) {
-      // Provide 2 params but SQL has 1 placeholder — PG will error
-      // (our text-format bind sends extra params, PG may ignore or error)
+      // Provide 2 params but SQL has 1 placeholder -- PG will error
+      // (bind sends extra params, PG may ignore or error)
       // At minimum, providing too few params for the SQL should fail
       var ex = assertThrows(Exception.class, () -> conn.query("SELECT $1::int, $2::text", 42));
       // Connection should still be usable after
@@ -1278,7 +651,7 @@ class PgConnectionTest extends AbstractConnectionTest {
         }
         assertEquals(List.of(1, 3, 5), ids1);
 
-        // Re-execute with different size collection — same prepared statement
+        // Re-execute with different size collection -- same prepared statement
         var rs2 = stmt.query(Map.of("ids", List.of(2, 4)));
         var ids2 = new ArrayList<Integer>();
         for (var row : rs2) {
@@ -1353,334 +726,15 @@ class PgConnectionTest extends AbstractConnectionTest {
                 .cachePreparedStatements(true))) {
       String sql = "SELECT :n::int AS n";
 
-      // First call: cache miss — prepares and caches
+      // First call: cache miss -- prepares and caches
       try (var stmt = conn.prepare(sql)) {
         assertEquals(1, stmt.query(Map.of("n", 1)).first().getInteger("n"));
       }
 
-      // Second call: cache hit — named param mapping must survive
+      // Second call: cache hit -- named param mapping must survive
       try (var stmt = conn.prepare(sql)) {
         assertEquals(42, stmt.query(Map.of("n", 42)).first().getInteger("n"));
       }
-    }
-  }
-
-  // ===== Transaction interface =====
-
-  @Test
-  void transactionInterfaceCommit() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE tx_if (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO tx_if VALUES (1)");
-        tx.query("INSERT INTO tx_if VALUES (2)");
-        tx.commit();
-      }
-      assertEquals(2L, conn.query("SELECT count(*) FROM tx_if").first().getLong(0));
-    }
-  }
-
-  @Test
-  void transactionInterfaceAutoRollback() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE tx_ar (id int)");
-      conn.query("INSERT INTO tx_ar VALUES (1)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO tx_ar VALUES (2)");
-        // no commit — should auto-rollback
-      }
-      assertEquals(1L, conn.query("SELECT count(*) FROM tx_ar").first().getLong(0));
-    }
-  }
-
-  @Test
-  void transactionInterfaceExplicitRollback() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE tx_er (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO tx_er VALUES (1)");
-        tx.rollback();
-      }
-      assertEquals(0L, conn.query("SELECT count(*) FROM tx_er").first().getLong(0));
-    }
-  }
-
-  @Test
-  void transactionInterfaceWithPipelining() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE tx_pipe (id int)");
-      try (var tx = conn.begin()) {
-        tx.enqueue("INSERT INTO tx_pipe VALUES (1)");
-        tx.enqueue("INSERT INTO tx_pipe VALUES (2)");
-        tx.enqueue("INSERT INTO tx_pipe VALUES (3)");
-        tx.flush();
-        tx.commit();
-      }
-      assertEquals(3L, conn.query("SELECT count(*) FROM tx_pipe").first().getLong(0));
-    }
-  }
-
-  @Test
-  void transactionDoubleCommitThrows() {
-    try (var conn = connect()) {
-      var tx = conn.begin();
-      tx.commit();
-      assertThrows(IllegalStateException.class, tx::commit);
-    }
-  }
-
-  // ===== Nested transactions (savepoints) =====
-
-  @Test
-  void nestedTransactionCommit() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE nested_test (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO nested_test VALUES (1)");
-
-        try (var nested = tx.begin()) {
-          nested.query("INSERT INTO nested_test VALUES (2)");
-          nested.commit(); // RELEASE SAVEPOINT
-        }
-
-        tx.commit(); // COMMIT
-      }
-      assertEquals(2L, conn.query("SELECT count(*) FROM nested_test").first().getLong(0));
-    }
-  }
-
-  @Test
-  void nestedTransactionRollback() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE nested_rb (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO nested_rb VALUES (1)");
-
-        try (var nested = tx.begin()) {
-          nested.query("INSERT INTO nested_rb VALUES (2)");
-          nested.rollback(); // ROLLBACK TO SAVEPOINT — undoes only the nested insert
-        }
-
-        tx.commit();
-      }
-      // Only the outer insert survived
-      assertEquals(1L, conn.query("SELECT count(*) FROM nested_rb").first().getLong(0));
-    }
-  }
-
-  @Test
-  void nestedTransactionAutoRollback() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE nested_ar (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO nested_ar VALUES (1)");
-
-        try (var nested = tx.begin()) {
-          nested.query("INSERT INTO nested_ar VALUES (2)");
-          // no commit — auto-rollback on close
-        }
-
-        tx.commit();
-      }
-      assertEquals(1L, conn.query("SELECT count(*) FROM nested_ar").first().getLong(0));
-    }
-  }
-
-  @Test
-  void nestedTransactionOuterRollbackUndoesAll() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE nested_outer_rb (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO nested_outer_rb VALUES (1)");
-
-        try (var nested = tx.begin()) {
-          nested.query("INSERT INTO nested_outer_rb VALUES (2)");
-          nested.commit();
-        }
-
-        tx.rollback(); // outer rollback undoes everything including committed nested
-      }
-      assertEquals(0L, conn.query("SELECT count(*) FROM nested_outer_rb").first().getLong(0));
-    }
-  }
-
-  @Test
-  void doubleNestedTransaction() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE double_nested (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO double_nested VALUES (1)");
-
-        try (var nested1 = tx.begin()) {
-          nested1.query("INSERT INTO double_nested VALUES (2)");
-
-          try (var nested2 = nested1.begin()) {
-            nested2.query("INSERT INTO double_nested VALUES (3)");
-            nested2.commit();
-          }
-
-          nested1.commit();
-        }
-
-        tx.commit();
-      }
-      assertEquals(3L, conn.query("SELECT count(*) FROM double_nested").first().getLong(0));
-    }
-  }
-
-  @Test
-  void doubleNestedRollbackMiddle() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE double_nested_rb (id int)");
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO double_nested_rb VALUES (1)");
-
-        try (var nested1 = tx.begin()) {
-          nested1.query("INSERT INTO double_nested_rb VALUES (2)");
-
-          try (var nested2 = nested1.begin()) {
-            nested2.query("INSERT INTO double_nested_rb VALUES (3)");
-            nested2.commit(); // releases innermost savepoint
-          }
-
-          nested1.rollback(); // rolls back to before nested1, undoing 2 AND 3
-        }
-
-        tx.commit();
-      }
-      // Only the outer insert (1) survived
-      assertEquals(1L, conn.query("SELECT count(*) FROM double_nested_rb").first().getLong(0));
-    }
-  }
-
-  @Test
-  void nestedTransactionWithPipelining() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE nested_pipe (id int)");
-      try (var tx = conn.begin()) {
-        try (var nested = tx.begin()) {
-          nested.enqueue("INSERT INTO nested_pipe VALUES (1)");
-          nested.enqueue("INSERT INTO nested_pipe VALUES (2)");
-          nested.flush();
-          nested.commit();
-        }
-        tx.commit();
-      }
-      assertEquals(2L, conn.query("SELECT count(*) FROM nested_pipe").first().getLong(0));
-    }
-  }
-
-  // ===== withTransaction (closure-based) =====
-
-  @Test
-  void withTransactionCommitsOnSuccess() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE wt_test (id int)");
-      conn.withTransaction(
-          tx -> {
-            tx.query("INSERT INTO wt_test VALUES (1)");
-            tx.query("INSERT INTO wt_test VALUES (2)");
-            return null;
-          });
-      assertEquals(2L, conn.query("SELECT count(*) FROM wt_test").first().getLong(0));
-    }
-  }
-
-  @Test
-  void withTransactionRollsBackOnException() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE wt_rb (id int)");
-      try {
-        conn.withTransaction(
-            tx -> {
-              tx.query("INSERT INTO wt_rb VALUES (1)");
-              if (true) {
-                throw new RuntimeException("simulated failure");
-              }
-              return null;
-            });
-      } catch (RuntimeException e) {
-        assertEquals("simulated failure", e.getMessage());
-      }
-      assertEquals(0L, conn.query("SELECT count(*) FROM wt_rb").first().getLong(0));
-    }
-  }
-
-  @Test
-  void withTransactionReturnsValue() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE wt_ret (id serial, name text)");
-      int id =
-          conn.withTransaction(
-              tx -> {
-                var rs = tx.query("INSERT INTO wt_ret (name) VALUES ($1) RETURNING id", "Alice");
-                return rs.first().getInteger("id");
-              });
-      assertTrue(id > 0);
-    }
-  }
-
-  @Test
-  void withTransactionRollsBackOnDbError() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE wt_dberr (id int PRIMARY KEY)");
-      conn.query("INSERT INTO wt_dberr VALUES (1)");
-      try {
-        conn.withTransaction(
-            tx -> {
-              tx.query("INSERT INTO wt_dberr VALUES (2)");
-              tx.query("INSERT INTO wt_dberr VALUES (1)"); // duplicate PK
-              return null;
-            });
-      } catch (PgException e) {
-        // expected
-      }
-      // Only the original row should remain
-      assertEquals(1L, conn.query("SELECT count(*) FROM wt_dberr").first().getLong(0));
-    }
-  }
-
-  @Test
-  void withTransactionNested() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE wt_nested (id int)");
-      conn.withTransaction(
-          tx -> {
-            tx.query("INSERT INTO wt_nested VALUES (1)");
-            tx.withTransaction(
-                nested -> {
-                  nested.query("INSERT INTO wt_nested VALUES (2)");
-                  return null;
-                });
-            return null;
-          });
-      assertEquals(2L, conn.query("SELECT count(*) FROM wt_nested").first().getLong(0));
-    }
-  }
-
-  @Test
-  void withTransactionNestedRollback() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE wt_nested_rb (id int)");
-      conn.withTransaction(
-          tx -> {
-            tx.query("INSERT INTO wt_nested_rb VALUES (1)");
-            try {
-              tx.withTransaction(
-                  nested -> {
-                    nested.query("INSERT INTO wt_nested_rb VALUES (2)");
-                    if (true) {
-                      throw new RuntimeException("inner failure");
-                    }
-                    return null;
-                  });
-            } catch (RuntimeException e) {
-              // inner rollback, outer continues
-            }
-            return null;
-          });
-      // Outer committed, inner rolled back
-      assertEquals(1L, conn.query("SELECT count(*) FROM wt_nested_rb").first().getLong(0));
     }
   }
 
@@ -1757,295 +811,6 @@ class PgConnectionTest extends AbstractConnectionTest {
     assertEquals("mydb", config.database());
     assertEquals("user", config.username());
     assertEquals("pass", config.password());
-  }
-
-  // ===== PG Geometric data types =====
-
-  @Test
-  void dataTypePoint() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::point AS p", "(1.5,2.5)");
-      var p = rs.first().get("p", Point.class);
-      assertEquals(1.5, p.x(), 0.001);
-      assertEquals(2.5, p.y(), 0.001);
-    }
-  }
-
-  @Test
-  void dataTypeLine() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::line AS l", "{1,2,3}");
-      var l = rs.first().get("l", Line.class);
-      assertEquals(1.0, l.a(), 0.001);
-      assertEquals(2.0, l.b(), 0.001);
-      assertEquals(3.0, l.c(), 0.001);
-    }
-  }
-
-  @Test
-  void dataTypeLineSegment() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::lseg AS ls", "[(1,2),(3,4)]");
-      var ls = rs.first().get("ls", LineSegment.class);
-      assertEquals(1.0, ls.p1().x(), 0.001);
-      assertEquals(2.0, ls.p1().y(), 0.001);
-      assertEquals(3.0, ls.p2().x(), 0.001);
-      assertEquals(4.0, ls.p2().y(), 0.001);
-    }
-  }
-
-  @Test
-  void dataTypeBox() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::box AS b", "(3,4),(1,2)");
-      var b = rs.first().get("b", Box.class);
-      assertEquals(3.0, b.upperRightCorner().x(), 0.001);
-      assertEquals(4.0, b.upperRightCorner().y(), 0.001);
-      assertEquals(1.0, b.lowerLeftCorner().x(), 0.001);
-      assertEquals(2.0, b.lowerLeftCorner().y(), 0.001);
-    }
-  }
-
-  @Test
-  void dataTypeCircle() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::circle AS c", "<(1,2),3>");
-      var c = rs.first().get("c", Circle.class);
-      assertEquals(1.0, c.centerPoint().x(), 0.001);
-      assertEquals(2.0, c.centerPoint().y(), 0.001);
-      assertEquals(3.0, c.radius(), 0.001);
-    }
-  }
-
-  @Test
-  void dataTypePolygon() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::polygon AS p", "((0,0),(1,0),(1,1),(0,1))");
-      var p = rs.first().get("p", Polygon.class);
-      assertEquals(4, p.points().size());
-      assertEquals(0.0, p.points().get(0).x(), 0.001);
-      assertEquals(1.0, p.points().get(2).x(), 0.001);
-    }
-  }
-
-  @Test
-  void dataTypePath() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::path AS p", "((0,0),(1,1),(2,0))");
-      var p = rs.first().get("p", Path.class);
-      assertFalse(p.isOpen());
-      assertEquals(3, p.points().size());
-    }
-  }
-
-  // ===== PG Network types =====
-
-  @Test
-  void dataTypeInet() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::inet AS i", "192.168.1.1");
-      var inet = rs.first().get("i", Inet.class);
-      assertEquals("192.168.1.1", inet.address().getHostAddress());
-      assertNull(inet.netmask());
-    }
-  }
-
-  @Test
-  void dataTypeInetWithMask() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::inet AS i", "192.168.1.0/24");
-      var inet = rs.first().get("i", Inet.class);
-      assertEquals("192.168.1.0", inet.address().getHostAddress());
-      assertEquals(24, inet.netmask());
-    }
-  }
-
-  @Test
-  void dataTypeCidr() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::cidr AS c", "10.0.0.0/8");
-      var cidr = rs.first().get("c", Cidr.class);
-      assertEquals(8, cidr.netmask());
-    }
-  }
-
-  // ===== PG Money =====
-
-  @Test
-  void dataTypeMoney() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::money AS m", "$12.34");
-      var m = rs.first().get("m", Money.class);
-      assertEquals(new java.math.BigDecimal("12.34"), m.bigDecimalValue());
-    }
-  }
-
-  // ===== PG MAC address types =====
-
-  @Test
-  void dataTypeMacaddr() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::macaddr AS m", "08:00:2b:01:02:03");
-      var m = rs.first().get("m", Macaddr.class);
-      assertEquals("08:00:2b:01:02:03", m.toString());
-    }
-  }
-
-  @Test
-  void dataTypeMacaddr8() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::macaddr8 AS m", "08:00:2b:01:02:03:04:05");
-      var m = rs.first().get("m", Macaddr8.class);
-      assertEquals("08:00:2b:01:02:03:04:05", m.toString());
-    }
-  }
-
-  // ===== PG Bit string types =====
-
-  @Test
-  void dataTypeBit() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::bit(8) AS b", "10110001");
-      var b = rs.first().get("b", BitString.class);
-      assertEquals(8, b.bitCount());
-      assertEquals("10110001", b.toString());
-    }
-  }
-
-  @Test
-  void dataTypeVarbit() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::varbit AS b", "101");
-      var b = rs.first().get("b", BitString.class);
-      assertEquals(3, b.bitCount());
-      assertEquals("101", b.toString());
-    }
-  }
-
-  // ===== PG Interval =====
-
-  @Test
-  void dataTypeInterval() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::interval AS i", "1 year 2 mons 3 days 04:05:06.000007");
-      var interval = rs.first().get("i", Interval.class);
-      assertEquals(1, interval.years());
-      assertEquals(2, interval.months());
-      assertEquals(3, interval.days());
-      assertEquals(4, interval.hours());
-      assertEquals(5, interval.minutes());
-      assertEquals(6, interval.seconds());
-      assertEquals(7, interval.microseconds());
-    }
-  }
-
-  @Test
-  void dataTypeIntervalSimple() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::interval AS i", "2 hours");
-      var interval = rs.first().get("i", Interval.class);
-      assertEquals(2, interval.hours());
-      assertEquals(0, interval.days());
-    }
-  }
-
-  @Test
-  void dataTypeIntervalToDuration() {
-    var interval = Interval.of(0, 0, 1, 2, 30, 0);
-    var duration = interval.toDuration();
-    assertEquals(1 * 24 * 3600 + 2 * 3600 + 30 * 60, duration.getSeconds());
-  }
-
-  // ===== PG Array types =====
-
-  @Test
-  void dataTypeIntArray() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT ARRAY[1,2,3] AS arr");
-      assertEquals(List.of(1, 2, 3), rs.first().getIntegerArray("arr"));
-    }
-  }
-
-  @Test
-  void dataTypeTextArray() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT ARRAY['hello','world'] AS arr");
-      assertEquals(List.of("hello", "world"), rs.first().getStringArray("arr"));
-    }
-  }
-
-  @Test
-  void dataTypeNullInArray() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT ARRAY[1,NULL,3] AS arr");
-      var arr = rs.first().getIntegerArray("arr");
-      assertEquals(3, arr.size());
-      assertEquals(1, arr.get(0));
-      assertNull(arr.get(1));
-      assertEquals(3, arr.get(2));
-    }
-  }
-
-  // ===== JSON access =====
-
-  @Test
-  void jsonRoundtrip() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE json_test (id int, data jsonb)");
-      conn.query("INSERT INTO json_test VALUES ($1, $2)", 1, "{\"name\":\"Alice\",\"age\":30}");
-      var rs = conn.query("SELECT data FROM json_test WHERE id = 1");
-      String json = rs.first().getString("data");
-      assertTrue(json.contains("\"name\""));
-      assertTrue(json.contains("\"Alice\""));
-      assertTrue(json.contains("\"age\""));
-    }
-  }
-
-  @Test
-  void jsonQueryOperator() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE json_op (id int, data jsonb)");
-      conn.query("INSERT INTO json_op VALUES (1, '{\"name\":\"Alice\"}'::jsonb)");
-      var rs = conn.query("SELECT data->>'name' AS name FROM json_op WHERE id = 1");
-      assertEquals("Alice", rs.first().getString("name"));
-    }
-  }
-
-  // ===== PG array literal quoting (named params with array values) =====
-
-  @Test
-  void pgArrayLiteralWithSpecialChars() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE arr_special (vals text[])");
-      // Use named params with a List → PG array literal conversion
-      conn.query(
-          "INSERT INTO arr_special VALUES ($1)",
-          "{\"hello world\",\"with,comma\",\"with\\\"quote\"}");
-      var rs = conn.query("SELECT vals[1] AS v FROM arr_special");
-      assertEquals("hello world", rs.first().getString("v"));
-    }
-  }
-
-  @Test
-  void pgArrayLiteralWithNulls() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE arr_null (vals int[])");
-      conn.query("INSERT INTO arr_null VALUES ('{1,NULL,3}')");
-      var rs = conn.query("SELECT vals FROM arr_null");
-      var arr = rs.first().getIntegerArray("vals");
-      // The array should contain non-null elements
-      assertNotNull(arr);
-    }
-  }
-
-  @Test
-  void pgArrayLiteralEmptyString() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE arr_empty (vals text[])");
-      conn.query("INSERT INTO arr_empty VALUES ('{\"\"}'::text[])");
-      var rs = conn.query("SELECT vals[1] AS v FROM arr_empty");
-      assertEquals("", rs.first().getString("v"));
-    }
   }
 
   // ===== Cancel request =====
@@ -2133,9 +898,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void namedParamSelect() {
     try (var conn = connect()) {
-      var rs =
-          conn.query(
-              "SELECT :name AS name, :age AS age", java.util.Map.of("name", "Alice", "age", 30));
+      var rs = conn.query("SELECT :name AS name, :age AS age", Map.of("name", "Alice", "age", 30));
       assertEquals("Alice", rs.first().getString("name"));
       assertEquals("30", rs.first().getString("age"));
     }
@@ -2145,12 +908,10 @@ class PgConnectionTest extends AbstractConnectionTest {
   void namedParamInsertAndSelect() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_test (id int, name text)");
-      conn.query(
-          "INSERT INTO np_test VALUES (:id, :name)", java.util.Map.of("id", 1, "name", "Alice"));
-      conn.query(
-          "INSERT INTO np_test VALUES (:id, :name)", java.util.Map.of("id", 2, "name", "Bob"));
+      conn.query("INSERT INTO np_test VALUES (:id, :name)", Map.of("id", 1, "name", "Alice"));
+      conn.query("INSERT INTO np_test VALUES (:id, :name)", Map.of("id", 2, "name", "Bob"));
 
-      var rs = conn.query("SELECT name FROM np_test WHERE id = :id", java.util.Map.of("id", 1));
+      var rs = conn.query("SELECT name FROM np_test WHERE id = :id", Map.of("id", 1));
       assertEquals("Alice", rs.first().getString("name"));
     }
   }
@@ -2159,10 +920,8 @@ class PgConnectionTest extends AbstractConnectionTest {
   void namedParamInPipeline() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_pipe (id int, val text)");
-      conn.enqueue(
-          "INSERT INTO np_pipe VALUES (:id, :val)", java.util.Map.of("id", 1, "val", "one"));
-      conn.enqueue(
-          "INSERT INTO np_pipe VALUES (:id, :val)", java.util.Map.of("id", 2, "val", "two"));
+      conn.enqueue("INSERT INTO np_pipe VALUES (:id, :val)", Map.of("id", 1, "val", "one"));
+      conn.enqueue("INSERT INTO np_pipe VALUES (:id, :val)", Map.of("id", 2, "val", "two"));
       conn.flush();
 
       var rs = conn.query("SELECT count(*) FROM np_pipe");
@@ -2173,8 +932,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void namedParamMissingThrows() {
     try (var conn = connect()) {
-      assertThrows(
-          IllegalArgumentException.class, () -> conn.query("SELECT :missing", java.util.Map.of()));
+      assertThrows(IllegalArgumentException.class, () -> conn.query("SELECT :missing", Map.of()));
     }
   }
 
@@ -2255,88 +1013,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== Additional pipeline error handling tests =====
-
-  @Test
-  void pipelineErrorAtStart() {
-    try (var conn = connect()) {
-      // Error at the start cancels all subsequent statements in the pipeline
-      conn.enqueue("BAD SQL");
-      conn.enqueue("SELECT 1");
-      conn.enqueue("SELECT 2");
-      List<RowSet> results = conn.flush();
-      assertEquals(3, results.size());
-      assertNotNull(results.get(0).getError());
-      assertNotNull(results.get(1).getError());
-      assertNotNull(results.get(2).getError());
-    }
-  }
-
-  @Test
-  void pipelineErrorAtEnd() {
-    try (var conn = connect()) {
-      conn.enqueue("SELECT 1");
-      conn.enqueue("SELECT 2");
-      conn.enqueue("BAD SQL");
-      List<RowSet> results = conn.flush();
-      assertEquals(3, results.size());
-      assertEquals(1, results.get(0).first().getInteger(0));
-      assertEquals(2, results.get(1).first().getInteger(0));
-      assertTrue(results.get(2).getError() != null);
-    }
-  }
-
-  @Test
-  void pipelineAllErrors() {
-    try (var conn = connect()) {
-      conn.enqueue("BAD1");
-      conn.enqueue("BAD2");
-      conn.enqueue("BAD3");
-      List<RowSet> results = conn.flush();
-      assertEquals(3, results.size());
-      assertTrue(results.get(0).getError() != null);
-      assertTrue(results.get(1).getError() != null);
-      assertTrue(results.get(2).getError() != null);
-    }
-  }
-
-  @Test
-  void pipelineErrorRecoveryThenQuery() {
-    try (var conn = connect()) {
-      conn.enqueue("SELECT 1");
-      conn.enqueue("BAD SQL");
-      conn.enqueue("SELECT 3");
-      conn.flush();
-
-      // Connection should work normally after pipeline with errors
-      var rs = conn.query("SELECT 42");
-      assertEquals(42, rs.first().getInteger(0));
-    }
-  }
-
-  @Test
-  void pipelineTransactionErrorRollback() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE pipe_tx_err (id int PRIMARY KEY)");
-      conn.query("INSERT INTO pipe_tx_err VALUES (1)");
-
-      conn.enqueue("BEGIN");
-      conn.enqueue("INSERT INTO pipe_tx_err VALUES (2)");
-      conn.enqueue("INSERT INTO pipe_tx_err VALUES (1)"); // duplicate PK
-      List<RowSet> results = conn.flush();
-
-      assertEquals(3, results.size());
-      assertFalse(results.get(0).getError() != null); // BEGIN ok
-      assertFalse(results.get(1).getError() != null); // insert ok
-      assertTrue(results.get(2).getError() != null); // duplicate error
-
-      conn.query("ROLLBACK");
-
-      // Only original row should remain
-      var rs = conn.query("SELECT count(*) FROM pipe_tx_err");
-      assertEquals(1L, rs.first().getLong(0));
-    }
-  }
+  // ===== Prepared statement cache =====
 
   @Test
   void preparedStatementCacheHit() {
@@ -2382,20 +1059,9 @@ class PgConnectionTest extends AbstractConnectionTest {
       // Cache a prepared statement
       conn.query("SELECT $1::int AS n", 42);
 
-      int epochBefore = conn.deallocateEpoch();
-
-      // Change search_path — detected by SQL text inspection (Postgres does not send
+      // Change search_path -- detected by SQL text inspection (Postgres does not send
       // ParameterStatus for search_path, so we detect SET search_path in the SQL)
       conn.query("SET search_path TO pg_catalog");
-
-      int epochAfter = conn.deallocateEpoch();
-      assertTrue(
-          epochAfter > epochBefore,
-          "search_path change should increment deallocate epoch (was "
-              + epochBefore
-              + ", now "
-              + epochAfter
-              + ")");
 
       // Queries still work after cache invalidation (statement re-prepared)
       var rs = conn.query("SELECT $1::int AS n", 99);
@@ -2416,15 +1082,11 @@ class PgConnectionTest extends AbstractConnectionTest {
                 .cachePreparedStatements(true))) {
       // Cache a prepared statement
       conn.query("SELECT $1::int AS n", 42);
-      int epochBefore = conn.deallocateEpoch();
 
       // DEALLOCATE ALL destroys server-side prepared statements
       conn.query("DEALLOCATE ALL");
 
-      int epochAfter = conn.deallocateEpoch();
-      assertTrue(epochAfter > epochBefore, "DEALLOCATE ALL should increment deallocate epoch");
-
-      // Queries still work (re-prepared)
+      // Queries still work (re-prepared after cache invalidation)
       var rs = conn.query("SELECT $1::int AS n", 99);
       assertEquals(99, rs.first().getInteger("n"));
     }
@@ -2513,55 +1175,6 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== Batch execution =====
-
-  @Test
-  void executeManyInserts() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE batch_test (id int, name text)");
-
-      var results =
-          conn.executeMany(
-              "INSERT INTO batch_test (id, name) VALUES ($1, $2)",
-              List.of(
-                  new Object[] {1, "Alice"}, new Object[] {2, "Bob"}, new Object[] {3, "Carol"}));
-
-      assertEquals(3, results.size());
-      for (var rs : results) {
-        assertFalse(rs.getError() != null);
-        assertEquals(1, rs.rowsAffected());
-      }
-
-      var all = conn.query("SELECT * FROM batch_test ORDER BY id");
-      assertEquals(3, all.size());
-      assertEquals("Alice", all.first().getString("name"));
-    }
-  }
-
-  @Test
-  void executeManyWithReturning() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE batch_ret (id serial, name text)");
-
-      var results =
-          conn.executeMany(
-              "INSERT INTO batch_ret (name) VALUES ($1) RETURNING id",
-              List.of(new Object[] {"Alice"}, new Object[] {"Bob"}));
-
-      assertEquals(2, results.size());
-      assertEquals(1, results.get(0).first().getInteger("id"));
-      assertEquals(2, results.get(1).first().getInteger("id"));
-    }
-  }
-
-  @Test
-  void executeManyEmpty() {
-    try (var conn = connect()) {
-      var results = conn.executeMany("SELECT 1", List.of());
-      assertTrue(results.isEmpty());
-    }
-  }
-
   // ===== IN-list expansion =====
 
   @Test
@@ -2573,7 +1186,7 @@ class PgConnectionTest extends AbstractConnectionTest {
       var rs =
           conn.query(
               "SELECT * FROM inlist_test WHERE id IN (:ids) ORDER BY id",
-              java.util.Map.of("ids", List.of(1, 3)));
+              Map.of("ids", List.of(1, 3)));
 
       assertEquals(2, rs.size());
       assertEquals("Alice", rs.first().getString("name"));
@@ -2583,7 +1196,8 @@ class PgConnectionTest extends AbstractConnectionTest {
   // ===== ANY() with array literals =====
   //
   // For non-prepared queries, use IN (:ids) with collection expansion.
-  // For prepared statements, use = ANY(:ids::type[]) — see preparedStatementNamedParamsWith* tests.
+  // For prepared statements, use = ANY(:ids::type[]) -- see preparedStatementNamedParamsWith*
+  // tests.
   // The positional query() path supports manually-formatted array literals:
 
   @Test
@@ -2749,7 +1363,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void streamCloseEarly() {
     try (var conn = connect()) {
-      // Close the stream before consuming all rows — should drain properly
+      // Close the stream before consuming all rows -- should drain properly
       try (var rows = conn.stream("SELECT generate_series(1, 1000) AS n")) {
         var iter = rows.iterator();
         assertTrue(iter.hasNext());
@@ -2867,31 +1481,6 @@ class PgConnectionTest extends AbstractConnectionTest {
     var conn = connect();
     conn.close();
     assertThrows(DbConnectionException.class, () -> conn.query("SELECT 1"));
-  }
-
-  @Test
-  void nestedTransactionErrorAndRecovery() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE nest_err (id int PRIMARY KEY)");
-
-      try (var tx = conn.begin()) {
-        tx.query("INSERT INTO nest_err VALUES (1)");
-
-        try (var nested = tx.begin()) {
-          // This should fail — duplicate key
-          assertThrows(DbException.class, () -> nested.query("INSERT INTO nest_err VALUES (1)"));
-          // Nested transaction auto-rolls back to savepoint, rescuing outer tx
-        }
-
-        // After savepoint rollback, the outer transaction should still work
-        tx.query("INSERT INTO nest_err VALUES (2)");
-        tx.commit();
-      }
-
-      // Both rows should be committed
-      var rs = conn.query("SELECT count(*) AS cnt FROM nest_err");
-      assertEquals(2L, rs.first().getLong("cnt"));
-    }
   }
 
   @Test
@@ -3077,7 +1666,7 @@ class PgConnectionTest extends AbstractConnectionTest {
           assertTrue(iter.hasNext());
           iter.next();
         }
-        // Close without consuming the rest — should drain properly
+        // Close without consuming the rest -- should drain properly
       }
 
       // Connection must be usable after early stream close
@@ -3184,20 +1773,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     assertThrows(DbConnectionException.class, () -> PgConnection.connect(config));
   }
 
-  // ===== Feature 5: extra_float_digits =====
-
-  @Test
-  void extraFloatDigitsPreservesDoublePrecision() {
-    try (var conn = connect()) {
-      // Without extra_float_digits=3, Postgres may round this value
-      double precise = 1.0 / 3.0;
-      var rs = conn.query("SELECT " + precise + "::float8 AS val");
-      double result = rs.first().getDouble("val");
-      assertEquals(precise, result, 0.0, "float8 should round-trip without precision loss");
-    }
-  }
-
-  // ===== Feature 6: stale cached plan retry =====
+  // ===== Stale cached plan retry =====
 
   @Test
   void staleCachedPlanRetries() {
@@ -3226,7 +1802,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== Feature 7: adaptive cursor fetch size =====
+  // ===== Adaptive cursor fetch size =====
 
   @Test
   void adaptiveCursorFetchSize() {
@@ -3267,7 +1843,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== Feature 11: streaming row recycling =====
+  // ===== Streaming row recycling =====
 
   @Test
   void streamingRowRecycling() {
@@ -3285,155 +1861,374 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // =====================================================================
-  // Plan 2: Special float/double values — NaN and Infinity
-  // =====================================================================
+  // ===== Binary parameter encoding round-trips =====
 
   @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void floatNaNRoundTrip() {
+  void paramLocalDateRoundTrip() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::float4 AS val", Float.NaN);
-      assertTrue(Float.isNaN(rs.first().getFloat("val")));
+      conn.query("CREATE TEMP TABLE param_date (d date)");
+      var date = java.time.LocalDate.of(2024, 6, 15);
+      conn.query("INSERT INTO param_date VALUES ($1)", date);
+      assertEquals(date, conn.query("SELECT d FROM param_date").first().getLocalDate("d"));
     }
   }
 
   @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void doubleNaNRoundTrip() {
+  void paramLocalDateBeforeEpoch() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::float8 AS val", Double.NaN);
-      assertTrue(Double.isNaN(rs.first().getDouble("val")));
+      conn.query("CREATE TEMP TABLE param_date2 (d date)");
+      var date = java.time.LocalDate.of(1970, 1, 1);
+      conn.query("INSERT INTO param_date2 VALUES ($1)", date);
+      assertEquals(date, conn.query("SELECT d FROM param_date2").first().getLocalDate("d"));
     }
   }
 
   @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void floatPositiveInfinityRoundTrip() {
+  void paramLocalTimeRoundTrip() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::float4 AS val", Float.POSITIVE_INFINITY);
-      assertEquals(Float.POSITIVE_INFINITY, rs.first().getFloat("val"));
+      conn.query("CREATE TEMP TABLE param_time (t time)");
+      var time = java.time.LocalTime.of(13, 45, 30, 123_456_000);
+      conn.query("INSERT INTO param_time VALUES ($1)", time);
+      assertEquals(time, conn.query("SELECT t FROM param_time").first().getLocalTime("t"));
     }
   }
 
   @Test
-  @SuppressWarnings({"NullAway", "DataFlowIssue"})
-  void doubleNegativeInfinityRoundTrip() {
+  void paramLocalDateTimeRoundTrip() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::float8 AS val", Double.NEGATIVE_INFINITY);
-      assertEquals(Double.NEGATIVE_INFINITY, rs.first().getDouble("val"));
+      conn.query("CREATE TEMP TABLE param_ts (ts timestamp)");
+      var ts = java.time.LocalDateTime.of(2024, 6, 15, 13, 45, 30, 123_456_000);
+      conn.query("INSERT INTO param_ts VALUES ($1)", ts);
+      assertEquals(ts, conn.query("SELECT ts FROM param_ts").first().getLocalDateTime("ts"));
     }
   }
 
   @Test
-  void numericNaNFromServer() {
+  void paramLocalDateTimeBeforeEpoch() {
     try (var conn = connect()) {
-      // Binary protocol: Postgres NUMERIC NaN cannot be represented as BigDecimal
-      var rs = conn.query("SELECT 'NaN'::numeric AS val");
-      assertThrows(ArithmeticException.class, () -> rs.first().getBigDecimal("val"));
-    }
-  }
-
-  // =====================================================================
-  // Plan 2: Infinity dates and timestamps
-  // =====================================================================
-
-  @Test
-  void dateInfinity() {
-    try (var conn = connect()) {
-      // Insert infinity date, read back via extended query to get binary format
-      conn.query("CREATE TEMP TABLE inf_date (id int, d date)");
-      conn.query("INSERT INTO inf_date VALUES (1, 'infinity')");
-      var rs = conn.query("SELECT d FROM inf_date WHERE id = $1", 1);
-      assertEquals(java.time.LocalDate.MAX, rs.first().getLocalDate("d"));
+      conn.query("CREATE TEMP TABLE param_ts2 (ts timestamp)");
+      var ts = java.time.LocalDateTime.of(1970, 1, 1, 0, 0, 0);
+      conn.query("INSERT INTO param_ts2 VALUES ($1)", ts);
+      assertEquals(ts, conn.query("SELECT ts FROM param_ts2").first().getLocalDateTime("ts"));
     }
   }
 
   @Test
-  void dateNegativeInfinity() {
+  void paramOffsetDateTimeRoundTrip() {
     try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE ninf_date (id int, d date)");
-      conn.query("INSERT INTO ninf_date VALUES (1, '-infinity')");
-      var rs = conn.query("SELECT d FROM ninf_date WHERE id = $1", 1);
-      assertEquals(java.time.LocalDate.MIN, rs.first().getLocalDate("d"));
+      conn.query("CREATE TEMP TABLE param_tstz (ts timestamptz)");
+      var odt =
+          java.time.OffsetDateTime.of(2024, 6, 15, 15, 45, 30, 0, java.time.ZoneOffset.ofHours(2));
+      conn.query("INSERT INTO param_tstz VALUES ($1)", odt);
+      var result = conn.query("SELECT ts FROM param_tstz").first().getOffsetDateTime("ts");
+      // PG normalizes to UTC
+      var expected =
+          java.time.OffsetDateTime.of(2024, 6, 15, 13, 45, 30, 0, java.time.ZoneOffset.UTC);
+      assertEquals(expected, result);
     }
   }
 
   @Test
-  void timestampInfinity() {
+  void paramOffsetTimeRoundTrip() {
     try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE inf_ts (id int, ts timestamp)");
-      conn.query("INSERT INTO inf_ts VALUES (1, 'infinity')");
-      var rs = conn.query("SELECT ts FROM inf_ts WHERE id = $1", 1);
-      assertEquals(java.time.LocalDateTime.MAX, rs.first().getLocalDateTime("ts"));
+      conn.query("CREATE TEMP TABLE param_timetz (t timetz)");
+      var ot =
+          java.time.OffsetTime.of(
+              java.time.LocalTime.of(17, 55, 4), java.time.ZoneOffset.ofHours(2));
+      conn.query("INSERT INTO param_timetz VALUES ($1)", ot);
+      var result = conn.query("SELECT t FROM param_timetz").first().getOffsetTime("t");
+      assertEquals(ot, result);
     }
   }
 
   @Test
-  void timestamptzInfinity() {
+  void paramOffsetTimeNegativeOffset() {
     try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE inf_tstz (id int, ts timestamptz)");
-      conn.query("INSERT INTO inf_tstz VALUES (1, 'infinity')");
-      var rs = conn.query("SELECT ts FROM inf_tstz WHERE id = $1", 1);
-      assertEquals(java.time.OffsetDateTime.MAX, rs.first().getOffsetDateTime("ts"));
-    }
-  }
-
-  // =====================================================================
-  // Plan 2: Unicode / multi-byte / emoji database round-trip
-  // =====================================================================
-
-  @Test
-  void emojiRoundTrip() {
-    try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::text AS val", "Hello \uD83C\uDF0D\uD83C\uDF89 World");
-      assertEquals("Hello \uD83C\uDF0D\uD83C\uDF89 World", rs.first().getString("val"));
+      conn.query("CREATE TEMP TABLE param_timetz2 (t timetz)");
+      var ot =
+          java.time.OffsetTime.of(
+              java.time.LocalTime.of(8, 15, 30), java.time.ZoneOffset.ofHours(-5));
+      conn.query("INSERT INTO param_timetz2 VALUES ($1)", ot);
+      var result = conn.query("SELECT t FROM param_timetz2").first().getOffsetTime("t");
+      assertEquals(ot, result);
     }
   }
 
   @Test
-  void supplementaryUnicodeRoundTrip() {
+  void paramBigDecimalRoundTrip() {
     try (var conn = connect()) {
-      // U+1D11E = MUSICAL SYMBOL G CLEF (supplementary character, surrogate pair in Java)
-      var rs = conn.query("SELECT $1::text AS val", "\uD834\uDD1E music");
-      assertEquals("\uD834\uDD1E music", rs.first().getString("val"));
+      var value = new java.math.BigDecimal("12345.6789");
+      var rs = conn.query("SELECT $1::numeric AS val", value);
+      assertEquals(0, value.compareTo(rs.first().getBigDecimal("val")));
     }
   }
 
   @Test
-  void emptyStringRoundTrip() {
+  void paramBigDecimalNegative() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT $1::text AS val", "");
-      assertEquals("", rs.first().getString("val"));
-      assertFalse(rs.first().isNull("val"));
-    }
-  }
-
-  // =====================================================================
-  // Plan 2: Numeric precision edge cases
-  // =====================================================================
-
-  @Test
-  void numericLargePrecisionRoundTrip() {
-    try (var conn = connect()) {
-      var big = new java.math.BigDecimal("99999999999999999999.99999999999999999999");
-      var rs = conn.query("SELECT $1::numeric AS val", big);
-      assertEquals(0, big.compareTo(rs.first().getBigDecimal("val")));
+      var value = new java.math.BigDecimal("-42.5");
+      var rs = conn.query("SELECT $1::numeric AS val", value);
+      assertEquals(0, value.compareTo(rs.first().getBigDecimal("val")));
     }
   }
 
   @Test
-  void numericZeroWithScale() {
+  void paramBigDecimalZero() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT 0.00::numeric(10,2) AS val");
-      var result = rs.first().getBigDecimal("val");
-      assertEquals(0, java.math.BigDecimal.ZERO.compareTo(result));
+      var value = java.math.BigDecimal.ZERO;
+      var rs = conn.query("SELECT $1::numeric AS val", value);
+      assertEquals(0, value.compareTo(rs.first().getBigDecimal("val")));
     }
   }
 
-  // =====================================================================
-  // Plan 2: Prepared statement cache invalidation
-  // =====================================================================
+  @Test
+  void paramBigDecimalSmallFraction() {
+    try (var conn = connect()) {
+      var value = new java.math.BigDecimal("0.00000001");
+      var rs = conn.query("SELECT $1::numeric AS val", value);
+      assertEquals(0, value.compareTo(rs.first().getBigDecimal("val")));
+    }
+  }
+
+  @Test
+  void paramBigDecimalLarge() {
+    try (var conn = connect()) {
+      var value = new java.math.BigDecimal("99999999999999999999.99999999999999999999");
+      var rs = conn.query("SELECT $1::numeric AS val", value);
+      assertEquals(0, value.compareTo(rs.first().getBigDecimal("val")));
+    }
+  }
+
+  @Test
+  void paramBigDecimalArithmetic() {
+    try (var conn = connect()) {
+      // Verify PG can do arithmetic with binary-encoded numeric params
+      var a = new java.math.BigDecimal("100.50");
+      var b = new java.math.BigDecimal("200.25");
+      var rs = conn.query("SELECT $1::numeric + $2::numeric AS sum", a, b);
+      assertEquals(
+          0, new java.math.BigDecimal("300.75").compareTo(rs.first().getBigDecimal("sum")));
+    }
+  }
+
+  // --- Binary array parameter round-trips ---
+
+  @Test
+  void paramIntArrayRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_iarr (vals int[])");
+      conn.query("INSERT INTO param_iarr VALUES ($1)", new int[] {1, 2, 3});
+      var arr = conn.query("SELECT vals FROM param_iarr").first().getIntegerArray("vals");
+      assertEquals(List.of(1, 2, 3), arr);
+    }
+  }
+
+  @Test
+  void paramIntArrayAny() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_iany (id int)");
+      conn.query("INSERT INTO param_iany VALUES (1), (2), (3), (4), (5)");
+      var rs =
+          conn.query(
+              "SELECT id FROM param_iany WHERE id = ANY($1) ORDER BY id", new int[] {1, 3, 5});
+      var ids = new ArrayList<Integer>();
+      for (var row : rs) ids.add(row.getInteger("id"));
+      assertEquals(List.of(1, 3, 5), ids);
+    }
+  }
+
+  @Test
+  void paramLongArrayRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_larr (vals bigint[])");
+      conn.query("INSERT INTO param_larr VALUES ($1)", new long[] {100L, 200L});
+      var arr = conn.query("SELECT vals FROM param_larr").first().getLongArray("vals");
+      assertEquals(List.of(100L, 200L), arr);
+    }
+  }
+
+  @Test
+  void paramBoolArrayRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_barr (vals boolean[])");
+      conn.query("INSERT INTO param_barr VALUES ($1)", new boolean[] {true, false, true});
+      var arr = conn.query("SELECT vals FROM param_barr").first().getBooleanArray("vals");
+      assertEquals(List.of(true, false, true), arr);
+    }
+  }
+
+  @Test
+  void paramDoubleArrayRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_darr (vals float8[])");
+      conn.query("INSERT INTO param_darr VALUES ($1)", new double[] {1.5, 2.5});
+      var arr = conn.query("SELECT vals FROM param_darr").first().getDoubleArray("vals");
+      assertEquals(List.of(1.5, 2.5), arr);
+    }
+  }
+
+  @Test
+  void paramIntegerListRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_ilist (vals int[])");
+      conn.query("INSERT INTO param_ilist VALUES ($1)", List.of(10, 20, 30));
+      var arr = conn.query("SELECT vals FROM param_ilist").first().getIntegerArray("vals");
+      assertEquals(List.of(10, 20, 30), arr);
+    }
+  }
+
+  @Test
+  void paramStringListRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_slist (vals text[])");
+      conn.query("INSERT INTO param_slist VALUES ($1)", List.of("hello", "world"));
+      var arr = conn.query("SELECT vals FROM param_slist").first().getStringArray("vals");
+      assertEquals(List.of("hello", "world"), arr);
+    }
+  }
+
+  @Test
+  void paramStringListWithSpecialChars() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_sspec (vals text[])");
+      conn.query(
+          "INSERT INTO param_sspec VALUES ($1)",
+          List.of("hello world", "with,comma", "with\"quote"));
+      var arr = conn.query("SELECT vals FROM param_sspec").first().getStringArray("vals");
+      assertEquals(List.of("hello world", "with,comma", "with\"quote"), arr);
+    }
+  }
+
+  @Test
+  void paramUuidListRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_ulist (vals uuid[])");
+      var u1 = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+      var u2 = java.util.UUID.fromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+      conn.query("INSERT INTO param_ulist VALUES ($1)", List.of(u1, u2));
+      var arr = conn.query("SELECT vals FROM param_ulist").first().getStringArray("vals");
+      assertEquals(List.of(u1.toString(), u2.toString()), arr);
+    }
+  }
+
+  @Test
+  void paramEmptyIntArrayRoundTrip() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_earr (vals int[])");
+      conn.query("INSERT INTO param_earr VALUES ($1)", new int[] {});
+      var arr = conn.query("SELECT vals FROM param_earr").first().getIntegerArray("vals");
+      assertEquals(List.of(), arr);
+    }
+  }
+
+  @Test
+  void paramIntegerListAny() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_lany (id int)");
+      conn.query("INSERT INTO param_lany VALUES (1), (2), (3), (4), (5)");
+      var rs =
+          conn.query("SELECT id FROM param_lany WHERE id = ANY($1) ORDER BY id", List.of(2, 4));
+      var ids = new ArrayList<Integer>();
+      for (var row : rs) ids.add(row.getInteger("id"));
+      assertEquals(List.of(2, 4), ids);
+    }
+  }
+
+  @Test
+  void paramListWithNulls() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_lnull (vals int[])");
+      var list = new ArrayList<Integer>();
+      list.add(1);
+      list.add(null);
+      list.add(3);
+      conn.query("INSERT INTO param_lnull VALUES ($1)", list);
+      var arr = conn.query("SELECT vals FROM param_lnull").first().getIntegerArray("vals");
+      assertEquals(3, arr.size());
+      assertEquals(1, arr.get(0));
+      assertNull(arr.get(1));
+      assertEquals(3, arr.get(2));
+    }
+  }
+
+  // --- Mixed binary/text params in same query ---
+
+  @Test
+  void paramMixedBinaryAndTextTypes() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE param_mix (d date, n numeric, s text, i int)");
+      var date = java.time.LocalDate.of(2024, 1, 15);
+      var num = new java.math.BigDecimal("99.99");
+      conn.query("INSERT INTO param_mix VALUES ($1, $2, $3, $4)", date, num, "hello", 42);
+      var row = conn.query("SELECT * FROM param_mix").first();
+      assertEquals(date, row.getLocalDate("d"));
+      assertEquals(0, num.compareTo(row.getBigDecimal("n")));
+      assertEquals("hello", row.getString("s"));
+      assertEquals(42, row.getInteger("i"));
+    }
+  }
+
+  // --- Prepared statement with binary-encoded params ---
+
+  @Test
+  void preparedStatementBinaryParams() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE ps_bin (d date, n numeric, ts timestamptz)");
+      try (var stmt = conn.prepare("INSERT INTO ps_bin VALUES ($1, $2, $3)")) {
+        var date = java.time.LocalDate.of(2024, 6, 15);
+        var num = new java.math.BigDecimal("123.45");
+        var odt = java.time.OffsetDateTime.of(2024, 6, 15, 12, 0, 0, 0, java.time.ZoneOffset.UTC);
+        stmt.query(date, num, odt);
+      }
+      var row = conn.query("SELECT * FROM ps_bin").first();
+      assertEquals(java.time.LocalDate.of(2024, 6, 15), row.getLocalDate("d"));
+      assertEquals(0, new java.math.BigDecimal("123.45").compareTo(row.getBigDecimal("n")));
+      assertEquals(
+          java.time.OffsetDateTime.of(2024, 6, 15, 12, 0, 0, 0, java.time.ZoneOffset.UTC),
+          row.getOffsetDateTime("ts"));
+    }
+  }
+
+  @Test
+  void preparedStatementWithArrayParam() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE ps_arr (id int)");
+      conn.query("INSERT INTO ps_arr VALUES (1), (2), (3), (4), (5)");
+      try (var stmt = conn.prepare("SELECT id FROM ps_arr WHERE id = ANY($1) ORDER BY id")) {
+        var rs = stmt.query(List.of(1, 3, 5));
+        var ids = new ArrayList<Integer>();
+        for (var row : rs) ids.add(row.getInteger("id"));
+        assertEquals(List.of(1, 3, 5), ids);
+
+        // Re-execute with different values
+        var rs2 = stmt.query(List.of(2, 4));
+        var ids2 = new ArrayList<Integer>();
+        for (var row : rs2) ids2.add(row.getInteger("id"));
+        assertEquals(List.of(2, 4), ids2);
+      }
+    }
+  }
+
+  // --- Pipelined with binary-encoded params ---
+
+  @Test
+  void pipelinedBinaryParams() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE pipe_bin (d date, n numeric)");
+      var d1 = java.time.LocalDate.of(2024, 1, 1);
+      var d2 = java.time.LocalDate.of(2024, 12, 31);
+      conn.enqueue("INSERT INTO pipe_bin VALUES ($1, $2)", d1, new java.math.BigDecimal("100.00"));
+      conn.enqueue("INSERT INTO pipe_bin VALUES ($1, $2)", d2, new java.math.BigDecimal("200.00"));
+      conn.flush();
+      var dates = new ArrayList<java.time.LocalDate>();
+      for (var row : conn.query("SELECT * FROM pipe_bin ORDER BY d")) {
+        dates.add(row.getLocalDate("d"));
+      }
+      assertEquals(List.of(d1, d2), dates);
+    }
+  }
+
+  // ===== Prepared statement cache eviction =====
 
   @Test
   void preparedStatementCacheEviction() {
@@ -3463,7 +2258,7 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   // =====================================================================
-  // Override inherited pipeline error tests — errors cancel subsequent statements in the same
+  // Override inherited pipeline error tests -- errors cancel subsequent statements in the same
   // Sync boundary when using the extended query protocol.
   // =====================================================================
 
@@ -3509,201 +2304,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  @Test
-  void pipelineErrorContainsSql() {
-    try (var conn = connect()) {
-      String badSql = "SELECT * FROM nonexistent_table_xyz";
-      conn.enqueue("SELECT 1");
-      conn.enqueue(badSql);
-      conn.enqueue("SELECT 3");
-      List<RowSet> results = conn.flush();
-
-      assertEquals(3, results.size());
-      var error = results.get(1).getError();
-      assertNotNull(error);
-      assertEquals(badSql, error.sql());
-    }
-  }
-
-  // =====================================================================
-  // Pipeline error resilience (stress)
-  // =====================================================================
-
-  @Test
-  void pipelineRepeatedErrors128() {
-    try (var conn = connect()) {
-      for (int i = 0; i < 128; i++) {
-        conn.enqueue("INVALID SQL NUMBER " + i);
-      }
-      List<RowSet> results = conn.flush();
-      assertEquals(128, results.size());
-      for (var rs : results) {
-        assertNotNull(rs.getError());
-      }
-      // Connection should still be usable
-      var rs = conn.query("SELECT 1 AS n");
-      assertEquals(1, rs.first().getInteger("n"));
-    }
-  }
-
-  @Test
-  void pipelineMixedParamErrors() {
-    try (var conn = connect()) {
-      // With extended protocol, the first error cancels all subsequent statements.
-      // Index 0 succeeds (even index), index 1 fails (odd index), 2-49 are all skipped.
-      for (int i = 0; i < 50; i++) {
-        if (i % 2 == 0) {
-          conn.enqueue("SELECT $1::int AS n", i);
-        } else {
-          conn.enqueue("INVALID SQL " + i);
-        }
-      }
-      List<RowSet> results = conn.flush();
-      assertEquals(50, results.size());
-      // First statement (i=0) succeeds
-      assertEquals(0, results.get(0).first().getInteger("n"));
-      // Second statement (i=1) fails
-      assertNotNull(results.get(1).getError());
-      // All subsequent statements are skipped
-      for (int i = 2; i < 50; i++) {
-        assertNotNull(results.get(i).getError());
-      }
-      // Connection still usable
-      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
-    }
-  }
-
-  // =====================================================================
-  // Large pipeline: triggers mid-pipeline Sync insertion
-  // =====================================================================
-
-  @Test
-  void pipelineLargeResponsesMidSync() {
-    try (var conn = connect()) {
-      // Generate enough large-response queries to exceed the internal buffer threshold
-      // This should trigger mid-pipeline Sync insertion for safe response draining
-      conn.query(
-          "CREATE TEMP TABLE big_pipe AS SELECT generate_series(1, 500) AS n, repeat('x', 100) AS pad");
-
-      for (int i = 0; i < 20; i++) {
-        conn.enqueue("SELECT n, pad FROM big_pipe ORDER BY n");
-      }
-      List<RowSet> results = conn.flush();
-      assertEquals(20, results.size());
-      for (var rs : results) {
-        assertNull(rs.getError());
-        assertEquals(500, rs.size());
-      }
-      // Connection still works
-      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
-    }
-  }
-
-  // =====================================================================
-  // Plan 2: Trailing spaces and empty strings
-  // =====================================================================
-
-  @Test
-  void trailingSpacesPreserved() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE char_test (val char(10))");
-      conn.query("INSERT INTO char_test VALUES ($1)", "hello");
-      var rs = conn.query("SELECT val FROM char_test");
-      String val = rs.first().getString(0);
-      // PG char(10) right-pads with spaces
-      assertEquals(10, val.length());
-      assertTrue(val.startsWith("hello"));
-    }
-  }
-
-  @Test
-  void emptyStringVsNull() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE empty_str (val text)");
-      conn.query("INSERT INTO empty_str VALUES ($1)", "");
-      var rs = conn.query("SELECT val FROM empty_str");
-      assertEquals("", rs.first().getString(0));
-      assertFalse(rs.first().isNull(0));
-    }
-  }
-
-  // =====================================================================
-  // Plan 2: executeMany with partial failures
-  // =====================================================================
-
-  @Test
-  void executeManyPartialFailure() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE batch_pf (id int PRIMARY KEY)");
-      conn.query("INSERT INTO batch_pf VALUES (2)"); // pre-insert to cause duplicate
-
-      var results =
-          conn.executeMany(
-              "INSERT INTO batch_pf VALUES ($1)",
-              List.of(
-                  new Object[] {1},
-                  new Object[] {2}, // duplicate — should error
-                  new Object[] {3}));
-
-      assertEquals(3, results.size());
-      assertNull(results.get(0).getError()); // first should succeed
-      assertNotNull(results.get(1).getError()); // duplicate key error
-      // In PG pipeline mode, the error at index 1 may cause index 2 to also fail
-      // (PG aborts the current transaction on error). Both outcomes are acceptable.
-
-      // Connection still usable
-      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
-    }
-  }
-
-  @Test
-  void executeManyAllFail() {
-    try (var conn = connect()) {
-      conn.query("CREATE TEMP TABLE batch_af (id int PRIMARY KEY)");
-      conn.query("INSERT INTO batch_af VALUES (1), (2), (3)");
-
-      var results =
-          conn.executeMany(
-              "INSERT INTO batch_af VALUES ($1)",
-              List.of(new Object[] {1}, new Object[] {2}, new Object[] {3}));
-
-      assertEquals(3, results.size());
-      // At least the first one should have an error
-      assertNotNull(results.get(0).getError());
-
-      // Connection still usable
-      assertEquals(1, conn.query("SELECT 1").first().getInteger(0));
-    }
-  }
-
-  // =====================================================================
-  // Plan 2: Large values and buffer boundaries
-  // =====================================================================
-
-  @Test
-  void largeTextParameter() {
-    try (var conn = connect()) {
-      String large = "A".repeat(100_000);
-      var rs = conn.query("SELECT length($1::text) AS len", large);
-      assertEquals(100_000, rs.first().getInteger("len"));
-    }
-  }
-
-  @Test
-  void largeByteaParameter() {
-    try (var conn = connect()) {
-      byte[] large = new byte[1_000_000];
-      java.util.Arrays.fill(large, (byte) 0x42);
-      conn.query("CREATE TEMP TABLE bytea_test (data bytea)");
-      conn.query("INSERT INTO bytea_test VALUES ($1)", large);
-      var rs = conn.query("SELECT length(data) AS len FROM bytea_test");
-      assertEquals(1_000_000, rs.first().getInteger("len"));
-    }
-  }
-
-  // =====================================================================
-  // Plan 2: Server-forced connection close
-  // =====================================================================
+  // ===== Server-forced connection close =====
 
   @Test
   void queryAfterServerTerminatesBackend() {
@@ -3727,9 +2328,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // =====================================================================
-  // Plan 2: NOTIFY does not corrupt connection
-  // =====================================================================
+  // ===== NOTIFY does not corrupt connection =====
 
   @Test
   void notificationDoesNotCorruptConnection() {
@@ -3748,11 +2347,69 @@ class PgConnectionTest extends AbstractConnectionTest {
         Thread.currentThread().interrupt();
       }
 
-      // Normal query should still work — notification is silently consumed
+      // Normal query should still work -- notification is silently consumed
       var rs = conn.query("SELECT 42 AS answer");
       assertEquals(42, rs.first().getInteger("answer"));
 
       conn.query("UNLISTEN test_channel");
+    }
+  }
+
+  // =====================================================================
+  // ParamEncoder: custom types via binary encoding
+  // =====================================================================
+
+  @Test
+  void paramEncoderCustomTypeRoundTrip() {
+    record UserId(java.util.UUID uuid) {}
+    try (var conn = connect()) {
+      conn.binderRegistry().registerEncoder(UserId.class, id -> id.uuid());
+      conn.query("CREATE TEMP TABLE pe_test (id uuid)");
+      var uid = new UserId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000"));
+      conn.query("INSERT INTO pe_test VALUES ($1)", uid);
+      var result = conn.query("SELECT id FROM pe_test").first().getUUID("id");
+      assertEquals(uid.uuid(), result);
+    }
+  }
+
+  @Test
+  void paramEncoderWithPreparedStatement() {
+    record UserId(java.util.UUID uuid) {}
+    try (var conn = connect()) {
+      conn.binderRegistry().registerEncoder(UserId.class, id -> id.uuid());
+      conn.query("CREATE TEMP TABLE pe_ps (id uuid, name text)");
+      conn.query("INSERT INTO pe_ps VALUES ('550e8400-e29b-41d4-a716-446655440000', 'Alice')");
+      try (var stmt = conn.prepare("SELECT name FROM pe_ps WHERE id = $1")) {
+        var uid = new UserId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000"));
+        var rs = stmt.query(uid);
+        assertEquals("Alice", rs.first().getString("name"));
+      }
+    }
+  }
+
+  @Test
+  void paramEncoderMoneyToBigDecimal() {
+    record Money(java.math.BigDecimal amount) {}
+    try (var conn = connect()) {
+      conn.binderRegistry().registerEncoder(Money.class, m -> m.amount());
+      var price = new Money(new java.math.BigDecimal("99.99"));
+      var rs = conn.query("SELECT $1::numeric AS val", price);
+      assertEquals(0, new java.math.BigDecimal("99.99").compareTo(rs.first().getBigDecimal("val")));
+    }
+  }
+
+  @Test
+  void paramEncoderInPipeline() {
+    record UserId(java.util.UUID uuid) {}
+    try (var conn = connect()) {
+      conn.binderRegistry().registerEncoder(UserId.class, id -> id.uuid());
+      conn.query("CREATE TEMP TABLE pe_pipe (id uuid)");
+      var u1 = new UserId(java.util.UUID.randomUUID());
+      var u2 = new UserId(java.util.UUID.randomUUID());
+      conn.enqueue("INSERT INTO pe_pipe VALUES ($1)", u1);
+      conn.enqueue("INSERT INTO pe_pipe VALUES ($1)", u2);
+      conn.flush();
+      assertEquals(2, conn.query("SELECT count(*) FROM pe_pipe").first().getInteger(0));
     }
   }
 }

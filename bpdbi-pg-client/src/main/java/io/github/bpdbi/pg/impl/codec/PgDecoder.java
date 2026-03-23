@@ -88,16 +88,15 @@ public final class PgDecoder {
       case PgProtocolConstants.BACKEND_KEY_DATA -> decodeBackendKeyData(buf);
       case PgProtocolConstants.READY_FOR_QUERY -> decodeReadyForQuery(buf);
       case PgProtocolConstants.ROW_DESCRIPTION -> decodeRowDescription(buf);
-      case PgProtocolConstants.DATA_ROW -> decodeDataRow(buf);
       case PgProtocolConstants.COMMAND_COMPLETE -> decodeCommandComplete(buf);
-      case PgProtocolConstants.EMPTY_QUERY_RESPONSE -> new BackendMessage.EmptyQueryResponse();
+      case PgProtocolConstants.EMPTY_QUERY_RESPONSE -> BackendMessage.EMPTY_QUERY_RESPONSE;
       case PgProtocolConstants.ERROR_RESPONSE -> decodeErrorResponse(buf);
       case PgProtocolConstants.NOTICE_RESPONSE -> decodeNoticeResponse(buf);
       case PgProtocolConstants.PARSE_COMPLETE -> BackendMessage.PARSE_COMPLETE;
       case PgProtocolConstants.BIND_COMPLETE -> BackendMessage.BIND_COMPLETE;
-      case PgProtocolConstants.CLOSE_COMPLETE -> new BackendMessage.CloseComplete();
+      case PgProtocolConstants.CLOSE_COMPLETE -> BackendMessage.CLOSE_COMPLETE;
       case PgProtocolConstants.NO_DATA -> BackendMessage.NO_DATA;
-      case PgProtocolConstants.PORTAL_SUSPENDED -> new BackendMessage.PortalSuspended();
+      case PgProtocolConstants.PORTAL_SUSPENDED -> BackendMessage.PORTAL_SUSPENDED;
       case PgProtocolConstants.PARAMETER_DESCRIPTION -> decodeParameterDescription(buf);
       case PgProtocolConstants.NOTIFICATION_RESPONSE -> decodeNotificationResponse(buf);
       default ->
@@ -193,21 +192,6 @@ public final class PgDecoder {
     }
     columnNameCache.put(name, name);
     return name;
-  }
-
-  private BackendMessage decodeDataRow(ByteBuffer buf) {
-    int columnCount = buf.readUnsignedShort();
-    byte[][] values = new byte[columnCount][];
-    for (int i = 0; i < columnCount; i++) {
-      int len = buf.readInt();
-      if (len == -1) {
-        values[i] = null; // SQL NULL
-      } else {
-        values[i] = new byte[len];
-        buf.readBytes(values[i]);
-      }
-    }
-    return new BackendMessage.DataRow(values);
   }
 
   /**

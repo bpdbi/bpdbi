@@ -88,6 +88,18 @@ public final class RowSet implements Iterable<Row> {
     return rows.getFirst();
   }
 
+  /** Return the first row, or null if the result is empty. */
+  public @Nullable Row firstOrNull() {
+    checkError();
+    return rows.isEmpty() ? null : rows.getFirst();
+  }
+
+  /** Return the row at the given index. */
+  public @NonNull Row get(int index) {
+    checkError();
+    return rows.get(index);
+  }
+
   public @NonNull Stream<Row> stream() {
     checkError();
     return rows.stream();

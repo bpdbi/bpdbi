@@ -1,8 +1,6 @@
 package io.github.bpdbi.core.impl;
 
 import io.github.bpdbi.core.ColumnDescriptor;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,7 +21,7 @@ public class PreparedStatementCache
   private final int capacity;
   private final int maxTotalSqlBytes;
   private int totalSqlBytes;
-  private List<CachedStatement> removed;
+  private @Nullable CachedStatement removed;
 
   public PreparedStatementCache(int capacity) {
     this(capacity, 0);
@@ -49,36 +47,36 @@ public class PreparedStatementCache
     return maxTotalSqlBytes > 0 && sql.length() * 2 > maxTotalSqlBytes;
   }
 
-  /** Current total SQL bytes stored in the cache. */
-  public int totalSqlBytes() {
+  /** Current total SQL bytes stored in the cache. Used by tests only. */
+  int totalSqlBytes() {
     return totalSqlBytes;
   }
 
   /**
-   * Cache a statement. Returns the list of evicted statements that the caller must close
-   * server-side. Returns a list containing only the given statement itself (unconsumed) if the SQL
-   * is rejected as oversized.
+   * Cache a statement. Returns the evicted statement that the caller must close server-side, or
+   * null if no eviction occurred. Returns the given statement itself (unconsumed) if the SQL is
+   * rejected as oversized.
    */
-  public @NonNull List<CachedStatement> cache(@NonNull String sql, @NonNull CachedStatement stmt) {
+  public @Nullable CachedStatement cache(@NonNull String sql, @NonNull CachedStatement stmt) {
     if (isOversized(sql)) {
-      return List.of(stmt);
+      return stmt;
     }
     put(sql, stmt);
     totalSqlBytes += sql.length();
     if (removed != null) {
-      List<CachedStatement> evicted = removed;
+      CachedStatement evicted = removed;
       removed = null;
       return evicted;
     }
-    return Collections.emptyList();
+    return null;
   }
 
   /**
-   * Evict the least recently used entry.
+   * Evict the least recently used entry. Used by tests only.
    *
    * @return the evicted statement, or null if empty
    */
-  public @Nullable CachedStatement evict() {
+  @Nullable CachedStatement evict() {
     Iterator<Map.Entry<String, CachedStatement>> it = entrySet().iterator();
     if (it.hasNext()) {
       Map.Entry<String, CachedStatement> entry = it.next();
@@ -89,7 +87,8 @@ public class PreparedStatementCache
     return null;
   }
 
-  public boolean isFull() {
+  /** Used by tests only. */
+  boolean isFull() {
     return size() >= capacity;
   }
 
@@ -97,10 +96,7 @@ public class PreparedStatementCache
   protected boolean removeEldestEntry(Map.Entry<String, CachedStatement> eldest) {
     boolean evict = size() > capacity;
     if (evict) {
-      if (removed == null) {
-        removed = new ArrayList<>();
-      }
-      removed.add(eldest.getValue());
+      removed = eldest.getValue();
       totalSqlBytes -= eldest.getKey().length();
       return true;
     }

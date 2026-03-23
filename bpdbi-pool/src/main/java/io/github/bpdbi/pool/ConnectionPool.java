@@ -216,6 +216,7 @@ public final class ConnectionPool implements AutoCloseable {
       try {
         beforeReturn.accept(pc);
       } catch (Exception e) {
+        LOG.fine("beforeReturn hook failed, discarding connection: " + e.getMessage());
         discard(pc);
         return;
       }

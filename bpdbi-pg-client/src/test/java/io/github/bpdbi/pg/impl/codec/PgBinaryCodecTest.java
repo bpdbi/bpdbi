@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,6 +20,7 @@ import io.github.bpdbi.pg.data.Point;
 import io.github.bpdbi.pg.data.Polygon;
 import java.math.BigDecimal;
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -41,12 +41,12 @@ class PgBinaryCodecTest {
 
   @Test
   void decodeBoolTrue() {
-    assertTrue(codec.decodeBool(new byte[] {1}));
+    assertTrue(codec.decodeBool(new byte[] {1}, 0));
   }
 
   @Test
   void decodeBoolFalse() {
-    assertFalse(codec.decodeBool(new byte[] {0}));
+    assertFalse(codec.decodeBool(new byte[] {0}, 0));
   }
 
   @Test
@@ -61,8 +61,8 @@ class PgBinaryCodecTest {
 
   @Test
   void decodeInt2() {
-    assertEquals((short) 256, codec.decodeInt2(new byte[] {0x01, 0x00}));
-    assertEquals((short) -1, codec.decodeInt2(new byte[] {(byte) 0xFF, (byte) 0xFF}));
+    assertEquals((short) 256, codec.decodeInt2(new byte[] {0x01, 0x00}, 0));
+    assertEquals((short) -1, codec.decodeInt2(new byte[] {(byte) 0xFF, (byte) 0xFF}, 0));
   }
 
   @Test
@@ -76,15 +76,15 @@ class PgBinaryCodecTest {
 
   @Test
   void decodeInt4() {
-    assertEquals(1, codec.decodeInt4(new byte[] {0, 0, 0, 1}));
+    assertEquals(1, codec.decodeInt4(new byte[] {0, 0, 0, 1}, 0));
     assertEquals(
-        -1, codec.decodeInt4(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
+        -1, codec.decodeInt4(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}, 0));
   }
 
   @Test
   void encodeDecodeInt4RoundTrip() {
     int value = 123456;
-    assertEquals(value, codec.decodeInt4(PgBinaryCodec.encodeInt4(value)));
+    assertEquals(value, codec.decodeInt4(PgBinaryCodec.encodeInt4(value), 0));
   }
 
   // =====================================================================
@@ -94,13 +94,13 @@ class PgBinaryCodecTest {
   @Test
   void decodeInt8() {
     byte[] bytes = PgBinaryCodec.encodeInt8(Long.MAX_VALUE);
-    assertEquals(Long.MAX_VALUE, codec.decodeInt8(bytes));
+    assertEquals(Long.MAX_VALUE, codec.decodeInt8(bytes, 0));
   }
 
   @Test
   void encodeDecodeInt8RoundTrip() {
     long value = 9876543210L;
-    assertEquals(value, codec.decodeInt8(PgBinaryCodec.encodeInt8(value)));
+    assertEquals(value, codec.decodeInt8(PgBinaryCodec.encodeInt8(value), 0));
   }
 
   // =====================================================================
@@ -110,13 +110,13 @@ class PgBinaryCodecTest {
   @Test
   void decodeFloat4() {
     byte[] bytes = PgBinaryCodec.encodeFloat4(3.14f);
-    assertEquals(3.14f, codec.decodeFloat4(bytes), 0.001f);
+    assertEquals(3.14f, codec.decodeFloat4(bytes, 0), 0.001f);
   }
 
   @Test
   void decodeFloat8() {
     byte[] bytes = PgBinaryCodec.encodeFloat8(3.14159265358979);
-    assertEquals(3.14159265358979, codec.decodeFloat8(bytes), 1e-15);
+    assertEquals(3.14159265358979, codec.decodeFloat8(bytes, 0), 1e-15);
   }
 
   // =====================================================================
@@ -125,7 +125,8 @@ class PgBinaryCodecTest {
 
   @Test
   void decodeString() {
-    assertEquals("hello", codec.decodeString("hello".getBytes()));
+    byte[] data = "hello".getBytes();
+    assertEquals("hello", codec.decodeString(data, 0, data.length));
   }
 
   @Test
@@ -141,13 +142,14 @@ class PgBinaryCodecTest {
   void decodeUuid() {
     UUID uuid = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
     byte[] encoded = PgBinaryCodec.encodeUuid(uuid);
-    assertEquals(uuid, codec.decodeUuid(encoded));
+    assertEquals(uuid, codec.decodeUuid(encoded, 0, encoded.length));
   }
 
   @Test
   void encodeDecodeUuidRoundTrip() {
     UUID uuid = UUID.randomUUID();
-    assertEquals(uuid, codec.decodeUuid(PgBinaryCodec.encodeUuid(uuid)));
+    byte[] encoded = PgBinaryCodec.encodeUuid(uuid);
+    assertEquals(uuid, codec.decodeUuid(encoded, 0, encoded.length));
   }
 
   // =====================================================================
@@ -157,25 +159,30 @@ class PgBinaryCodecTest {
   @Test
   void decodeDateEpoch() {
     // PG epoch = 2000-01-01, so 0 days = 2000-01-01
-    assertEquals(LocalDate.of(2000, 1, 1), codec.decodeDate(PgBinaryCodec.encodeInt4(0)));
+    byte[] data = PgBinaryCodec.encodeInt4(0);
+    assertEquals(LocalDate.of(2000, 1, 1), codec.decodeDate(data, 0, data.length));
   }
 
   @Test
   void decodeDatePositive() {
     // 1 day after epoch = 2000-01-02
-    assertEquals(LocalDate.of(2000, 1, 2), codec.decodeDate(PgBinaryCodec.encodeInt4(1)));
+    byte[] data = PgBinaryCodec.encodeInt4(1);
+    assertEquals(LocalDate.of(2000, 1, 2), codec.decodeDate(data, 0, data.length));
   }
 
   @Test
   void decodeDateInfinity() {
-    assertEquals(LocalDate.MAX, codec.decodeDate(PgBinaryCodec.encodeInt4(Integer.MAX_VALUE)));
-    assertEquals(LocalDate.MIN, codec.decodeDate(PgBinaryCodec.encodeInt4(Integer.MIN_VALUE)));
+    byte[] maxData = PgBinaryCodec.encodeInt4(Integer.MAX_VALUE);
+    byte[] minData = PgBinaryCodec.encodeInt4(Integer.MIN_VALUE);
+    assertEquals(LocalDate.MAX, codec.decodeDate(maxData, 0, maxData.length));
+    assertEquals(LocalDate.MIN, codec.decodeDate(minData, 0, minData.length));
   }
 
   @Test
   void encodeDateRoundTrip() {
     LocalDate date = LocalDate.of(2025, 6, 15);
-    assertEquals(date, codec.decodeDate(PgBinaryCodec.encodeDate(date)));
+    byte[] data = PgBinaryCodec.encodeDate(date);
+    assertEquals(date, codec.decodeDate(data, 0, data.length));
   }
 
   // =====================================================================
@@ -185,13 +192,15 @@ class PgBinaryCodecTest {
   @Test
   void decodeTime() {
     LocalTime time = LocalTime.of(12, 30, 45);
-    assertEquals(time, codec.decodeTime(PgBinaryCodec.encodeTime(time)));
+    byte[] data = PgBinaryCodec.encodeTime(time);
+    assertEquals(time, codec.decodeTime(data, 0, data.length));
   }
 
   @Test
   void decodeTimeMidnight() {
     LocalTime time = LocalTime.MIDNIGHT;
-    assertEquals(time, codec.decodeTime(PgBinaryCodec.encodeTime(time)));
+    byte[] data = PgBinaryCodec.encodeTime(time);
+    assertEquals(time, codec.decodeTime(data, 0, data.length));
   }
 
   // =====================================================================
@@ -201,15 +210,16 @@ class PgBinaryCodecTest {
   @Test
   void decodeTimestamp() {
     LocalDateTime ts = LocalDateTime.of(2025, 6, 15, 12, 30, 45);
-    assertEquals(ts, codec.decodeTimestamp(PgBinaryCodec.encodeTimestamp(ts)));
+    byte[] data = PgBinaryCodec.encodeTimestamp(ts);
+    assertEquals(ts, codec.decodeTimestamp(data, 0, data.length));
   }
 
   @Test
   void decodeTimestampInfinity() {
-    assertEquals(
-        LocalDateTime.MAX, codec.decodeTimestamp(PgBinaryCodec.encodeInt8(Long.MAX_VALUE)));
-    assertEquals(
-        LocalDateTime.MIN, codec.decodeTimestamp(PgBinaryCodec.encodeInt8(Long.MIN_VALUE)));
+    byte[] maxData = PgBinaryCodec.encodeInt8(Long.MAX_VALUE);
+    byte[] minData = PgBinaryCodec.encodeInt8(Long.MIN_VALUE);
+    assertEquals(LocalDateTime.MAX, codec.decodeTimestamp(maxData, 0, maxData.length));
+    assertEquals(LocalDateTime.MIN, codec.decodeTimestamp(minData, 0, minData.length));
   }
 
   // =====================================================================
@@ -219,15 +229,16 @@ class PgBinaryCodecTest {
   @Test
   void decodeTimestamptz() {
     OffsetDateTime ts = OffsetDateTime.of(2025, 6, 15, 12, 30, 45, 0, ZoneOffset.UTC);
-    assertEquals(ts, codec.decodeTimestamptz(PgBinaryCodec.encodeTimestamptz(ts)));
+    byte[] data = PgBinaryCodec.encodeTimestamptz(ts);
+    assertEquals(ts, codec.decodeTimestamptz(data, 0, data.length));
   }
 
   @Test
   void decodeTimestamptzInfinity() {
-    assertEquals(
-        OffsetDateTime.MAX, codec.decodeTimestamptz(PgBinaryCodec.encodeInt8(Long.MAX_VALUE)));
-    assertEquals(
-        OffsetDateTime.MIN, codec.decodeTimestamptz(PgBinaryCodec.encodeInt8(Long.MIN_VALUE)));
+    byte[] maxData = PgBinaryCodec.encodeInt8(Long.MAX_VALUE);
+    byte[] minData = PgBinaryCodec.encodeInt8(Long.MIN_VALUE);
+    assertEquals(OffsetDateTime.MAX, codec.decodeTimestamptz(maxData, 0, maxData.length));
+    assertEquals(OffsetDateTime.MIN, codec.decodeTimestamptz(minData, 0, minData.length));
   }
 
   // =====================================================================
@@ -237,7 +248,7 @@ class PgBinaryCodecTest {
   @Test
   void decodeBytes() {
     byte[] data = {1, 2, 3};
-    assertSame(data, codec.decodeBytes(data));
+    assertArrayEquals(data, codec.decodeBytes(data, 0, data.length));
   }
 
   // =====================================================================
@@ -248,7 +259,7 @@ class PgBinaryCodecTest {
   void decodeNumericZero() {
     // ndigits=0, weight=0, sign=POS, dscale=0
     byte[] data = {0, 0, 0, 0, 0, 0, 0, 0};
-    assertEquals(BigDecimal.ZERO, codec.decodeNumeric(data).stripTrailingZeros());
+    assertEquals(BigDecimal.ZERO, codec.decodeNumeric(data, 0, data.length).stripTrailingZeros());
   }
 
   @Test
@@ -263,7 +274,7 @@ class PgBinaryCodecTest {
       0, 1, // group[0] = 1
       0x09, 0x29 // group[1] = 2345
     };
-    assertEquals(new BigDecimal("12345"), codec.decodeNumeric(data));
+    assertEquals(new BigDecimal("12345"), codec.decodeNumeric(data, 0, data.length));
   }
 
   @Test
@@ -276,7 +287,7 @@ class PgBinaryCodecTest {
       0, 0, // dscale = 0
       0, 42 // group[0] = 42
     };
-    assertEquals(new BigDecimal("-42"), codec.decodeNumeric(data));
+    assertEquals(new BigDecimal("-42"), codec.decodeNumeric(data, 0, data.length));
   }
 
   @Test
@@ -291,7 +302,7 @@ class PgBinaryCodecTest {
       0, 1, // group[0] = 1
       0x08, (byte) 0xFC // group[1] = 2300
     };
-    assertEquals(new BigDecimal("1.23"), codec.decodeNumeric(data));
+    assertEquals(new BigDecimal("1.23"), codec.decodeNumeric(data, 0, data.length));
   }
 
   @Test
@@ -306,7 +317,7 @@ class PgBinaryCodecTest {
       0,
       0 // dscale = 0
     };
-    assertThrows(ArithmeticException.class, () -> codec.decodeNumeric(data));
+    assertThrows(ArithmeticException.class, () -> codec.decodeNumeric(data, 0, data.length));
   }
 
   // =====================================================================
@@ -316,7 +327,7 @@ class PgBinaryCodecTest {
   @Test
   void decodeJsonText() {
     byte[] data = "{\"key\":\"value\"}".getBytes();
-    assertEquals("{\"key\":\"value\"}", codec.decodeJson(data, 114)); // OID_JSON
+    assertEquals("{\"key\":\"value\"}", codec.decodeJson(data, 0, data.length, 114)); // OID_JSON
   }
 
   @Test
@@ -326,7 +337,7 @@ class PgBinaryCodecTest {
     byte[] data = new byte[1 + json.length];
     data[0] = 1; // version
     System.arraycopy(json, 0, data, 1, json.length);
-    assertEquals("{\"key\":\"value\"}", codec.decodeJson(data, 3802)); // OID_JSONB
+    assertEquals("{\"key\":\"value\"}", codec.decodeJson(data, 0, data.length, 3802)); // OID_JSONB
   }
 
   // =====================================================================
@@ -337,14 +348,15 @@ class PgBinaryCodecTest {
   void decodeTimetzRoundTrip() {
     OffsetTime time = OffsetTime.of(14, 30, 0, 0, ZoneOffset.ofHours(2));
     byte[] encoded = PgBinaryCodec.encodeTimetz(time);
-    OffsetTime decoded = codec.decodeTimetz(encoded);
+    OffsetTime decoded = codec.decodeTimetz(encoded, 0, encoded.length);
     assertEquals(time, decoded);
   }
 
   @Test
   void decodeTimetzUTC() {
     OffsetTime time = OffsetTime.of(0, 0, 0, 0, ZoneOffset.UTC);
-    assertEquals(time, codec.decodeTimetz(PgBinaryCodec.encodeTimetz(time)));
+    byte[] data = PgBinaryCodec.encodeTimetz(time);
+    assertEquals(time, codec.decodeTimetz(data, 0, data.length));
   }
 
   // =====================================================================
@@ -704,7 +716,7 @@ class PgBinaryCodecTest {
       0, 0, 0, 0, // has null = 0
       0, 0, 0, 23 // elemType = OID_INT4
     };
-    assertEquals(List.of(), codec.decodeArray(data, codec::decodeInt4));
+    assertEquals(List.of(), codec.decodeArray(data, (buf, off, len) -> codec.decodeInt4(buf, off)));
   }
 
   @Test
@@ -719,7 +731,7 @@ class PgBinaryCodecTest {
       0, 0, 0, 2, // dim[1] = 2
       0, 0, 0, 1 // lbound[1]
     };
-    assertNull(codec.decodeArray(data, codec::decodeInt4));
+    assertNull(codec.decodeArray(data, (buf, off, len) -> codec.decodeInt4(buf, off)));
   }
 
   @Test
@@ -774,7 +786,9 @@ class PgBinaryCodecTest {
       0,
       30
     };
-    assertEquals(List.of(10, 20, 30), codec.decodeArray(data, codec::decodeInt4));
+    assertEquals(
+        List.of(10, 20, 30),
+        codec.decodeArray(data, (buf, off, len) -> codec.decodeInt4(buf, off)));
   }
 
   @Test
@@ -826,7 +840,7 @@ class PgBinaryCodecTest {
       30
     };
     // NULL elements are preserved as null in the list
-    var result = codec.decodeArray(data, codec::decodeInt4);
+    var result = codec.decodeArray(data, (buf, off, len) -> codec.decodeInt4(buf, off));
     assertEquals(3, result.size());
     assertEquals(10, result.get(0));
     assertNull(result.get(1));
@@ -874,14 +888,14 @@ class PgBinaryCodecTest {
     };
     assertEquals(
         List.of("hi", "ok"),
-        codec.decodeArray(data, (java.util.function.Function<byte[], String>) codec::decodeString));
+        codec.decodeArray(data, (buf, off, len) -> codec.decodeString(buf, off, len)));
   }
 
   @Test
   void decodeArrayTooShort() {
     // Less than 12 bytes → empty list
     byte[] data = {0, 0, 0, 0};
-    assertEquals(List.of(), codec.decodeArray(data, codec::decodeInt4));
+    assertEquals(List.of(), codec.decodeArray(data, (buf, off, len) -> codec.decodeInt4(buf, off)));
   }
 
   // =====================================================================
@@ -895,31 +909,31 @@ class PgBinaryCodecTest {
   @Test
   void decodeFloat4NaN() {
     byte[] encoded = PgBinaryCodec.encodeFloat4(Float.NaN);
-    assertTrue(Float.isNaN(codec.decodeFloat4(encoded)));
+    assertTrue(Float.isNaN(codec.decodeFloat4(encoded, 0)));
   }
 
   @Test
   void decodeFloat4NegativeInfinity() {
     byte[] encoded = PgBinaryCodec.encodeFloat4(Float.NEGATIVE_INFINITY);
-    assertEquals(Float.NEGATIVE_INFINITY, codec.decodeFloat4(encoded));
+    assertEquals(Float.NEGATIVE_INFINITY, codec.decodeFloat4(encoded, 0));
   }
 
   @Test
   void decodeFloat8PositiveInfinity() {
     byte[] encoded = PgBinaryCodec.encodeFloat8(Double.POSITIVE_INFINITY);
-    assertEquals(Double.POSITIVE_INFINITY, codec.decodeFloat8(encoded));
+    assertEquals(Double.POSITIVE_INFINITY, codec.decodeFloat8(encoded, 0));
   }
 
   @Test
   void decodeFloat8NaN() {
     byte[] encoded = PgBinaryCodec.encodeFloat8(Double.NaN);
-    assertTrue(Double.isNaN(codec.decodeFloat8(encoded)));
+    assertTrue(Double.isNaN(codec.decodeFloat8(encoded, 0)));
   }
 
   @Test
   void decodeFloat8NegativeInfinity() {
     byte[] encoded = PgBinaryCodec.encodeFloat8(Double.NEGATIVE_INFINITY);
-    assertEquals(Double.NEGATIVE_INFINITY, codec.decodeFloat8(encoded));
+    assertEquals(Double.NEGATIVE_INFINITY, codec.decodeFloat8(encoded, 0));
   }
 
   // =====================================================================
@@ -938,7 +952,7 @@ class PgBinaryCodecTest {
       0x12, (byte) 0x8C, // group[1] = 4748
       0x0E, 0x3F // group[2] = 3647
     };
-    assertEquals(new BigDecimal("2147483647"), codec.decodeNumeric(data));
+    assertEquals(new BigDecimal("2147483647"), codec.decodeNumeric(data, 0, data.length));
   }
 
   @Test
@@ -954,6 +968,187 @@ class PgBinaryCodecTest {
       0x27, 0x0F, // group[0] = 9999
       0x27, 0x0F // group[1] = 9999
     };
-    assertEquals(new BigDecimal("99999999"), codec.decodeNumeric(data));
+    assertEquals(new BigDecimal("99999999"), codec.decodeNumeric(data, 0, data.length));
+  }
+
+  // =====================================================================
+  // decodeToString dispatch
+  // =====================================================================
+
+  @Test
+  void decodeToStringBool() {
+    byte[] data = PgBinaryCodec.encodeBool(true);
+    assertEquals("t", codec.decodeToString(data, 0, data.length, PgOIDs.BOOL));
+  }
+
+  @Test
+  void decodeToStringInt4() {
+    byte[] data = PgBinaryCodec.encodeInt4(42);
+    assertEquals("42", codec.decodeToString(data, 0, data.length, PgOIDs.INT4));
+  }
+
+  @Test
+  void decodeToStringInt8() {
+    byte[] data = PgBinaryCodec.encodeInt8(123456789L);
+    assertEquals("123456789", codec.decodeToString(data, 0, data.length, PgOIDs.INT8));
+  }
+
+  @Test
+  void decodeToStringFloat4() {
+    byte[] data = PgBinaryCodec.encodeFloat4(1.5f);
+    assertEquals("1.5", codec.decodeToString(data, 0, data.length, PgOIDs.FLOAT4));
+  }
+
+  @Test
+  void decodeToStringFloat8() {
+    byte[] data = PgBinaryCodec.encodeFloat8(3.14);
+    assertEquals("3.14", codec.decodeToString(data, 0, data.length, PgOIDs.FLOAT8));
+  }
+
+  @Test
+  void decodeToStringText() {
+    byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
+    assertEquals("hello", codec.decodeToString(data, 0, data.length, PgOIDs.TEXT));
+  }
+
+  @Test
+  void decodeToStringVarchar() {
+    byte[] data = "world".getBytes(StandardCharsets.UTF_8);
+    assertEquals("world", codec.decodeToString(data, 0, data.length, PgOIDs.VARCHAR));
+  }
+
+  @Test
+  void decodeToStringUuid() {
+    UUID uuid = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    byte[] data = PgBinaryCodec.encodeUuid(uuid);
+    assertEquals(uuid.toString(), codec.decodeToString(data, 0, data.length, PgOIDs.UUID));
+  }
+
+  @Test
+  void decodeToStringDate() {
+    byte[] data = PgBinaryCodec.encodeDate(LocalDate.of(2024, 1, 15));
+    assertEquals("2024-01-15", codec.decodeToString(data, 0, data.length, PgOIDs.DATE));
+  }
+
+  @Test
+  void decodeToStringInt2() {
+    byte[] data = PgBinaryCodec.encodeInt2((short) 7);
+    assertEquals("7", codec.decodeToString(data, 0, data.length, PgOIDs.INT2));
+  }
+
+  @Test
+  void decodeToStringBytea() {
+    byte[] data = {0x01, 0x02, (byte) 0xFF};
+    String result = codec.decodeToString(data, 0, data.length, PgOIDs.BYTEA);
+    assertEquals("\\x0102ff", result);
+  }
+
+  @Test
+  void decodeToStringTimestamp() {
+    byte[] data = PgBinaryCodec.encodeTimestamp(LocalDateTime.of(2024, 1, 15, 10, 30, 0));
+    String result = codec.decodeToString(data, 0, data.length, PgOIDs.TIMESTAMP);
+    assertTrue(result.contains("2024-01-15"));
+  }
+
+  @Test
+  void decodeToStringJson() {
+    byte[] data = "{\"key\":\"value\"}".getBytes(StandardCharsets.UTF_8);
+    assertEquals("{\"key\":\"value\"}", codec.decodeToString(data, 0, data.length, PgOIDs.JSON));
+  }
+
+  @Test
+  void decodeToStringMoney() {
+    byte[] data = PgBinaryCodec.encodeMoney(new Money(new BigDecimal("19.99")));
+    String result = codec.decodeToString(data, 0, data.length, PgOIDs.MONEY);
+    assertTrue(result.contains("19.99"));
+  }
+
+  @Test
+  void decodeToStringPoint() {
+    byte[] data = PgBinaryCodec.encodePoint(new Point(1.0, 2.0));
+    String result = codec.decodeToString(data, 0, data.length, PgOIDs.POINT);
+    assertTrue(result.contains("1.0") && result.contains("2.0"));
+  }
+
+  // =====================================================================
+  // decode(byte[], offset, length, Class) dispatch
+  // =====================================================================
+
+  @Test
+  void decodeTypedInt4() {
+    byte[] data = PgBinaryCodec.encodeInt4(42);
+    assertEquals(42, codec.decode(data, 0, data.length, Integer.class));
+  }
+
+  @Test
+  void decodeTypedInt8() {
+    byte[] data = PgBinaryCodec.encodeInt8(123L);
+    assertEquals(123L, codec.decode(data, 0, data.length, Long.class));
+  }
+
+  @Test
+  void decodeTypedString() {
+    byte[] data = "test".getBytes(StandardCharsets.UTF_8);
+    assertEquals("test", codec.decode(data, 0, data.length, String.class));
+  }
+
+  @Test
+  void decodeTypedBoolean() {
+    byte[] data = PgBinaryCodec.encodeBool(true);
+    assertEquals(true, codec.decode(data, 0, data.length, Boolean.class));
+  }
+
+  @Test
+  void decodeTypedFloat() {
+    byte[] data = PgBinaryCodec.encodeFloat4(1.5f);
+    assertEquals(1.5f, codec.decode(data, 0, data.length, Float.class));
+  }
+
+  @Test
+  void decodeTypedDouble() {
+    byte[] data = PgBinaryCodec.encodeFloat8(3.14);
+    assertEquals(3.14, codec.decode(data, 0, data.length, Double.class));
+  }
+
+  @Test
+  void decodeTypedShort() {
+    byte[] data = PgBinaryCodec.encodeInt2((short) 5);
+    assertEquals((short) 5, codec.decode(data, 0, data.length, Short.class));
+  }
+
+  @Test
+  void decodeTypedUuid() {
+    UUID uuid = UUID.randomUUID();
+    byte[] data = PgBinaryCodec.encodeUuid(uuid);
+    assertEquals(uuid, codec.decode(data, 0, data.length, UUID.class));
+  }
+
+  @Test
+  void decodeTypedLocalDate() {
+    LocalDate date = LocalDate.of(2024, 6, 15);
+    byte[] data = PgBinaryCodec.encodeDate(date);
+    assertEquals(date, codec.decode(data, 0, data.length, LocalDate.class));
+  }
+
+  @Test
+  void decodeTypedBytes() {
+    byte[] data = {1, 2, 3};
+    assertArrayEquals(data, codec.decode(data, 0, data.length, byte[].class));
+  }
+
+  // =====================================================================
+  // canDecode
+  // =====================================================================
+
+  @Test
+  void canDecodeStandardTypes() {
+    assertTrue(codec.canDecode(String.class));
+    assertTrue(codec.canDecode(Integer.class));
+    assertTrue(codec.canDecode(Long.class));
+    assertTrue(codec.canDecode(Boolean.class));
+    assertTrue(codec.canDecode(UUID.class));
+    assertTrue(codec.canDecode(LocalDate.class));
+    assertTrue(codec.canDecode(byte[].class));
+    assertFalse(codec.canDecode(Thread.class));
   }
 }
