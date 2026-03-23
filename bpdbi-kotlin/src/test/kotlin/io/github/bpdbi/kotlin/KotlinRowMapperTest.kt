@@ -11,84 +11,84 @@ import org.junit.jupiter.api.Test
 /** Tests for KotlinRowMapper — verifies it implements RowMapper correctly. */
 class KotlinRowMapperTest {
 
-    @Serializable
-    data class User(val id: Int, val name: String, val email: String)
+  @Serializable
+  data class User(val id: Int, val name: String, val email: String)
 
-    @Serializable
-    data class Address(val street: String, val city: String)
+  @Serializable
+  data class Address(val street: String, val city: String)
 
-    @Serializable
-    data class UserWithAddress(val id: Int, val name: String, val address: Address)
+  @Serializable
+  data class UserWithAddress(val id: Int, val name: String, val address: Address)
 
-    @Serializable
-    data class WithNullable(val id: Int, val name: String?)
+  @Serializable
+  data class WithNullable(val id: Int, val name: String?)
 
-    @Serializable
-    data class WithJson(val id: Int, @SqlJsonValue val meta: Meta)
+  @Serializable
+  data class WithJson(val id: Int, @SqlJsonValue val meta: Meta)
 
-    @Serializable
-    data class Meta(val source: String, val priority: Int)
+  @Serializable
+  data class Meta(val source: String, val priority: Int)
 
-    // --- Tests ---
+  // --- Tests ---
 
-    @Test
-    fun `implements RowMapper interface`() {
-        val mapper: RowMapper<User> = KotlinRowMapper.of<User>()
-        val result = mapper.map(testRow("1", "Alice", "alice@example.com"))
-        assertEquals(User(1, "Alice", "alice@example.com"), result)
-    }
+  @Test
+  fun `implements RowMapper interface`() {
+    val mapper: RowMapper<User> = KotlinRowMapper.of<User>()
+    val result = mapper.map(testRow("1", "Alice", "alice@example.com"))
+    assertEquals(User(1, "Alice", "alice@example.com"), result)
+  }
 
-    @Test
-    fun `map simple data class`() {
-        val mapper = KotlinRowMapper.of<User>()
-        val result = mapper.map(testRow("42", "Bob", "bob@test.com"))
-        assertEquals(User(42, "Bob", "bob@test.com"), result)
-    }
+  @Test
+  fun `map simple data class`() {
+    val mapper = KotlinRowMapper.of<User>()
+    val result = mapper.map(testRow("42", "Bob", "bob@test.com"))
+    assertEquals(User(42, "Bob", "bob@test.com"), result)
+  }
 
-    @Test
-    fun `map nested data class`() {
-        val mapper = KotlinRowMapper.of<UserWithAddress>()
-        val result = mapper.map(testRow("1", "Alice", "123 Main St", "Springfield"))
-        assertEquals(UserWithAddress(1, "Alice", Address("123 Main St", "Springfield")), result)
-    }
+  @Test
+  fun `map nested data class`() {
+    val mapper = KotlinRowMapper.of<UserWithAddress>()
+    val result = mapper.map(testRow("1", "Alice", "123 Main St", "Springfield"))
+    assertEquals(UserWithAddress(1, "Alice", Address("123 Main St", "Springfield")), result)
+  }
 
-    @Test
-    fun `map nullable field with null`() {
-        val mapper = KotlinRowMapper.of<WithNullable>()
-        val result = mapper.map(testRow("1", null))
-        assertEquals(1, result.id)
-        assertNull(result.name)
-    }
+  @Test
+  fun `map nullable field with null`() {
+    val mapper = KotlinRowMapper.of<WithNullable>()
+    val result = mapper.map(testRow("1", null))
+    assertEquals(1, result.id)
+    assertNull(result.name)
+  }
 
-    @Test
-    fun `map json field`() {
-        val mapper = KotlinRowMapper.of<WithJson>()
-        val result = mapper.map(testRow("1", """{"source":"web","priority":5}"""))
-        assertEquals(WithJson(1, Meta("web", 5)), result)
-    }
+  @Test
+  fun `map json field`() {
+    val mapper = KotlinRowMapper.of<WithJson>()
+    val result = mapper.map(testRow("1", """{"source":"web","priority":5}"""))
+    assertEquals(WithJson(1, Meta("web", 5)), result)
+  }
 
-    @Test
-    fun `mapper is reusable across rows`() {
-        val mapper = KotlinRowMapper.of<User>()
-        val r1 = mapper.map(testRow("1", "Alice", "alice@x.com"))
-        val r2 = mapper.map(testRow("2", "Bob", "bob@y.com"))
-        assertEquals(User(1, "Alice", "alice@x.com"), r1)
-        assertEquals(User(2, "Bob", "bob@y.com"), r2)
-    }
+  @Test
+  fun `mapper is reusable across rows`() {
+    val mapper = KotlinRowMapper.of<User>()
+    val r1 = mapper.map(testRow("1", "Alice", "alice@x.com"))
+    val r2 = mapper.map(testRow("2", "Bob", "bob@y.com"))
+    assertEquals(User(1, "Alice", "alice@x.com"), r1)
+    assertEquals(User(2, "Bob", "bob@y.com"), r2)
+  }
 
-    @Test
-    fun `deserializeFirstOrNull on empty RowSet returns null`() {
-        val rs = RowSet(listOf(), listOf(), 0)
-        val result = rs.deserializeFirstOrNull<User>()
-        assertNull(result)
-    }
+  @Test
+  fun `deserializeFirstOrNull on empty RowSet returns null`() {
+    val rs = RowSet(listOf(), listOf(), 0)
+    val result = rs.deserializeFirstOrNull<User>()
+    assertNull(result)
+  }
 
-    @Test
-    fun `deserializeFirstOrNull on non-empty RowSet returns value`() {
-        val r = testRow("1", "Alice", "alice@x.com")
-        val cols = listOf(TestRows.col("col0"), TestRows.col("col1"), TestRows.col("col2"))
-        val rs = RowSet(listOf(r), cols, 0)
-        val result = rs.deserializeFirstOrNull<User>()
-        assertEquals(User(1, "Alice", "alice@x.com"), result)
-    }
+  @Test
+  fun `deserializeFirstOrNull on non-empty RowSet returns value`() {
+    val r = testRow("1", "Alice", "alice@x.com")
+    val cols = listOf(TestRows.col("col0"), TestRows.col("col1"), TestRows.col("col2"))
+    val rs = RowSet(listOf(r), cols, 0)
+    val result = rs.deserializeFirstOrNull<User>()
+    assertEquals(User(1, "Alice", "alice@x.com"), result)
+  }
 }

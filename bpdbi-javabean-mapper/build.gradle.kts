@@ -1,17 +1,17 @@
 plugins {
-    `java-library`
+  `java-library`
 }
 
 dependencies {
-    api(project(":bpdbi-core"))
-    compileOnly(libs.jspecify)
+  api(project(":bpdbi-core"))
+  compileOnly(libs.jspecify)
 
-    testImplementation(testFixtures(project(":bpdbi-core")))
-    testImplementation(platform(libs.junit.bom))
-    testImplementation(libs.junit.jupiter)
-    testRuntimeOnly(libs.junit.platform.launcher)
+  testImplementation(testFixtures(project(":bpdbi-core")))
+  testImplementation(platform(libs.junit.bom))
+  testImplementation(libs.junit.jupiter)
+  testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {
-    useJUnitPlatform()
+  useJUnitPlatform()
 }

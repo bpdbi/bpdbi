@@ -23,21 +23,21 @@ import kotlinx.serialization.serializer
  * ```
  */
 class KotlinRowMapper<T : Any>(
-    private val deserializer: DeserializationStrategy<T>,
-    private val serializersModule: SerializersModule = SerializersModule {},
-    private val json: Json = defaultJson
+  private val deserializer: DeserializationStrategy<T>,
+  private val serializersModule: SerializersModule = SerializersModule {},
+  private val json: Json = defaultJson
 ) : RowMapper<T> {
 
-    override fun map(row: Row): T {
-        val decoder = RowDecoder(row, serializersModule, json = json)
-        return deserializer.deserialize(decoder)
-    }
+  override fun map(row: Row): T {
+    val decoder = RowDecoder(row, serializersModule, json = json)
+    return deserializer.deserialize(decoder)
+  }
 
-    companion object {
-        /** Create a mapper for the given `@Serializable` type. */
-        inline fun <reified T : Any> of(
-            serializersModule: SerializersModule = SerializersModule {},
-            json: Json = defaultJson
-        ): KotlinRowMapper<T> = KotlinRowMapper(serializer<T>(), serializersModule, json)
-    }
+  companion object {
+    /** Create a mapper for the given `@Serializable` type. */
+    inline fun <reified T : Any> of(
+      serializersModule: SerializersModule = SerializersModule {},
+      json: Json = defaultJson
+    ): KotlinRowMapper<T> = KotlinRowMapper(serializer<T>(), serializersModule, json)
+  }
 }

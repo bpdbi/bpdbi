@@ -87,177 +87,199 @@ Looking at the codebase and the Kotlin extensions, `ColumnMapper` serves these u
 
 All of these would be better served by mapping **from a standard Java type** rather than from text.
 
----
+## Do We Still Need Text Binders?
 
-## Proposed Solutions
+No. `TypeRegistry.register(MyType.class, String.class, encoder, decoder)` covers every case that
+text `Binder<T>` + `ColumnMapper<T>` covered:
 
-### Option A: `ResultDecoder<T>` — Mirror of `ParamEncoder`
+| Case | Old path | New path |
+|---|---|---|
+| Standard types (Integer, UUID, etc.) | Binary directly | Binary directly (no registration needed) |
+| Domain wrappers (Money, UserId) | ParamEncoder + Binder + ColumnMapper | Single `register()` call |
+| Foreign types (kotlinx.datetime) | ParamEncoder + Binder + ColumnMapper | Single `register()` call |
+| Text-only Postgres types (tsvector) | Binder (toString) + ColumnMapper (parse) | `register(TsVector.class, String.class, ...)` |
+| Unregistered type as param | Silent `toString()` fallback (footgun) | Loud error (improvement) |
+| String params | Binder identity function | BinaryParamEncoder handles String as UTF-8 |
 
-Add a single new interface that mirrors `ParamEncoder` on the output side:
-
-```java
-@FunctionalInterface
-public interface ResultDecoder<T> {
-    @NonNull T decode(@NonNull Object value);
-
-    // The type to ask BinaryCodec to decode first
-    @NonNull Class<?> intermediateType();
-}
-```
-
-**Row.get() pipeline becomes:**
-
-```
-row.get(index, MyType.class)
-  ├─ JSON type? → jsonMapper
-  ├─ binaryCodec.canDecode(MyType)? → direct binary decode
-  ├─ ResultDecoder registered? → decode as intermediateType → ResultDecoder.decode()
-  └─ Enum? → decode as String → Enum.valueOf()
-```
-
-**Registration example:**
-
-```java
-// ParamEncoder + ResultDecoder in one registry
-registry.registerEncoder(Money.class, m -> m.cents());           // Money → Long
-registry.registerDecoder(Money.class, Long.class, v -> new Money((Long) v));  // Long → Money
-
-// Kotlin
-registerEncoder(kotlin.uuid.Uuid::class.java) { it.toJavaUuid() }
-registerDecoder(kotlin.uuid.Uuid::class.java, UUID::class.java) { Uuid.fromJavaUuid(it as UUID) }
-```
-
-**Pros:**
-- Clean mirror of `ParamEncoder` — easy to understand
-- Stays in binary path (no text roundtrip)
-- Minimal API surface
-
-**Cons:**
-- `Object` return from intermediate decode requires cast
-- Two separate registrations still needed (encoder + decoder), just in the same registry
-- `intermediateType()` is a second method on a `@FunctionalInterface` (needs a factory or default)
+The `Binder<T>` interface, `BinderRegistry`, and `ColumnMapper`/`ColumnMapperRegistry` can all
+be removed. The implicit `toString()` fallback for unregistered types was a footgun — better to
+fail loudly.
 
 ---
 
-### Option B: `TypeCodec<T, S>` — Paired Encoder/Decoder
+## Chosen Design: `TypeRegistry.register()` with Nullable Halves
 
-A single interface that bundles encoding and decoding for a custom type:
+A single `register()` method on `TypeRegistry` that accepts all parameters directly. The encoder
+and decoder functions are `@Nullable` — pass `null` for the direction you don't need. Using a
+null half at runtime throws a clear error.
+
+### API
 
 ```java
-public interface TypeCodec<T, S> {
-    /** The domain type this codec handles (e.g., Money.class) */
-    @NonNull Class<T> type();
+public final class TypeRegistry {
 
-    /** The standard type used on the wire (e.g., Long.class, UUID.class, String.class) */
-    @NonNull Class<S> standardType();
+    /**
+     * Register a custom type mapping. The encoder converts domain → standard type (for params),
+     * the decoder converts standard → domain type (for results). Pass null for either function
+     * to indicate that direction is not supported — using the null direction at runtime throws.
+     *
+     * @param domainType    the custom type (e.g., Money.class)
+     * @param standardType  the binary-codec-supported type it maps to (e.g., BigDecimal.class)
+     * @param encoder       domain → standard (for param binding), or null if encode-only
+     * @param decoder       standard → domain (for result decoding), or null if decode-only
+     */
+    public <T, S> TypeRegistry register(
+            @NonNull Class<T> domainType,
+            @NonNull Class<S> standardType,
+            @Nullable Function<T, S> encoder,
+            @Nullable Function<S, T> decoder) { ... }
 
-    /** Encode: domain → standard (for params) */
-    @NonNull S encode(@NonNull T value);
+    /** Register a type as JSON (serialized/deserialized via JsonMapper). */
+    public TypeRegistry registerAsJson(@NonNull Class<?> type) { ... }
 
-    /** Decode: standard → domain (for results) */
-    @NonNull T decode(@NonNull S value);
+    /** JSON type set (used by Row for JSON detection). */
+    public Set<Class<?>> jsonTypes() { ... }
 }
 ```
 
-**Registration example:**
+### Registration Examples
 
 ```java
-registry.register(TypeCodec.of(
-    Money.class, BigDecimal.class,
-    m -> m.amount(),             // encode
-    bd -> new Money(bd)          // decode
-));
+// Full codec — both directions
+conn.typeRegistry().register(Money.class, BigDecimal.class,
+    m -> m.amount(),
+    bd -> new Money(bd));
 
-// Kotlin
-registry.register(TypeCodec.of(
-    kotlin.uuid.Uuid::class.java, UUID::class.java,
-    { it.toJavaUuid() },
-    { Uuid.fromJavaUuid(it) }
-))
+conn.typeRegistry().register(UserId.class, UUID.class,
+    UserId::uuid,
+    UserId::new);
+
+// Encode-only — can bind as param, but can't read from result row
+conn.typeRegistry().register(WriteAuditEvent.class, String.class,
+    e -> e.toJson(),
+    null);
+
+// Decode-only — can read from result row, but can't bind as param
+conn.typeRegistry().register(PgInterval.class, String.class,
+    null,
+    PgInterval::parse);
 ```
 
-**Row.get() pipeline becomes:**
+### Kotlin Extensions
+
+```kotlin
+fun TypeRegistry.registerKotlinTypes() = apply {
+    register(kotlin.uuid.Uuid::class.java, UUID::class.java,
+        { it.toJavaUuid() },
+        { kotlin.uuid.Uuid.fromJavaUuid(it) })
+    register(kotlinx.datetime.LocalDate::class.java, java.time.LocalDate::class.java,
+        { it.toJavaLocalDate() },
+        { it.toKotlinLocalDate() })
+    register(kotlinx.datetime.LocalDateTime::class.java, java.time.LocalDateTime::class.java,
+        { it.toJavaLocalDateTime() },
+        { it.toKotlinLocalDateTime() })
+    register(kotlinx.datetime.LocalTime::class.java, java.time.LocalTime::class.java,
+        { it.toJavaLocalTime() },
+        { it.toKotlinLocalTime() })
+    register(kotlin.time.Instant::class.java, java.time.Instant::class.java,
+        { it.toJavaInstant() },
+        { Instant.fromEpochSeconds(it.epochSecond, it.nano) })
+
+    // UInt/ULong: encode-only (read back as Long/Int from result rows)
+    register(UInt::class.java, Long::class.java, { it.toLong() }, null)
+    register(ULong::class.java, Long::class.java, { it.toLong() }, null)
+}
+
+fun Connection.useKotlinTypes() {
+    typeRegistry().registerKotlinTypes()
+}
+```
+
+Compared to current `Binders.kt` which needs 3 registrations per type across 2 registries,
+this is 1 registration per type in 1 registry.
+
+### Error Messages
+
+When using a null half at runtime:
 
 ```
-row.get(index, MyType.class)
-  ├─ JSON type? → jsonMapper
-  ├─ binaryCodec.canDecode(MyType)? → direct binary decode
-  ├─ TypeCodec registered? → decode as standardType → codec.decode()
-  └─ Enum? → decode as String → Enum.valueOf()
+// Trying to decode a type registered with encoder-only
+row.get("event", WriteAuditEvent.class)
+→ IllegalStateException: "No result decoder for WriteAuditEvent.
+   It is registered with encode-only support (WriteAuditEvent → String).
+   Add a decoder via typeRegistry().register(WriteAuditEvent.class, String.class, encoder, decoder)."
+
+// Trying to bind a completely unregistered type
+conn.query("SELECT $1", new UnknownType())
+→ IllegalStateException: "Cannot bind parameter of type UnknownType.
+   Register it via typeRegistry().register(UnknownType.class, ...)."
 ```
 
-**Param encoding pipeline becomes:**
+---
+
+## New Pipelines
+
+### Param encoding (input): Java object → wire bytes
 
 ```
 User value (e.g., Money)
-  ├─ TypeCodec registered? → codec.encode() → standard type → binary encode
-  └─ Fallback: Binder.bind() → text string
+  │
+  ├─ TypeRegistry has encoder? → encode() → standard Java type (e.g., BigDecimal)
+  │                                 │
+  │                                 ▼
+  ├─ BinaryParamEncoder.writeParam() succeeds? → binary bytes (format=1) ✓
+  │
+  └─ No encoder, not binary-encodable? → error
 ```
 
-**Pros:**
-- Encoder and decoder are always paired — impossible to forget one
-- Single registration per type
-- Type-safe: no `Object` casting, `S` is known at compile time
-- `standardType()` replaces the separate `intermediateType()` concept
-- Natural home for Kotlin type wrappers (`Uuid`, `kotlinx.datetime.*`)
+No more silent `toString()` fallback. Either the type is natively binary-encodable, has a
+registered encoder, or it's an error.
 
-**Cons:**
-- Some types only need one direction (rare but possible)
-- Slightly more ceremony for simple cases compared to a lambda
+### Result decoding (output): wire bytes → Java object
 
----
-
-### Option C: `TypeCodec<T, S>` with Separate Halves
-
-Like Option B, but allow registering just one half:
-
-```java
-// Full codec (both directions)
-registry.register(TypeCodec.of(Money.class, BigDecimal.class, encode, decode));
-
-// Encode only (param binding, no result decoding)
-registry.registerEncoder(WriteOnly.class, String.class, w -> w.text());
-
-// Decode only (result reading, no param encoding)
-registry.registerDecoder(ReadOnly.class, String.class, s -> new ReadOnly(s));
+```
+row.get(index, MyType.class)
+  │
+  ├─ JSON type? → getString() → jsonMapper.fromJson()
+  │
+  ├─ binaryCodec.canDecode(MyType)? → decode(bytes) → MyType
+  │
+  ├─ TypeRegistry has decoder? → decode bytes as standardType → decoder.apply() → MyType
+  │
+  ├─ Enum? → decodeString(bytes) → Enum.valueOf()
+  │
+  └─ None of the above? → error
 ```
 
-This is essentially Option B with `registerEncoder`/`registerDecoder` as convenience shortcuts
-that create a half-codec internally.
-
-**Pros:**
-- Flexibility of Option A with the paired-by-default design of Option B
-- Handles edge cases (encode-only, decode-only)
-
-**Cons:**
-- Larger API surface
-- Two ways to do the same thing
+No more `decodeToString()` roundtrip. The binary codec decodes to the standard Java type
+directly, then the user's decoder function wraps it.
 
 ---
 
 ## What Happens to Existing APIs
 
-### In all options:
-
 | Current API | Fate |
 |---|---|
-| `ColumnMapper<T>` | **Removed** — replaced by decode-half of new system |
-| `ColumnMapperRegistry` | **Removed** — merged into `BinderRegistry` (or renamed `TypeRegistry`) |
+| `ColumnMapper<T>` | **Removed** — replaced by decoder function in `register()` |
+| `ColumnMapperRegistry` | **Removed** — merged into `TypeRegistry` |
 | `ColumnMapperRegistry.defaults()` | **Removed** — dead code, `BinaryCodec` handles all default types |
-| `ParamEncoder<T>` | **Absorbed** into new system (or kept as alias in Option A) |
-| `Binder<T>` (text) | **Kept** — still needed for text fallback on non-binary-capable types (primarily `String`) |
-| `BinderRegistry` | **Renamed** to `TypeRegistry` — holds codecs, binders, JSON types |
-| `Connection.setMapperRegistry()` | **Removed** — single `TypeRegistry` replaces both |
-| `Connection.setBinderRegistry()` | **Renamed** to `setTypeRegistry()` or similar |
-| `BinaryCodec.decodeToString()` | **Removed from result path** — only used for `getString()` on non-text columns |
-| Kotlin `registerKotlinTypes()` | **Simplified** — one extension function, one registration per type |
+| `ParamEncoder<T>` | **Removed** — replaced by encoder function in `register()` |
+| `Binder<T>` | **Removed** — `register(T.class, String.class, encoder, null)` covers text encoding |
+| `BinderRegistry` | **Replaced** by `TypeRegistry` |
+| `BinderRegistry.defaults()` | **Removed** — dead code for binary connections |
+| `Connection.setMapperRegistry()` | **Removed** |
+| `Connection.setBinderRegistry()` | **Replaced** by `setTypeRegistry()` |
+| `Connection.mapperRegistry()` | **Removed** |
+| `Connection.binderRegistry()` | **Replaced** by `typeRegistry()` |
+| `BinaryCodec.decodeToString()` | **Kept** — still used by `Row.getString()` on non-text columns |
+| Kotlin `Binders.kt` | **Simplified** — single `registerKotlinTypes()` on `TypeRegistry` |
 | `RowExtractors` (SPI) | **Unchanged** — uses typed Row getters, unaffected |
-| `Row.get(int, Class)` | **Updated** — new fallback path through codec instead of text mapper |
+| `Row.get(int, Class)` | **Updated** — new fallback path through TypeRegistry |
+| `QualifiedType` / qualified binders | **TBD** — evaluate if still needed |
 
 ### Enum handling
 
-Enums currently have special handling in `ColumnMapperRegistry.map()`. In the new system,
-the `Row.get()` fallback for enums would be:
+Enums get built-in handling in `Row.get()` without needing a registry entry:
 
 ```java
 if (type.isEnum()) {
@@ -266,13 +288,13 @@ if (type.isEnum()) {
 }
 ```
 
-This stays in the binary path (`decodeString` is a direct binary→String decode, not the OID-based
-`decodeToString` roundtrip).
+This stays in the binary path (`decodeString` is a direct binary→String decode, not the
+OID-based `decodeToString` roundtrip).
 
 ### JSON handling
 
 Unchanged. JSON types are detected first in `Row.get()` and go through `JsonMapper`. The
-`registerAsJson()` method moves from `BinderRegistry` to the new `TypeRegistry`.
+`registerAsJson()` method moves to `TypeRegistry`.
 
 ---
 
@@ -284,70 +306,27 @@ Unchanged. JSON types are detected first in `Row.get()` and go through `JsonMapp
 2. **`Row.getString()`** (line 225) — for `getString()` on non-text columns (e.g., calling
    `getString()` on an integer column). **This stays** — it's a legitimate use case.
 
-So `decodeToString()` doesn't go away entirely, but it's no longer on the type-extension critical
-path.
+So `decodeToString()` doesn't go away entirely, but it's no longer on the type-extension
+critical path.
 
 ---
 
-## Registry Naming
+## Implementation Steps
 
-If we merge `BinderRegistry` + `ColumnMapperRegistry` into one, possible names:
+Since this is pre-1.0, we remove the old APIs directly (no deprecation cycle).
 
-- `TypeRegistry` — simple, clear
-- `TypeCodecRegistry` — explicit about what it holds
-- `CustomTypeRegistry` — emphasizes it's for user-defined types
-
-The connection API would become:
-
-```java
-@NonNull TypeRegistry typeRegistry();
-void setTypeRegistry(@NonNull TypeRegistry registry);
-```
-
----
-
-## Migration Path
-
-1. Add `TypeCodec` interface and registration to the registry
-2. Update `Row.get()` to check codec before falling through to text
-3. Convert Kotlin type registrations to use `TypeCodec`
-4. Deprecate `ColumnMapper`, `ColumnMapperRegistry`, `ParamEncoder` (one release)
-5. Remove deprecated types
-
-Or, since this is pre-1.0, just remove them directly.
-
----
-
-## Open Questions
-
-1. **Should `Binder<T>` (text encoding) also be absorbed into `TypeCodec`?** Currently `Binder`
-   handles the text-fallback path for param encoding. If we keep `TypeCodec.encode()` returning
-   a standard Java type that's binary-encodable, and the binary encoder handles all standard
-   types, is there still a need for text binders at all? The answer is yes for `String` params
-   and types where no standard-type mapping exists, but these are rare.
-
-2. **What about types that map to different standard types for encoding vs decoding?** For
-   example, could a type encode as `Long` but decode from `BigDecimal`? This seems unlikely but
-   Option C handles it. Option B does not.
-
-3. **Should the default `TypeRegistry` be empty?** Since `BinaryCodec.canDecode()` handles all
-   standard types, the default registry could be empty (no default codecs needed). Only
-   user-registered custom types would appear. This is cleaner than `ColumnMapperRegistry.defaults()`
-   which was full of dead entries.
-
-4. **Naming: `TypeCodec` vs `TypeAdapter` vs `TypeMapping`?** `TypeCodec` is consistent with
-   Postgres driver terminology. `TypeAdapter` is Gson-style. `TypeMapping` is neutral.
-
----
-
-## Recommendation
-
-**Option B (`TypeCodec<T, S>`)** is the strongest choice:
-
-- Single registration per type eliminates the "forgot the decoder" class of bugs
-- Type-safe intermediate type (no `Object` casts)
-- Clean symmetry: `encode: T → S`, `decode: S → T`
-- Natural pairing makes it obvious what standard type each custom type maps to
-- Smallest API surface while covering all real use cases
-- If encode-only or decode-only is truly needed, a `TypeCodec` with a throwing unused half
-  is acceptable (or add convenience methods per Option C later)
+1. **Create `TypeRegistry`** — single class with `register()`, `registerAsJson()`, internal
+   lookup methods for encode/decode
+2. **Update `Connection` interface** — replace `binderRegistry()`/`setBinderRegistry()` and
+   `mapperRegistry()`/`setMapperRegistry()` with `typeRegistry()`/`setTypeRegistry()`
+3. **Update `BaseConnection`** — replace both registry fields with single `TypeRegistry`
+4. **Update `Row.get()`** — replace ColumnMapper fallback with TypeRegistry decode path
+5. **Update param encoding path** — replace `BinderRegistry.encode()` with
+   `TypeRegistry.encode()`, remove text `Binder` fallback
+6. **Update `PgConnection`** — adjust `applyEncoders()` and `encodeParamToText()` to use
+   `TypeRegistry`
+7. **Convert Kotlin extensions** — rewrite `Binders.kt` to use `TypeRegistry.register()`
+8. **Delete old types** — `ColumnMapper`, `ColumnMapperRegistry`, `ParamEncoder`, `Binder`,
+   `BinderRegistry`
+9. **Update tests** — all tests that register custom types
+10. **Update examples** — any examples showing custom type registration

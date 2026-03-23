@@ -19,44 +19,44 @@ import kotlinx.datetime.toKotlinLocalTime
  * Text Binders are kept as fallback for non-binary-capable drivers.
  */
 fun BinderRegistry.registerKotlinTypes(): BinderRegistry = apply {
-    // ParamEncoders: convert Kotlin types to Java equivalents for binary encoding
-    registerEncoder(kotlin.uuid.Uuid::class.java) { it.toJavaUuid() }
-    registerEncoder(kotlin.time.Instant::class.java) { it.toJavaInstant() }
-    registerEncoder(kotlinx.datetime.LocalDate::class.java) { it.toJavaLocalDate() }
-    registerEncoder(kotlinx.datetime.LocalDateTime::class.java) { it.toJavaLocalDateTime() }
-    registerEncoder(kotlinx.datetime.LocalTime::class.java) { it.toJavaLocalTime() }
-    registerEncoder(UInt::class.java) { it.toLong() }
-    registerEncoder(ULong::class.java) { it.toLong() }
+  // ParamEncoders: convert Kotlin types to Java equivalents for binary encoding
+  registerEncoder(kotlin.uuid.Uuid::class.java) { it.toJavaUuid() }
+  registerEncoder(kotlin.time.Instant::class.java) { it.toJavaInstant() }
+  registerEncoder(kotlinx.datetime.LocalDate::class.java) { it.toJavaLocalDate() }
+  registerEncoder(kotlinx.datetime.LocalDateTime::class.java) { it.toJavaLocalDateTime() }
+  registerEncoder(kotlinx.datetime.LocalTime::class.java) { it.toJavaLocalTime() }
+  registerEncoder(UInt::class.java) { it.toLong() }
+  registerEncoder(ULong::class.java) { it.toLong() }
 
-    // Text binders: fallback when binary encoding is not available
-    register(kotlin.uuid.Uuid::class.java) { it.toString() }
-    register(kotlin.time.Instant::class.java) { it.toString() }
-    register(kotlinx.datetime.LocalDate::class.java) { it.toString() }
-    register(kotlinx.datetime.LocalDateTime::class.java) { it.toString() }
-    register(kotlinx.datetime.LocalTime::class.java) { it.toString() }
-    register(UInt::class.java) { it.toLong().toString() }
-    register(ULong::class.java) { it.toLong().toString() }
+  // Text binders: fallback when binary encoding is not available
+  register(kotlin.uuid.Uuid::class.java) { it.toString() }
+  register(kotlin.time.Instant::class.java) { it.toString() }
+  register(kotlinx.datetime.LocalDate::class.java) { it.toString() }
+  register(kotlinx.datetime.LocalDateTime::class.java) { it.toString() }
+  register(kotlinx.datetime.LocalTime::class.java) { it.toString() }
+  register(UInt::class.java) { it.toLong().toString() }
+  register(ULong::class.java) { it.toLong().toString() }
 }
 
 /** Register ColumnMappers (that parse from text) for Kotlin-specific types. */
 fun ColumnMapperRegistry.registerKotlinTypes(): ColumnMapperRegistry = apply {
-    register(kotlin.uuid.Uuid::class.java) { v, _ -> kotlin.uuid.Uuid.parse(v) }
-    register(kotlin.time.Instant::class.java) { v, _ -> parseInstant(v) }
-    register(kotlinx.datetime.LocalDate::class.java) { v, _ ->
-        java.time.LocalDate.parse(v).toKotlinLocalDate()
-    }
-    register(kotlinx.datetime.LocalDateTime::class.java) { v, _ ->
-        java.time.LocalDateTime.parse(v.replace(' ', 'T')).toKotlinLocalDateTime()
-    }
-    register(kotlinx.datetime.LocalTime::class.java) { v, _ ->
-        java.time.LocalTime.parse(v).toKotlinLocalTime()
-    }
+  register(kotlin.uuid.Uuid::class.java) { v, _ -> kotlin.uuid.Uuid.parse(v) }
+  register(kotlin.time.Instant::class.java) { v, _ -> parseInstant(v) }
+  register(kotlinx.datetime.LocalDate::class.java) { v, _ ->
+    java.time.LocalDate.parse(v).toKotlinLocalDate()
+  }
+  register(kotlinx.datetime.LocalDateTime::class.java) { v, _ ->
+    java.time.LocalDateTime.parse(v.replace(' ', 'T')).toKotlinLocalDateTime()
+  }
+  register(kotlinx.datetime.LocalTime::class.java) { v, _ ->
+    java.time.LocalTime.parse(v).toKotlinLocalTime()
+  }
 }
 
 /** Register Kotlin type binders and mappers on this connection. */
 fun Connection.useKotlinTypes() {
-    binderRegistry().registerKotlinTypes()
-    mapperRegistry().registerKotlinTypes()
+  binderRegistry().registerKotlinTypes()
+  mapperRegistry().registerKotlinTypes()
 }
 
 /**
@@ -65,11 +65,11 @@ fun Connection.useKotlinTypes() {
  * Used by [registerKotlinTypes] for text-format column mapping.
  */
 internal fun parseInstant(value: String): Instant {
-    val normalized = value.replaceFirst(' ', 'T')
-    val hasTimezone = normalized.endsWith('Z') || run {
-        val tail = normalized.takeLast(8)
-        tail.contains('+') || tail.contains('-')
-    }
-    val isoString = if (hasTimezone) normalized else "${normalized}Z"
-    return Instant.parse(isoString)
+  val normalized = value.replaceFirst(' ', 'T')
+  val hasTimezone = normalized.endsWith('Z') || run {
+    val tail = normalized.takeLast(8)
+    tail.contains('+') || tail.contains('-')
+  }
+  val isoString = if (hasTimezone) normalized else "${normalized}Z"
+  return Instant.parse(isoString)
 }
