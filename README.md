@@ -1235,8 +1235,6 @@ See [`examples/`](examples/) for runnable examples.
 - JSpecify (3kB)
 - Only for `bpdbi-pg-client`: `scram-client` a small (70kB) encryption library for SCRAM
   authentication
-- Only for `bpdbi-pool`: Apache `commons-pool2` a battle tested pool that's not JDBC/DataSource
-  specific
 - Only for `bpdbi-kotlin`: `kotlin-stdlib` (for `kotlin.time` and `kotlin.uuid`) and
   `kotlinx-serialization`
 
@@ -1283,6 +1281,8 @@ Early development. Not yet published to Maven Central — the dependency coordin
 
 ## License
 
-Apache 2.0, same as **Vert.x**.
-Massive respects to Vert.x, Claude Code and some of my internal library code for help and
-inspiration.
+Apache 2.0.
+
+Massive respects to [Vert.x](https://github.com/eclipse-vertx/vertx-sql-client),
+[pgjdbc](https://github.com/pgjdbc/pgjdbc), and [Jdbi](https://jdbi.org).
+This project derives from their work.
