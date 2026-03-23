@@ -1,7 +1,5 @@
 package io.github.bpdbi.pool;
 
-import io.github.bpdbi.core.BinderRegistry;
-import io.github.bpdbi.core.ColumnMapperRegistry;
 import io.github.bpdbi.core.Connection;
 import io.github.bpdbi.core.Cursor;
 import io.github.bpdbi.core.JsonMapper;
@@ -11,6 +9,7 @@ import io.github.bpdbi.core.RowSet;
 import io.github.bpdbi.core.RowStream;
 import io.github.bpdbi.core.SqlBuilder;
 import io.github.bpdbi.core.Transaction;
+import io.github.bpdbi.core.TypeRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -175,23 +174,13 @@ final class PooledConnection implements Connection {
   }
 
   @Override
-  public @NonNull BinderRegistry binderRegistry() {
-    return delegate.binderRegistry();
+  public @NonNull TypeRegistry typeRegistry() {
+    return delegate.typeRegistry();
   }
 
   @Override
-  public void setBinderRegistry(@NonNull BinderRegistry registry) {
-    delegate.setBinderRegistry(registry);
-  }
-
-  @Override
-  public @NonNull ColumnMapperRegistry mapperRegistry() {
-    return delegate.mapperRegistry();
-  }
-
-  @Override
-  public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {
-    delegate.setMapperRegistry(registry);
+  public void setTypeRegistry(@NonNull TypeRegistry registry) {
+    delegate.setTypeRegistry(registry);
   }
 
   @Override

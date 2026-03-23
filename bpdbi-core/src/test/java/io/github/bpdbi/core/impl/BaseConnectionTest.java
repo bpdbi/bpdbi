@@ -353,16 +353,15 @@ class BaseConnectionTest {
     assertEquals(7, conn.extendedQueries.size());
   }
 
-  // ===== BinderRegistry integration =====
+  // ===== TypeRegistry integration =====
 
   @Test
-  void customBinder() {
+  void paramPassedThrough() {
     var conn = new FakeConnection();
-    conn.binderRegistry().register(java.util.UUID.class, uuid -> uuid.toString().toUpperCase());
     var uuid = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
     conn.enqueue("INSERT INTO t VALUES ($1)", uuid);
     conn.flush();
-    // Params are now stored as raw objects, not text-encoded
+    // Params are stored as raw objects, binary-encoded by the driver
     assertEquals(uuid, conn.extendedQueries.getFirst().params[0]);
   }
 
@@ -455,7 +454,7 @@ class BaseConnectionTest {
   @Test
   void encodeParamsUsesJsonMapperForJsonTypes() {
     var conn = new FakeConnection();
-    conn.binderRegistry().registerAsJson(StringBuilder.class);
+    conn.typeRegistry().registerAsJson(StringBuilder.class);
     conn.setJsonMapper(
         new io.github.bpdbi.core.JsonMapper() {
           @Override

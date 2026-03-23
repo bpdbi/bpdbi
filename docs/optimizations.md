@@ -45,15 +45,6 @@ per-row object allocation on streaming paths entirely.
 `bpdbi-core/…/Row.java` — `resetForStreaming()`
 `bpdbi-pg-client/…/PgConnection.java` — `readExtendedQueryStreaming()`, `readSimpleQueryStreaming()`
 
-### `ByteCharSequence` — zero-copy `CharSequence`
-
-A `CharSequence` view over a region of a `byte[]`. For ASCII-only content (the
-common case for numbers, dates, identifiers), `charAt()` and `length()` operate
-directly on raw bytes with zero allocation. Multi-byte UTF-8 is decoded lazily
-on first access and cached.
-
-`bpdbi-core/…/impl/ByteCharSequence.java`
-
 ### Buffer reuse in cursors
 
 The `PgCursor` retains column buffers from the previous batch and uses

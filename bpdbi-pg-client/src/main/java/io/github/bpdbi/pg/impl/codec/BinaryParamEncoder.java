@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  * Encodes Java objects directly into Postgres binary wire format. For supported types, this avoids
  * the intermediate String allocation that text encoding requires.
  *
- * <p>Unsupported types (including String) fall back to text encoding via BinderRegistry.
+ * <p>Unsupported types (including String) fall back to text encoding.
  */
 public final class BinaryParamEncoder {
 

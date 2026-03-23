@@ -23,10 +23,8 @@ import org.jspecify.annotations.Nullable;
  * types, composite types, or enums), use these extension points:
  *
  * <ul>
- *   <li>{@link ColumnMapperRegistry} — register a {@link ColumnMapper} to convert column values to
- *       Java types via {@link Row#get(int, Class)}
- *   <li>{@link BinderRegistry} — register a {@link Binder} to convert Java objects to SQL parameter
- *       strings when binding query parameters
+ *   <li>{@link TypeRegistry} — register custom type mappings for both param encoding and result
+ *       decoding via {@link Row#get(int, Class)}
  *   <li>{@link JsonMapper} — plug in a JSON library (Jackson, Gson, etc.) for automatic
  *       serialization of JSON/JSONB columns
  * </ul>
@@ -98,8 +96,7 @@ public interface BinaryCodec {
 
   /**
    * Whether this codec can decode binary bytes directly to the given Java type. Used by {@link
-   * Row#get(int, Class)} to bypass the text roundtrip through {@link ColumnMapper} for types the
-   * binary protocol handles natively.
+   * Row#get(int, Class)} for types the binary protocol handles natively.
    */
   default boolean canDecode(@NonNull Class<?> type) {
     return type == String.class
@@ -187,21 +184,55 @@ public interface BinaryCodec {
     T decode(byte @NonNull [] buf, int offset, int length);
   }
 
-  @SuppressWarnings("unchecked") // delegates to decode(byte[], Class) which handles the cast
-  default <T> @NonNull T decode(
-      byte @NonNull [] buf, int offset, int length, @NonNull Class<T> type) {
-    return decode(copySlice(buf, offset, length), type);
+  /**
+   * Decode binary bytes at the given offset directly to the given Java type, without copying the
+   * slice first. Dispatches to the offset-based decode methods.
+   */
+  @SuppressWarnings("unchecked") // each branch returns the exact type requested
+  @NonNull
+  default <T> T decode(byte @NonNull [] buf, int offset, int length, @NonNull Class<T> type) {
+    Object result;
+    if (type == String.class) {
+      result = decodeString(buf, offset, length);
+    } else if (type == Integer.class) {
+      result = decodeInt4(buf, offset);
+    } else if (type == Long.class) {
+      result = decodeInt8(buf, offset);
+    } else if (type == Short.class) {
+      result = decodeInt2(buf, offset);
+    } else if (type == Float.class) {
+      result = decodeFloat4(buf, offset);
+    } else if (type == Double.class) {
+      result = decodeFloat8(buf, offset);
+    } else if (type == Boolean.class) {
+      result = decodeBool(buf, offset);
+    } else if (type == BigDecimal.class) {
+      result = decodeNumeric(buf, offset, length);
+    } else if (type == UUID.class) {
+      result = decodeUuid(buf, offset, length);
+    } else if (type == LocalDate.class) {
+      result = decodeDate(buf, offset, length);
+    } else if (type == LocalTime.class) {
+      result = decodeTime(buf, offset, length);
+    } else if (type == LocalDateTime.class) {
+      result = decodeTimestamp(buf, offset, length);
+    } else if (type == OffsetDateTime.class) {
+      result = decodeTimestamptz(buf, offset, length);
+    } else if (type == OffsetTime.class) {
+      result = decodeTimetz(buf, offset, length);
+    } else if (type == Instant.class) {
+      result = decodeTimestamptz(buf, offset, length).toInstant();
+    } else if (type == byte[].class) {
+      result = decodeBytes(buf, offset, length);
+    } else {
+      throw new IllegalArgumentException("BinaryCodec cannot decode type: " + type.getName());
+    }
+    return (T) result;
   }
 
   /** Zero-copy array decode using offset-based element decoder. */
   default <T> @Nullable List<T> decodeArray(
       byte @NonNull [] value, @NonNull ElementDecoder<T> elementDecoder) {
     return null;
-  }
-
-  private static byte[] copySlice(byte[] buf, int offset, int length) {
-    byte[] slice = new byte[length];
-    System.arraycopy(buf, offset, slice, 0, length);
-    return slice;
   }
 }

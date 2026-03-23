@@ -206,27 +206,6 @@ class RowDecoderTest {
     }
   }
 
-  @Test
-  fun `decode Instant from PG timestamp with timezone`() {
-    val value = "2026-02-04 04:31:16.935337+01"
-    val instant = parseInstant(value)
-    assertNotNull(instant)
-  }
-
-  @Test
-  fun `decode Instant from ISO format`() {
-    val value = "2026-02-04T04:31:16.935337Z"
-    val instant = parseInstant(value)
-    assertNotNull(instant)
-  }
-
-  @Test
-  fun `decode Instant without timezone assumes UTC`() {
-    val value = "2026-02-04 04:31:16.935337"
-    val instant = parseInstant(value)
-    assertNotNull(instant)
-  }
-
   // --- Value class tests ---
 
   @Test

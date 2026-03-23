@@ -36,21 +36,20 @@ public final class ColumnBuffer {
    * @param value the raw bytes, or null for SQL NULL
    */
   public void append(byte @Nullable [] value) {
-    if (rowCount == offsets.length) {
-      grow();
-    }
     if (value == null) {
-      offsets[rowCount] = dataPos;
-      lengths[rowCount] = -1;
+      appendNull();
     } else {
+      if (rowCount == offsets.length) {
+        grow();
+      }
       ensureDataCapacity(value.length);
       offsets[rowCount] = dataPos;
       lengths[rowCount] = value.length;
       System.arraycopy(value, 0, data, dataPos, value.length);
       dataPos += value.length;
       nonNullCount++;
+      rowCount++;
     }
-    rowCount++;
   }
 
   /** Append a SQL NULL value for the next row. */

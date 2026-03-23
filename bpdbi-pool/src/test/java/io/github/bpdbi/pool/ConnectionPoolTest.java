@@ -905,25 +905,14 @@ class ConnectionPoolTest {
     }
 
     @Override
-    public io.github.bpdbi.core.BinderRegistry binderRegistry() {
-      calls.add("binderRegistry");
-      return super.binderRegistry();
+    public io.github.bpdbi.core.TypeRegistry typeRegistry() {
+      calls.add("typeRegistry");
+      return super.typeRegistry();
     }
 
     @Override
-    public void setBinderRegistry(io.github.bpdbi.core.BinderRegistry registry) {
-      calls.add("setBinderRegistry");
-    }
-
-    @Override
-    public io.github.bpdbi.core.ColumnMapperRegistry mapperRegistry() {
-      calls.add("mapperRegistry");
-      return super.mapperRegistry();
-    }
-
-    @Override
-    public void setMapperRegistry(io.github.bpdbi.core.ColumnMapperRegistry registry) {
-      calls.add("setMapperRegistry");
+    public void setTypeRegistry(io.github.bpdbi.core.TypeRegistry registry) {
+      calls.add("setTypeRegistry");
     }
 
     @Override
@@ -978,11 +967,9 @@ class ConnectionPoolTest {
       conn.queryStream("SELECT $1", new Object[] {42}, row -> {});
       conn.stream("SELECT 1");
       conn.begin();
-      conn.binderRegistry();
-      conn.mapperRegistry();
+      conn.typeRegistry();
       conn.jsonMapper();
-      conn.setBinderRegistry(conn.binderRegistry());
-      conn.setMapperRegistry(conn.mapperRegistry());
+      conn.setTypeRegistry(conn.typeRegistry());
       conn.setJsonMapper(null);
     }
 
@@ -1002,11 +989,9 @@ class ConnectionPoolTest {
             "queryStreamParams",
             "stream",
             "begin",
-            "binderRegistry",
-            "mapperRegistry",
+            "typeRegistry",
             "jsonMapper",
-            "setBinderRegistry",
-            "setMapperRegistry",
+            "setTypeRegistry",
             "setJsonMapper");
 
     assertEquals(expected, recording.calls, "All delegated methods should have been called");

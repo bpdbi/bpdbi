@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Parses SQL with :name style named parameters and converts to positional placeholders. Correctly
@@ -88,7 +89,7 @@ public final class NamedParamParser {
     int len = sql.length();
     for (int i = 0; i < len - 1; i++) {
       char c = sql.charAt(i);
-      int skip = skipLiteralNoAppend(sql, i, len);
+      int skip = skipLiteral(sql, i, len, null);
       if (skip >= 0) {
         i = skip - 1;
         continue;
@@ -98,32 +99,6 @@ public final class NamedParamParser {
       }
     }
     return false;
-  }
-
-  /** Like {@link #skipLiteral} but without appending to a StringBuilder. Returns -1 if no skip. */
-  private static int skipLiteralNoAppend(String sql, int i, int len) {
-    char c = sql.charAt(i);
-    if (c == '-' && i + 1 < len && sql.charAt(i + 1) == '-') {
-      int end = sql.indexOf('\n', i);
-      return end == -1 ? len : end;
-    }
-    if (c == '/' && i + 1 < len && sql.charAt(i + 1) == '*') {
-      int end = sql.indexOf("*/", i + 2);
-      return (end == -1 ? len - 2 : end) + 2;
-    }
-    if (c == '\'') {
-      i++;
-      while (i < len) {
-        if (sql.charAt(i) == '\'') {
-          i++;
-          if (i >= len || sql.charAt(i) != '\'') return i;
-        } else {
-          i++;
-        }
-      }
-      return len;
-    }
-    return -1;
   }
 
   /**
@@ -226,11 +201,11 @@ public final class NamedParamParser {
 
   /**
    * Skip past a comment, string literal, or quoted identifier starting at position {@code i}.
-   * Appends the skipped content to {@code result}. Returns the new position (index of the next char
-   * to process), or {@code -1} if the character at position {@code i} is not the start of such a
-   * token.
+   * Appends the skipped content to {@code result} if non-null. Returns the new position (index of
+   * the next char to process), or {@code -1} if the character at position {@code i} is not the
+   * start of such a token.
    */
-  private static int skipLiteral(String sql, int i, int len, StringBuilder result) {
+  private static int skipLiteral(String sql, int i, int len, @Nullable StringBuilder result) {
     char c = sql.charAt(i);
 
     // Line comment: -- until end of line
@@ -239,7 +214,7 @@ public final class NamedParamParser {
       if (end == -1) {
         end = len;
       }
-      result.append(sql, i, end);
+      if (result != null) result.append(sql, i, end);
       return end;
     }
 
@@ -250,22 +225,22 @@ public final class NamedParamParser {
         end = len - 2; // unterminated comment: consume rest
       }
       end += 2; // include the */
-      result.append(sql, i, end);
+      if (result != null) result.append(sql, i, end);
       return end;
     }
 
     // Single-quoted string literal (with '' escape)
     if (c == '\'') {
-      result.append(c);
+      if (result != null) result.append(c);
       i++;
       while (i < len) {
         char sc = sql.charAt(i);
-        result.append(sc);
+        if (result != null) result.append(sc);
         if (sc == '\'') {
           // Check for escaped quote ''
           if (i + 1 < len && sql.charAt(i + 1) == '\'') {
             i++;
-            result.append(sql.charAt(i));
+            if (result != null) result.append(sql.charAt(i));
           } else {
             break; // end of string
           }
@@ -273,7 +248,7 @@ public final class NamedParamParser {
           // Backslash escape: copy next char too
           if (i + 1 < len) {
             i++;
-            result.append(sql.charAt(i));
+            if (result != null) result.append(sql.charAt(i));
           }
         }
         i++;
@@ -283,16 +258,16 @@ public final class NamedParamParser {
 
     // Double-quoted identifier
     if (c == '"') {
-      result.append(c);
+      if (result != null) result.append(c);
       i++;
       while (i < len) {
         char dc = sql.charAt(i);
-        result.append(dc);
+        if (result != null) result.append(dc);
         if (dc == '"') {
           // Check for escaped quote ""
           if (i + 1 < len && sql.charAt(i + 1) == '"') {
             i++;
-            result.append(sql.charAt(i));
+            if (result != null) result.append(sql.charAt(i));
           } else {
             break; // end of identifier
           }

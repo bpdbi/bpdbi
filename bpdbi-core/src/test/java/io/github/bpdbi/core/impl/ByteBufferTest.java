@@ -202,15 +202,6 @@ class ByteBufferTest {
   }
 
   @Test
-  void wrapWithOffsetAndLength() {
-    byte[] data = {0, 0, 0, 42, 0, 0, 0, 99, 0, 0};
-    var buf = ByteBuffer.wrap(data, 0, 8);
-    assertEquals(8, buf.readableBytes());
-    assertEquals(42, buf.readInt());
-    assertEquals(99, buf.readInt());
-  }
-
-  @Test
   void readUnsignedByte() {
     var buf = new ByteBuffer(4);
     buf.writeByte(200); // > 127, unsigned

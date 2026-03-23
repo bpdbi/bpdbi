@@ -1,15 +1,14 @@
 package io.github.bpdbi.core.impl;
 
 import io.github.bpdbi.core.BinaryCodec;
-import io.github.bpdbi.core.BinderRegistry;
 import io.github.bpdbi.core.ColumnDescriptor;
-import io.github.bpdbi.core.ColumnMapperRegistry;
 import io.github.bpdbi.core.Connection;
 import io.github.bpdbi.core.ConnectionConfig;
 import io.github.bpdbi.core.JsonMapper;
 import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowSet;
 import io.github.bpdbi.core.RowStream;
+import io.github.bpdbi.core.TypeRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,31 +26,20 @@ public abstract class BaseConnection implements Connection {
 
   private static final Object[] EMPTY_PARAMS = new Object[0];
 
-  private @NonNull List<PendingStatement> pending = new ArrayList<>();
-  private @NonNull BinderRegistry binderRegistry = BinderRegistry.defaults();
-  private @NonNull ColumnMapperRegistry mapperRegistry = ColumnMapperRegistry.defaults();
+  private @NonNull List<PendingStatement> pending = new ArrayList<>(4);
+  private @NonNull TypeRegistry typeRegistry = new TypeRegistry();
   private @Nullable JsonMapper jsonMapper;
   protected @Nullable PreparedStatementCache psCache;
   protected int cacheSqlLimit;
 
   @Override
-  public void setBinderRegistry(@NonNull BinderRegistry registry) {
-    this.binderRegistry = registry;
+  public void setTypeRegistry(@NonNull TypeRegistry registry) {
+    this.typeRegistry = registry;
   }
 
   @Override
-  public @NonNull BinderRegistry binderRegistry() {
-    return binderRegistry;
-  }
-
-  @Override
-  public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {
-    this.mapperRegistry = registry;
-  }
-
-  @Override
-  public @NonNull ColumnMapperRegistry mapperRegistry() {
-    return mapperRegistry;
+  public @NonNull TypeRegistry typeRegistry() {
+    return typeRegistry;
   }
 
   @Override
@@ -187,7 +175,7 @@ public abstract class BaseConnection implements Connection {
 
     // Swap instead of copying — avoids O(n) ArrayList copy on every flush
     List<PendingStatement> toFlush = pending;
-    pending = new ArrayList<>();
+    pending = new ArrayList<>(4);
 
     List<RowSet> results = executePipelinedBatch(toFlush);
     for (int i = 0; i < results.size(); i++) {
@@ -238,10 +226,13 @@ public abstract class BaseConnection implements Connection {
 
   /** Text-encode a single parameter value, handling JSON types via jsonMapper if configured. */
   protected String encodeParamToText(@Nullable Object value) {
-    if (value != null && jsonMapper != null && binderRegistry.isJsonType(value.getClass())) {
+    if (value == null) {
+      return null;
+    }
+    if (jsonMapper != null && typeRegistry.isJsonType(value.getClass())) {
       return jsonMapper.toJson(value);
     }
-    return binderRegistry.bind(value);
+    return value.toString();
   }
 
   /**
@@ -252,14 +243,7 @@ public abstract class BaseConnection implements Connection {
       @NonNull ColumnDescriptor[] columns,
       @NonNull Map<String, Integer> columnNameIndex,
       byte @NonNull [][] values) {
-    return new Row(
-        columns,
-        columnNameIndex,
-        values,
-        binaryCodec(),
-        mapperRegistry,
-        jsonMapper,
-        binderRegistry.jsonTypes());
+    return new Row(columns, columnNameIndex, values, binaryCodec(), typeRegistry, jsonMapper);
   }
 
   /**
@@ -272,14 +256,7 @@ public abstract class BaseConnection implements Connection {
       @NonNull ColumnBuffer[] buffers,
       int rowIndex) {
     return new Row(
-        columns,
-        columnNameIndex,
-        buffers,
-        rowIndex,
-        binaryCodec(),
-        mapperRegistry,
-        jsonMapper,
-        binderRegistry.jsonTypes());
+        columns, columnNameIndex, buffers, rowIndex, binaryCodec(), typeRegistry, jsonMapper);
   }
 
   /** Return the binary codec for this database driver. */

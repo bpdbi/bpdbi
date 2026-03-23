@@ -16,7 +16,7 @@ class RowExtractorsTest {
   private Row textRow(String value) {
     ColumnDescriptor[] cols = {col("v")};
     byte[][] vals = {value == null ? null : value.getBytes(StandardCharsets.UTF_8)};
-    return new Row(cols, vals, StubBinaryCodec.INSTANCE, ColumnMapperRegistry.defaults());
+    return new Row(cols, vals, StubBinaryCodec.INSTANCE, new TypeRegistry());
   }
 
   @Test

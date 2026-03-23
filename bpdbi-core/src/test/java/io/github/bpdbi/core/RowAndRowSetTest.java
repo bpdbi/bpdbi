@@ -20,7 +20,7 @@ class RowAndRowSetTest {
   // =====================================================================
 
   private Row textRow(String[] colNames, String[] values) {
-    return row(colNames, values, ColumnMapperRegistry.defaults());
+    return row(colNames, values);
   }
 
   // =====================================================================

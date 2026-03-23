@@ -1,7 +1,5 @@
 package io.github.bpdbi.core.test;
 
-import io.github.bpdbi.core.BinderRegistry;
-import io.github.bpdbi.core.ColumnMapperRegistry;
 import io.github.bpdbi.core.Connection;
 import io.github.bpdbi.core.Cursor;
 import io.github.bpdbi.core.JsonMapper;
@@ -9,6 +7,7 @@ import io.github.bpdbi.core.PreparedStatement;
 import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowSet;
 import io.github.bpdbi.core.RowStream;
+import io.github.bpdbi.core.TypeRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -97,20 +96,12 @@ public abstract class AbstractStubConnection implements Connection {
   }
 
   @Override
-  public @NonNull BinderRegistry binderRegistry() {
-    return BinderRegistry.defaults();
+  public @NonNull TypeRegistry typeRegistry() {
+    return new TypeRegistry();
   }
 
   @Override
-  public void setBinderRegistry(@NonNull BinderRegistry registry) {}
-
-  @Override
-  public @NonNull ColumnMapperRegistry mapperRegistry() {
-    return ColumnMapperRegistry.defaults();
-  }
-
-  @Override
-  public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {}
+  public void setTypeRegistry(@NonNull TypeRegistry registry) {}
 
   @Override
   public @Nullable JsonMapper jsonMapper() {

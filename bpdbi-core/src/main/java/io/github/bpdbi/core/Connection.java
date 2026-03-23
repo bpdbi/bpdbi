@@ -49,8 +49,8 @@ public interface Connection extends AutoCloseable {
    * Execute a parameterized SQL statement and return the result. Also flushes any previously
    * enqueued pipeline statements.
    *
-   * <p>Uses {@code $1, $2, ...} positional placeholders. Parameters are text-encoded via {@link
-   * BinderRegistry} before sending.
+   * <p>Uses {@code $1, $2, ...} positional placeholders. Parameters are binary-encoded via the
+   * driver's binary encoder, with custom types converted through the {@link TypeRegistry}.
    *
    * @param sql the SQL statement with positional placeholders
    * @param params the parameter values (null elements become SQL NULL)
@@ -303,17 +303,11 @@ public interface Connection extends AutoCloseable {
 
   // --- Configuration ---
 
-  /** Return the type registry used for encoding query parameters. */
-  @NonNull BinderRegistry binderRegistry();
+  /** Return the type registry used for custom type encoding and decoding. */
+  @NonNull TypeRegistry typeRegistry();
 
-  /** Set the type registry used for encoding query parameters. */
-  void setBinderRegistry(@NonNull BinderRegistry registry);
-
-  /** Return the mapper registry used for typed column access via {@link Row#get(int, Class)}. */
-  @NonNull ColumnMapperRegistry mapperRegistry();
-
-  /** Set the mapper registry used for typed column access. */
-  void setMapperRegistry(@NonNull ColumnMapperRegistry registry);
+  /** Set the type registry used for custom type encoding and decoding. */
+  void setTypeRegistry(@NonNull TypeRegistry registry);
 
   /** Return the JSON mapper, or null if none is configured. */
   @Nullable JsonMapper jsonMapper();

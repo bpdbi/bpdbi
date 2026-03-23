@@ -173,23 +173,13 @@ public final class Transaction implements Connection {
   }
 
   @Override
-  public @NonNull BinderRegistry binderRegistry() {
-    return conn.binderRegistry();
+  public @NonNull TypeRegistry typeRegistry() {
+    return conn.typeRegistry();
   }
 
   @Override
-  public void setBinderRegistry(@NonNull BinderRegistry registry) {
-    conn.setBinderRegistry(registry);
-  }
-
-  @Override
-  public @NonNull ColumnMapperRegistry mapperRegistry() {
-    return conn.mapperRegistry();
-  }
-
-  @Override
-  public void setMapperRegistry(@NonNull ColumnMapperRegistry registry) {
-    conn.setMapperRegistry(registry);
+  public void setTypeRegistry(@NonNull TypeRegistry registry) {
+    conn.setTypeRegistry(registry);
   }
 
   @Override

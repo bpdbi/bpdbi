@@ -53,6 +53,7 @@ public final class PgConnection extends BaseConnection {
   private final PgEncoder encoder;
   private final PgDecoder decoder;
   private final Map<String, String> parameters = new HashMap<>();
+  private @Nullable Map<String, String> parametersView;
   private final List<PgNotification> notifications = new ArrayList<>();
   private int processId;
   private int secretKey;
@@ -151,7 +152,12 @@ public final class PgConnection extends BaseConnection {
 
   @Override
   public @NonNull Map<String, String> parameters() {
-    return Collections.unmodifiableMap(parameters);
+    Map<String, String> view = parametersView;
+    if (view == null) {
+      view = Collections.unmodifiableMap(parameters);
+      parametersView = view;
+    }
+    return view;
   }
 
   public int processId() {
@@ -448,14 +454,14 @@ public final class PgConnection extends BaseConnection {
   // --- BaseConnection protocol methods ---
 
   /**
-   * Apply registered {@link io.github.bpdbi.core.ParamEncoder}s to convert domain types into
-   * binary-encodable types. Returns the original array if no encoders are registered.
+   * Apply registered type encoders to convert domain types into binary-encodable types. Returns the
+   * original array if no encoders are registered.
    */
   private Object[] applyEncoders(Object[] params) {
-    if (!binderRegistry().hasEncoders() || params.length == 0) return params;
+    if (!typeRegistry().hasEncoders() || params.length == 0) return params;
     Object[] result = new Object[params.length];
     for (int i = 0; i < params.length; i++) {
-      result[i] = binderRegistry().encode(params[i]);
+      result[i] = typeRegistry().encode(params[i]);
     }
     return result;
   }
@@ -1141,6 +1147,7 @@ public final class PgConnection extends BaseConnection {
    */
   private void handleParameterStatus(BackendMessage.ParameterStatus ps) {
     parameters.put(ps.name(), ps.value());
+    parametersView = null; // invalidate cached unmodifiable view
   }
 
   private void handleNotification(BackendMessage.NotificationResponse notif) {

@@ -12,7 +12,6 @@ import java.time.OffsetTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -29,7 +28,7 @@ import org.jspecify.annotations.Nullable;
  * String}). NULL values return {@code null} — check with {@link #isNull(int)}.
  *
  * <p>For types not covered by the built-in getters, use {@link #get(int, Class)} which delegates to
- * the {@link ColumnMapperRegistry} or {@link JsonMapper} for deserialization.
+ * the {@link TypeRegistry} or {@link JsonMapper} for deserialization.
  *
  * @see RowSet
  * @see ColumnDescriptor
@@ -56,9 +55,8 @@ public final class Row {
   private final int rowIndex;
 
   private final @NonNull BinaryCodec binaryCodec;
-  private final @Nullable ColumnMapperRegistry mapperRegistry;
+  private final @NonNull TypeRegistry typeRegistry;
   private final @Nullable JsonMapper jsonMapper;
-  private final Set<Class<?>> jsonTypes;
 
   /**
    * Per-row byte[][] constructor. Each row owns an independent {@code byte[][]} with one entry per
@@ -76,9 +74,8 @@ public final class Row {
       @Nullable Map<String, Integer> columnNameIndex,
       byte @NonNull [][] values,
       @NonNull BinaryCodec binaryCodec,
-      @Nullable ColumnMapperRegistry mapperRegistry,
-      @Nullable JsonMapper jsonMapper,
-      @NonNull Set<Class<?>> jsonTypes) {
+      @NonNull TypeRegistry typeRegistry,
+      @Nullable JsonMapper jsonMapper) {
     this.columns = columns;
     this.columnNameIndex =
         columnNameIndex != null ? columnNameIndex : buildColumnNameIndex(columns);
@@ -86,9 +83,8 @@ public final class Row {
     this.buffers = null;
     this.rowIndex = -1;
     this.binaryCodec = binaryCodec;
-    this.mapperRegistry = mapperRegistry;
+    this.typeRegistry = typeRegistry;
     this.jsonMapper = jsonMapper;
-    this.jsonTypes = jsonTypes;
   }
 
   /**
@@ -105,9 +101,8 @@ public final class Row {
       @NonNull ColumnBuffer[] buffers,
       int rowIndex,
       @NonNull BinaryCodec binaryCodec,
-      @Nullable ColumnMapperRegistry mapperRegistry,
-      @Nullable JsonMapper jsonMapper,
-      @NonNull Set<Class<?>> jsonTypes) {
+      @NonNull TypeRegistry typeRegistry,
+      @Nullable JsonMapper jsonMapper) {
     this.columns = columns;
     this.columnNameIndex =
         columnNameIndex != null ? columnNameIndex : buildColumnNameIndex(columns);
@@ -115,9 +110,8 @@ public final class Row {
     this.buffers = buffers;
     this.rowIndex = rowIndex;
     this.binaryCodec = binaryCodec;
-    this.mapperRegistry = mapperRegistry;
+    this.typeRegistry = typeRegistry;
     this.jsonMapper = jsonMapper;
-    this.jsonTypes = jsonTypes;
   }
 
   /** Convenience constructor for tests and simple usage (no JSON support). */
@@ -125,8 +119,8 @@ public final class Row {
       @NonNull ColumnDescriptor[] columns,
       byte @NonNull [][] values,
       @NonNull BinaryCodec binaryCodec,
-      @Nullable ColumnMapperRegistry mapperRegistry) {
-    this(columns, null, values, binaryCodec, mapperRegistry, null, Set.of());
+      @NonNull TypeRegistry typeRegistry) {
+    this(columns, null, values, binaryCodec, typeRegistry, null);
   }
 
   /**
@@ -435,14 +429,18 @@ public final class Row {
     return getBytes(columnIndex(columnName));
   }
 
-  // --- Generic typed access via ColumnMapper ---
+  // --- Generic typed access via TypeRegistry ---
 
+  @SuppressWarnings({
+    "unchecked",
+    "rawtypes"
+  }) // safe: Enum.valueOf returns the correct enum subtype
   public <T> @Nullable T get(int index, @NonNull Class<T> type) {
     if (!readValue(index)) {
       return null;
     }
     // JSON deserialization: auto-detect by column OID, or by explicit registration
-    if (jsonMapper != null && (columns[index].isJsonType() || jsonTypes.contains(type))) {
+    if (jsonMapper != null && (columns[index].isJsonType() || typeRegistry.isJsonType(type))) {
       String jsonStr = getString(index);
       if (jsonStr == null) {
         return null;
@@ -453,13 +451,23 @@ public final class Row {
     if (binaryCodec.canDecode(type)) {
       return binaryCodec.decode(vBuf, vOff, vLen, type);
     }
-    // Fallback via ColumnMapper (for custom user-registered types)
-    if (mapperRegistry == null) {
-      throw new IllegalStateException(
-          "No ColumnMapperRegistry available. Use connection.setMapperRegistry() to configure one.");
+    // Custom type via TypeRegistry: decode to standard type, then apply decoder
+    if (typeRegistry.canDecode(type)) {
+      return typeRegistry.decode(type, binaryCodec, vBuf, vOff, vLen);
     }
-    String textVal = binaryCodec.decodeToString(vBuf, vOff, vLen, columns[index].typeOID());
-    return mapperRegistry.map(type, textVal, columns[index].name());
+    // Enum fallback: decode as String, then Enum.valueOf
+    if (type.isEnum()) {
+      String text = binaryCodec.decodeString(vBuf, vOff, vLen);
+      return (T) Enum.valueOf((Class<? extends Enum>) type, text);
+    }
+    throw new IllegalStateException(
+        "Cannot decode column '"
+            + columns[index].name()
+            + "' to "
+            + type.getName()
+            + ". Register a decoder via typeRegistry().register("
+            + type.getSimpleName()
+            + ".class, ...).");
   }
 
   public <T> @Nullable T get(@NonNull String columnName, @NonNull Class<T> type) {
@@ -473,10 +481,11 @@ public final class Row {
    * null} if the column is SQL NULL.
    */
   public @Nullable List<String> getStringArray(int index) {
-    if (isNull(index)) {
+    byte[] raw = getRawBytes(index);
+    if (raw == null) {
       return null;
     }
-    return binaryCodec.decodeArrayElements(getRawBytes(index));
+    return binaryCodec.decodeArrayElements(raw);
   }
 
   public @Nullable List<String> getStringArray(@NonNull String columnName) {
@@ -552,14 +561,11 @@ public final class Row {
    */
   private <T> @Nullable List<T> getTypedArray(
       int index, BinaryCodec.ElementDecoder<T> binaryElementDecoder) {
-    if (isNull(index)) {
+    byte[] raw = getRawBytes(index);
+    if (raw == null) {
       return null;
     }
-    byte[] raw = getRawBytes(index);
-    if (raw != null) {
-      return binaryCodec.decodeArray(raw, binaryElementDecoder);
-    }
-    return null;
+    return binaryCodec.decodeArray(raw, binaryElementDecoder);
   }
 
   // --- Helpers ---

@@ -28,10 +28,6 @@ public final class ByteBuffer {
     return new ByteBuffer(data, 0, data.length);
   }
 
-  public static @NonNull ByteBuffer wrap(byte @NonNull [] data, int offset, int length) {
-    return new ByteBuffer(data, offset, offset + length);
-  }
-
   // --- Read operations ---
 
   public int readableBytes() {

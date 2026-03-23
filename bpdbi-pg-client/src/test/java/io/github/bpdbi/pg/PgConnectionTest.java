@@ -859,7 +859,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== ColumnMapper (typed get) =====
+  // ===== TypeRegistry (typed get) =====
 
   @Test
   void columnMapperDefaultTypes() {
@@ -874,11 +874,12 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   @Test
-  void columnMapperCustomType() {
+  void typeRegistryCustomDecode() {
     record Money(java.math.BigDecimal amount) {}
 
     try (var conn = connect()) {
-      conn.mapperRegistry().register(Money.class, (v, c) -> new Money(new java.math.BigDecimal(v)));
+      conn.typeRegistry()
+          .register(Money.class, java.math.BigDecimal.class, Money::amount, Money::new);
       var rs = conn.query("SELECT '9.99'::numeric AS price");
       var money = rs.first().get("price", Money.class);
       assertEquals(new java.math.BigDecimal("9.99"), money.amount());
@@ -936,14 +937,14 @@ class PgConnectionTest extends AbstractConnectionTest {
     }
   }
 
-  // ===== Binder (custom param binding) =====
+  // ===== TypeRegistry (custom param encoding) =====
 
   @Test
-  void customBinder() {
+  void customParamEncoder() {
     record Currency(String code) {}
 
     try (var conn = connect()) {
-      conn.binderRegistry().register(Currency.class, c -> c.code());
+      conn.typeRegistry().register(Currency.class, String.class, Currency::code, null);
       conn.query("CREATE TEMP TABLE tb_test (id int, currency text)");
       conn.query("INSERT INTO tb_test VALUES ($1, $2)", 1, new Currency("USD"));
       var rs = conn.query("SELECT currency FROM tb_test WHERE id = 1");
@@ -994,15 +995,14 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   @Test
-  void cursorParamsUseBinderRegistry() {
+  void cursorParamsUseBinaryEncoding() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE cursor_binder (id int, data bytea)");
       byte[] value = new byte[] {(byte) 0xCA, (byte) 0xFE};
       conn.query("INSERT INTO cursor_binder VALUES ($1, $2)", 1, value);
 
       conn.query("BEGIN");
-      // Cursor with a byte[] param should use BinderRegistry (hex-encoding),
-      // not raw toString() which produces "[B@..." garbage
+      // Cursor with a byte[] param should be binary-encoded correctly
       try (var cursor =
           conn.cursor("SELECT id, data FROM cursor_binder WHERE data = $1", (Object) value)) {
         var batch = cursor.read(10);
@@ -2356,14 +2356,14 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   // =====================================================================
-  // ParamEncoder: custom types via binary encoding
+  // TypeRegistry: custom types via binary encoding
   // =====================================================================
 
   @Test
-  void paramEncoderCustomTypeRoundTrip() {
+  void typeRegistryCustomTypeRoundTrip() {
     record UserId(java.util.UUID uuid) {}
     try (var conn = connect()) {
-      conn.binderRegistry().registerEncoder(UserId.class, id -> id.uuid());
+      conn.typeRegistry().register(UserId.class, java.util.UUID.class, UserId::uuid, UserId::new);
       conn.query("CREATE TEMP TABLE pe_test (id uuid)");
       var uid = new UserId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000"));
       conn.query("INSERT INTO pe_test VALUES ($1)", uid);
@@ -2373,10 +2373,10 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   @Test
-  void paramEncoderWithPreparedStatement() {
+  void typeRegistryWithPreparedStatement() {
     record UserId(java.util.UUID uuid) {}
     try (var conn = connect()) {
-      conn.binderRegistry().registerEncoder(UserId.class, id -> id.uuid());
+      conn.typeRegistry().register(UserId.class, java.util.UUID.class, UserId::uuid, UserId::new);
       conn.query("CREATE TEMP TABLE pe_ps (id uuid, name text)");
       conn.query("INSERT INTO pe_ps VALUES ('550e8400-e29b-41d4-a716-446655440000', 'Alice')");
       try (var stmt = conn.prepare("SELECT name FROM pe_ps WHERE id = $1")) {
@@ -2388,10 +2388,11 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   @Test
-  void paramEncoderMoneyToBigDecimal() {
+  void typeRegistryMoneyToBigDecimal() {
     record Money(java.math.BigDecimal amount) {}
     try (var conn = connect()) {
-      conn.binderRegistry().registerEncoder(Money.class, m -> m.amount());
+      conn.typeRegistry()
+          .register(Money.class, java.math.BigDecimal.class, Money::amount, Money::new);
       var price = new Money(new java.math.BigDecimal("99.99"));
       var rs = conn.query("SELECT $1::numeric AS val", price);
       assertEquals(0, new java.math.BigDecimal("99.99").compareTo(rs.first().getBigDecimal("val")));
@@ -2399,10 +2400,10 @@ class PgConnectionTest extends AbstractConnectionTest {
   }
 
   @Test
-  void paramEncoderInPipeline() {
+  void typeRegistryInPipeline() {
     record UserId(java.util.UUID uuid) {}
     try (var conn = connect()) {
-      conn.binderRegistry().registerEncoder(UserId.class, id -> id.uuid());
+      conn.typeRegistry().register(UserId.class, java.util.UUID.class, UserId::uuid, null);
       conn.query("CREATE TEMP TABLE pe_pipe (id uuid)");
       var u1 = new UserId(java.util.UUID.randomUUID());
       var u2 = new UserId(java.util.UUID.randomUUID());

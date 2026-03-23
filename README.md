@@ -1,5 +1,11 @@
 # Bpdbi — Blocking Pipelined Database Interface for the JVM
 
+[![CI](https://github.com/bpdbi/bpdbi/actions/workflows/ci.yml/badge.svg)](https://github.com/bpdbi/bpdbi/actions/workflows/ci.yml)
+[![codecov.io](https://codecov.io/github/bpdbi/bpdbi/coverage.svg?branch=master)](https://codecov.io/github/bpdbi/bpdbi?branch=master)
+[![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.bpdbi/bpdbi-core)](https://maven-badges.herokuapp.com/maven-central/io.github.bpdbi/bpdbi-core)
+[![Javadocs](http://javadoc.io/badge/io.github.bpdbi/bpdbi-core.svg)](http://javadoc.io/doc/io.github.bpdbi/bpdbi-core)
+
 A blocking database library the JVM that treats **pipelining** as a first-class concept.
 
 Ported from the battle-tested [Vert.x SQL Client](https://github.com/eclipse-vertx/vertx-sql-client)
@@ -131,9 +137,8 @@ The standard pattern is: borrow a connection from a [pool](#connection-pooling),
 With Java 21+ virtual threads, blocking on a pooled connection is cheap, so thousands of
 concurrent requests each get their own connection naturally.
 
-**Pluggable type system** — `BinderRegistry` (Java → SQL) and `ColumnMapperRegistry` (SQL → Java)
-let you register custom converters for your domain types without forking the library or relying on
-reflection.
+**Pluggable type system** — `TypeRegistry` lets you register custom type mappings (both Java → SQL
+and SQL → Java) for your domain types without forking the library or relying on reflection.
 
 **Null-safe API** — The entire public API is annotated with [JSpecify](https://jspecify.dev/)
 (e.g.: `@NonNull` and `@Nullable`).
@@ -829,7 +834,7 @@ OrderMeta meta = conn.query("SELECT metadata FROM orders WHERE id = $1", 1)
 register the type explicitly:
 
 ```java
-conn.binderRegistry().registerAsJson(OrderMeta.class);
+conn.typeRegistry().registerAsJson(OrderMeta.class);
 
 // Now works even though config_text is a text column
 OrderMeta meta = conn.query("SELECT config_text FROM orders WHERE id = $1", 1)
@@ -841,7 +846,7 @@ OrderMeta meta = conn.query("SELECT config_text FROM orders WHERE id = $1", 1)
 parameters:
 
 ```java
-conn.binderRegistry().registerAsJson(OrderMeta.class);
+conn.typeRegistry().registerAsJson(OrderMeta.class);
 conn.query("INSERT INTO orders (id, metadata) VALUES ($1, $2::jsonb)",
     1, new OrderMeta("rush", 3));
 // OrderMeta is serialized to JSON via jsonMapper.toJson()
