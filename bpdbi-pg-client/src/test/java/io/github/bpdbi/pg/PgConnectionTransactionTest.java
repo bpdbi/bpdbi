@@ -1,6 +1,7 @@
 package io.github.bpdbi.pg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -9,8 +10,8 @@ import io.github.bpdbi.core.DbException;
 import org.junit.jupiter.api.Test;
 
 /**
- * Transaction interface, nested transactions (savepoints), and withTransaction tests for the
- * Postgres driver.
+ * Transaction interface, nested transactions (savepoints), and useTransaction/inTransaction tests
+ * for the Postgres driver.
  */
 class PgConnectionTransactionTest extends PgTestBase {
 
@@ -269,34 +270,32 @@ class PgConnectionTransactionTest extends PgTestBase {
     }
   }
 
-  // ===== withTransaction (closure-based) =====
+  // ===== useTransaction / inTransaction (closure-based) =====
 
   @Test
-  void withTransactionCommitsOnSuccess() {
+  void useTransactionCommitsOnSuccess() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_test (id int)");
-      conn.withTransaction(
+      conn.useTransaction(
           tx -> {
             tx.query("INSERT INTO wt_test VALUES (1)");
             tx.query("INSERT INTO wt_test VALUES (2)");
-            return null;
           });
       assertEquals(2L, conn.query("SELECT count(*) FROM wt_test").first().getLong(0));
     }
   }
 
   @Test
-  void withTransactionRollsBackOnException() {
+  void useTransactionRollsBackOnException() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_rb (id int)");
       try {
-        conn.withTransaction(
+        conn.useTransaction(
             tx -> {
               tx.query("INSERT INTO wt_rb VALUES (1)");
               if (true) {
                 throw new RuntimeException("simulated failure");
               }
-              return null;
             });
       } catch (RuntimeException e) {
         assertEquals("simulated failure", e.getMessage());
@@ -306,11 +305,11 @@ class PgConnectionTransactionTest extends PgTestBase {
   }
 
   @Test
-  void withTransactionReturnsValue() {
+  void inTransactionReturnsValue() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_ret (id serial, name text)");
       int id =
-          conn.withTransaction(
+          conn.inTransaction(
               tx -> {
                 var rs = tx.query("INSERT INTO wt_ret (name) VALUES ($1) RETURNING id", "Alice");
                 return rs.first().getInteger("id");
@@ -320,16 +319,15 @@ class PgConnectionTransactionTest extends PgTestBase {
   }
 
   @Test
-  void withTransactionRollsBackOnDbError() {
+  void useTransactionRollsBackOnDbError() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_dberr (id int PRIMARY KEY)");
       conn.query("INSERT INTO wt_dberr VALUES (1)");
       try {
-        conn.withTransaction(
+        conn.useTransaction(
             tx -> {
               tx.query("INSERT INTO wt_dberr VALUES (2)");
               tx.query("INSERT INTO wt_dberr VALUES (1)"); // duplicate PK
-              return null;
             });
       } catch (PgException e) {
         // expected
@@ -340,43 +338,39 @@ class PgConnectionTransactionTest extends PgTestBase {
   }
 
   @Test
-  void withTransactionNested() {
+  void useTransactionNested() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_nested (id int)");
-      conn.withTransaction(
+      conn.useTransaction(
           tx -> {
             tx.query("INSERT INTO wt_nested VALUES (1)");
-            tx.withTransaction(
+            tx.useTransaction(
                 nested -> {
                   nested.query("INSERT INTO wt_nested VALUES (2)");
-                  return null;
                 });
-            return null;
           });
       assertEquals(2L, conn.query("SELECT count(*) FROM wt_nested").first().getLong(0));
     }
   }
 
   @Test
-  void withTransactionNestedRollback() {
+  void useTransactionNestedRollback() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE wt_nested_rb (id int)");
-      conn.withTransaction(
+      conn.useTransaction(
           tx -> {
             tx.query("INSERT INTO wt_nested_rb VALUES (1)");
             try {
-              tx.withTransaction(
+              tx.useTransaction(
                   nested -> {
                     nested.query("INSERT INTO wt_nested_rb VALUES (2)");
                     if (true) {
                       throw new RuntimeException("inner failure");
                     }
-                    return null;
                   });
             } catch (RuntimeException e) {
               // inner rollback, outer continues
             }
-            return null;
           });
       // Outer committed, inner rolled back
       assertEquals(1L, conn.query("SELECT count(*) FROM wt_nested_rb").first().getLong(0));
@@ -407,6 +401,106 @@ class PgConnectionTransactionTest extends PgTestBase {
       // Both rows should be committed
       var rs = conn.query("SELECT count(*) AS cnt FROM nest_err");
       assertEquals(2L, rs.first().getLong("cnt"));
+    }
+  }
+
+  // ===== Transaction delegation methods =====
+
+  @Test
+  void transactionEnqueueAndFlush() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE tx_pipe (id int)");
+      try (var tx = conn.begin()) {
+        tx.enqueue("INSERT INTO tx_pipe VALUES ($1)", 1);
+        tx.enqueue("INSERT INTO tx_pipe VALUES ($1)", 2);
+        var results = tx.flush();
+        // flush includes the BEGIN that was enqueued by begin(), plus 2 inserts
+        assertTrue(results.size() >= 2);
+        tx.commit();
+      }
+      assertEquals(2L, conn.query("SELECT count(*) FROM tx_pipe").first().getLong(0));
+    }
+  }
+
+  @Test
+  void transactionPrepare() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE tx_prep2 (id int, val text)");
+      try (var tx = conn.begin()) {
+        try (var stmt = tx.prepare("INSERT INTO tx_prep2 VALUES ($1, $2)")) {
+          stmt.query(1, "a");
+          stmt.query(2, "b");
+        }
+        tx.commit();
+      }
+      assertEquals(2, conn.query("SELECT count(*) FROM tx_prep2").first().getInteger(0));
+    }
+  }
+
+  @Test
+  void transactionQueryStream() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE tx_qs AS SELECT generate_series(1, 5) AS n");
+      try (var tx = conn.begin()) {
+        int[] count = {0};
+        tx.queryStream("SELECT n FROM tx_qs", row -> count[0]++);
+        assertEquals(5, count[0]);
+        tx.commit();
+      }
+    }
+  }
+
+  @Test
+  void transactionStream() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE tx_stream AS SELECT generate_series(1, 5) AS n");
+      try (var tx = conn.begin()) {
+        try (var rows = tx.stream("SELECT n FROM tx_stream ORDER BY n")) {
+          long sum = rows.stream().mapToLong(r -> r.getLong("n")).sum();
+          assertEquals(15, sum);
+        }
+        tx.commit();
+      }
+    }
+  }
+
+  @Test
+  void transactionExecuteManyNamed() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE tx_emn (id int, val text)");
+      try (var tx = conn.begin()) {
+        var paramSets =
+            java.util.List.of(
+                java.util.Map.<String, Object>of("id", 1, "val", "a"),
+                java.util.Map.<String, Object>of("id", 2, "val", "b"),
+                java.util.Map.<String, Object>of("id", 3, "val", "c"));
+        tx.executeManyNamed("INSERT INTO tx_emn VALUES (:id, :val)", paramSets);
+        tx.commit();
+      }
+      assertEquals(3L, conn.query("SELECT count(*) FROM tx_emn").first().getLong(0));
+    }
+  }
+
+  @Test
+  void transactionCursor() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE tx_cur AS SELECT generate_series(1, 25) AS n");
+      // Cursor requires an active transaction; use query() to flush the BEGIN first
+      try (var tx = conn.begin()) {
+        tx.query("SELECT 1"); // flushes the BEGIN
+        try (var cursor = tx.cursor("SELECT n FROM tx_cur ORDER BY n")) {
+          var batch1 = cursor.read(10);
+          assertEquals(10, batch1.size());
+          assertTrue(cursor.hasMore());
+          var batch2 = cursor.read(10);
+          assertEquals(10, batch2.size());
+          assertTrue(cursor.hasMore());
+          var batch3 = cursor.read(10);
+          assertEquals(5, batch3.size()); // only 5 remaining
+          assertFalse(cursor.hasMore());
+        }
+        tx.commit();
+      }
     }
   }
 }

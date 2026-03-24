@@ -3,7 +3,6 @@ package io.github.bpdbi.core;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -157,31 +156,54 @@ public interface Connection extends AutoCloseable {
   }
 
   /**
-   * Execute a function within a transaction. Commits if the function returns normally, rolls back
-   * if it throws. The function receives a {@link Transaction} (which implements {@link Connection})
-   * and can return a result.
-   *
-   * <p>This is the blocking equivalent of Vert.x's {@code Pool.withTransaction()}.
+   * Execute a function within a transaction and return the result. Commits if the function returns
+   * normally, rolls back if it throws. The generic exception type {@code X} allows checked
+   * exceptions to propagate without wrapping.
    *
    * <pre>{@code
-   * long id = conn.withTransaction(tx -> {
+   * long id = conn.inTransaction(tx -> {
    *     tx.query("INSERT INTO users (name) VALUES ($1)", "Alice");
    *     return tx.query("SELECT lastval()").first().getLong(0);
    * });
    * }</pre>
    *
-   * @param function the code to execute within the transaction
+   * @param callback the code to execute within the transaction
    * @param <T> the return type
-   * @return the value returned by the function
-   * @throws DbException if the function throws (transaction is rolled back)
+   * @param <X> the exception type that may be thrown
+   * @return the value returned by the callback
+   * @throws X if the callback throws (transaction is rolled back)
    */
-  default <T> T withTransaction(@NonNull Function<Transaction, T> function) {
+  default <T, X extends Exception> T inTransaction(@NonNull TransactionCallback<T, X> callback)
+      throws X {
     try (var tx = begin()) {
-      T result = function.apply(tx);
+      T result = callback.execute(tx);
       tx.commit();
       return result;
     }
-    // If function threw, tx.close() auto-rollbacks
+  }
+
+  /**
+   * Execute an action within a transaction. Commits if the action completes normally, rolls back if
+   * it throws. The generic exception type {@code X} allows checked exceptions to propagate without
+   * wrapping.
+   *
+   * <pre>{@code
+   * conn.useTransaction(tx -> {
+   *     tx.query("INSERT INTO users (name) VALUES ($1)", "Alice");
+   *     tx.query("UPDATE accounts SET balance = balance - $1 WHERE id = $2", 200, 1);
+   * });
+   * }</pre>
+   *
+   * @param consumer the code to execute within the transaction
+   * @param <X> the exception type that may be thrown
+   * @throws X if the consumer throws (transaction is rolled back)
+   */
+  default <X extends Exception> void useTransaction(@NonNull TransactionConsumer<X> consumer)
+      throws X {
+    try (var tx = begin()) {
+      consumer.execute(tx);
+      tx.commit();
+    }
   }
 
   /**

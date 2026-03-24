@@ -71,7 +71,7 @@ public class BulkInsertBenchmark {
   @Benchmark
   public void bpdbi_executeManyTx(DatabaseState db, Blackhole bh) {
     try (var conn = db.bpdbiPool().acquire()) {
-      conn.withTransaction(tx -> tx.executeMany(SQL, paramSets));
+      conn.inTransaction(tx -> tx.executeMany(SQL, paramSets));
     }
   }
 

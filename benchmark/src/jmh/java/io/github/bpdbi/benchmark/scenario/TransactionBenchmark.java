@@ -17,7 +17,7 @@ import org.openjdk.jmh.infra.Blackhole;
 
 /**
  * Benchmarks transaction overhead: BEGIN/COMMIT round-trips, read-only transactions, pipelined
- * inserts within a transaction, and withTransaction() convenience API.
+ * inserts within a transaction, and inTransaction() convenience API.
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -67,13 +67,13 @@ public class TransactionBenchmark {
     }
   }
 
-  // --- bpdbi: withTransaction (convenience API) ---
+  // --- bpdbi: inTransaction (convenience API) ---
 
   @Benchmark
-  public void bpdbi_withTransaction(DatabaseState db, Blackhole bh) {
+  public void bpdbi_inTransaction(DatabaseState db, Blackhole bh) {
     try (var conn = db.bpdbiPool().acquire()) {
       var row =
-          conn.withTransaction(
+          conn.inTransaction(
               tx -> {
                 return tx.query(SELECT_SQL, 1).first();
               });

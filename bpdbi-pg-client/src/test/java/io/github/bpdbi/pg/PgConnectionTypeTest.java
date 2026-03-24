@@ -796,4 +796,118 @@ class PgConnectionTypeTest extends PgTestBase {
       assertFalse(rs.first().isNull(0));
     }
   }
+
+  // ===== Primitive value getters =====
+
+  @Test
+  void primitiveGetters() {
+    try (var conn = connect()) {
+      var rs =
+          conn.query(
+              "SELECT 42::int4 AS i, 100::int8 AS l, 7::int2 AS s, 3.14::float4 AS f, 2.718::float8 AS d, true AS b");
+      var row = rs.first();
+      assertEquals(42, row.getIntValue("i"));
+      assertEquals(100L, row.getLongValue("l"));
+      assertEquals((short) 7, row.getShortValue("s"));
+      assertEquals(3.14f, row.getFloatValue("f"), 0.01f);
+      assertEquals(2.718, row.getDoubleValue("d"), 0.001);
+      assertTrue(row.getBoolValue("b"));
+    }
+  }
+
+  @Test
+  void primitiveGetterNullThrows() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT NULL::int4 AS i");
+      var row = rs.first();
+      assertThrows(NullPointerException.class, () -> row.getIntValue("i"));
+      assertThrows(NullPointerException.class, () -> row.getLongValue("i"));
+      assertThrows(NullPointerException.class, () -> row.getShortValue("i"));
+      assertThrows(NullPointerException.class, () -> row.getFloatValue("i"));
+      assertThrows(NullPointerException.class, () -> row.getDoubleValue("i"));
+      assertThrows(NullPointerException.class, () -> row.getBoolValue("i"));
+    }
+  }
+
+  // ===== Additional array getters =====
+
+  @Test
+  void dataTypeLongArray() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT ARRAY[100, 200, 300]::bigint[] AS arr");
+      assertEquals(List.of(100L, 200L, 300L), rs.first().getLongArray("arr"));
+    }
+  }
+
+  @Test
+  void dataTypeDoubleArray() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT ARRAY[1.5, 2.5]::float8[] AS arr");
+      assertEquals(List.of(1.5, 2.5), rs.first().getDoubleArray("arr"));
+    }
+  }
+
+  @Test
+  void dataTypeFloatArray() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT ARRAY[1.5, 2.5]::float4[] AS arr");
+      assertEquals(List.of(1.5f, 2.5f), rs.first().getFloatArray("arr"));
+    }
+  }
+
+  @Test
+  void dataTypeShortArray() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT ARRAY[1, 2, 3]::int2[] AS arr");
+      assertEquals(List.of((short) 1, (short) 2, (short) 3), rs.first().getShortArray("arr"));
+    }
+  }
+
+  @Test
+  void dataTypeBooleanArray() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT ARRAY[true, false, true]::boolean[] AS arr");
+      assertEquals(List.of(true, false, true), rs.first().getBooleanArray("arr"));
+    }
+  }
+
+  @Test
+  void dataTypeUuidArray() {
+    try (var conn = connect()) {
+      var u1 = java.util.UUID.fromString("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
+      var rs = conn.query("SELECT ARRAY['a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11']::uuid[] AS arr");
+      assertEquals(List.of(u1), rs.first().getUuidArray("arr"));
+    }
+  }
+
+  // ===== Enum via get(index, Class) =====
+
+  @Test
+  void enumAccess() {
+    try (var conn = connect()) {
+      conn.query("DROP TYPE IF EXISTS test_color CASCADE");
+      conn.query("CREATE TYPE test_color AS ENUM ('RED', 'GREEN', 'BLUE')");
+      var rs = conn.query("SELECT 'GREEN'::test_color AS c");
+      assertEquals(Color.GREEN, rs.first().get("c", Color.class));
+      conn.query("DROP TYPE test_color");
+    }
+  }
+
+  enum Color {
+    RED,
+    GREEN,
+    BLUE
+  }
+
+  // ===== Boolean getters =====
+
+  @Test
+  void booleanGetter() {
+    try (var conn = connect()) {
+      var rs = conn.query("SELECT true AS t, false AS f");
+      var row = rs.first();
+      assertEquals(Boolean.TRUE, row.getBoolean("t"));
+      assertEquals(Boolean.FALSE, row.getBoolean("f"));
+    }
+  }
 }

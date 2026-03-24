@@ -133,9 +133,10 @@ final class PooledConnection implements Connection {
 
   /**
    * Delegates to the real connection so that the Transaction wraps the delegate, not this
-   * PooledConnection. This is critical for withTransaction() correctness: the default interface
-   * method calls this.begin(), so if we didn't delegate, the Transaction would hold a reference to
-   * the PooledConnection and tx.close() could return it to the pool mid-transaction.
+   * PooledConnection. This is critical for useTransaction()/inTransaction() correctness: the
+   * default interface method calls this.begin(), so if we didn't delegate, the Transaction would
+   * hold a reference to the PooledConnection and tx.close() could return it to the pool
+   * mid-transaction.
    */
   @Override
   public @NonNull Transaction begin() {

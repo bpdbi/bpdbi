@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.bpdbi.core.RowSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** Pipeline, batch execution, and pipeline error handling tests for the Postgres driver. */
@@ -558,6 +559,23 @@ class PgConnectionPipelineTest extends PgTestBase {
       conn.query("INSERT INTO bytea_test VALUES ($1)", large);
       var rs = conn.query("SELECT length(data) AS len FROM bytea_test");
       assertEquals(1_000_000, rs.first().getInteger("len"));
+    }
+  }
+
+  // ===== executeManyNamed =====
+
+  @Test
+  void executeManyNamed() {
+    try (var conn = connect()) {
+      conn.query("CREATE TEMP TABLE emn (id int, val text)");
+      var paramSets =
+          List.of(
+              Map.<String, Object>of("id", 1, "val", "a"),
+              Map.<String, Object>of("id", 2, "val", "b"),
+              Map.<String, Object>of("id", 3, "val", "c"));
+      var results = conn.executeManyNamed("INSERT INTO emn VALUES (:id, :val)", paramSets);
+      assertEquals(3, results.size());
+      assertEquals(3L, conn.query("SELECT count(*) FROM emn").first().getLong(0));
     }
   }
 }

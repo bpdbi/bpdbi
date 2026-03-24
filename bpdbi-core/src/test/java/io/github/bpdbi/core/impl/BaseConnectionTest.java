@@ -419,13 +419,13 @@ class BaseConnectionTest {
     assertEquals(1, conn.extendedQueries.size());
   }
 
-  // ===== withTransaction =====
+  // ===== inTransaction / useTransaction =====
 
   @Test
-  void withTransactionCommitsOnSuccess() {
+  void inTransactionCommitsOnSuccess() {
     var conn = new FakeConnection();
     String result =
-        conn.withTransaction(
+        conn.inTransaction(
             tx -> {
               tx.query("INSERT INTO t VALUES (1)");
               return "done";
@@ -436,12 +436,37 @@ class BaseConnectionTest {
   }
 
   @Test
-  void withTransactionRollsBackOnException() {
+  void inTransactionRollsBackOnException() {
     var conn = new FakeConnection();
     assertThrows(
         RuntimeException.class,
         () ->
-            conn.withTransaction(
+            conn.inTransaction(
+                tx -> {
+                  tx.query("INSERT INTO t VALUES (1)");
+                  throw new RuntimeException("fail");
+                }));
+    // Should have BEGIN, INSERT, and then auto-rollback via close()
+  }
+
+  @Test
+  void useTransactionCommitsOnSuccess() {
+    var conn = new FakeConnection();
+    conn.useTransaction(
+        tx -> {
+          tx.query("INSERT INTO t VALUES (1)");
+        });
+    // BEGIN + INSERT + COMMIT should all be in the query list
+    assertTrue(conn.extendedQueries.size() >= 3);
+  }
+
+  @Test
+  void useTransactionRollsBackOnException() {
+    var conn = new FakeConnection();
+    assertThrows(
+        RuntimeException.class,
+        () ->
+            conn.useTransaction(
                 tx -> {
                   tx.query("INSERT INTO t VALUES (1)");
                   throw new RuntimeException("fail");

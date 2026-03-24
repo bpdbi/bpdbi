@@ -917,10 +917,7 @@ class PgConnectionTest extends AbstractConnectionTest {
           .bind("id", 1)
           .bind("name", "Alice")
           .query();
-      conn.sql("INSERT INTO np_test VALUES (:id, :name)")
-          .bind("id", 2)
-          .bind("name", "Bob")
-          .query();
+      conn.sql("INSERT INTO np_test VALUES (:id, :name)").bind("id", 2).bind("name", "Bob").query();
 
       var rs = conn.sql("SELECT name FROM np_test WHERE id = :id").bind("id", 1).query();
       assertEquals("Alice", rs.first().getString("name"));
@@ -931,14 +928,8 @@ class PgConnectionTest extends AbstractConnectionTest {
   void namedParamInPipeline() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_pipe (id int, val text)");
-      conn.sql("INSERT INTO np_pipe VALUES (:id, :val)")
-          .bind("id", 1)
-          .bind("val", "one")
-          .enqueue();
-      conn.sql("INSERT INTO np_pipe VALUES (:id, :val)")
-          .bind("id", 2)
-          .bind("val", "two")
-          .enqueue();
+      conn.sql("INSERT INTO np_pipe VALUES (:id, :val)").bind("id", 1).bind("val", "one").enqueue();
+      conn.sql("INSERT INTO np_pipe VALUES (:id, :val)").bind("id", 2).bind("val", "two").enqueue();
       conn.flush();
 
       var rs = conn.query("SELECT count(*) FROM np_pipe");
