@@ -1,7 +1,6 @@
 package io.github.bpdbi.pg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.bpdbi.core.ConnectionConfig;
@@ -122,7 +121,8 @@ class PgSslTest {
 
   @Test
   void sslRequireFailsOnNonSslServer() {
-    assertThrows(DbConnectionException.class, () -> PgConnection.connect(nonSslConfig(SslMode.REQUIRE)));
+    assertThrows(
+        DbConnectionException.class, () -> PgConnection.connect(nonSslConfig(SslMode.REQUIRE)));
   }
 
   // --- Test 5: PEM certificate path ---
