@@ -16,7 +16,7 @@ import kotlinx.datetime.toKotlinLocalTime
 
 /**
  * Register type codecs for Kotlin-specific types. Each registration maps a Kotlin type to its
- * Java equivalent so the binary codec can handle it natively (e.g. kotlin.uuid.Uuid → java.util.UUID).
+ * Java equivalent, so the binary codec can handle it natively (e.g., kotlin.uuid.Uuid → java.util.UUID).
  */
 @OptIn(ExperimentalUuidApi::class)
 fun TypeRegistry.registerKotlinTypes(): TypeRegistry = apply {

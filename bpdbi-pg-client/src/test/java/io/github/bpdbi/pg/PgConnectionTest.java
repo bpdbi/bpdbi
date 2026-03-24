@@ -899,7 +899,11 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void namedParamSelect() {
     try (var conn = connect()) {
-      var rs = conn.query("SELECT :name AS name, :age AS age", Map.of("name", "Alice", "age", 30));
+      var rs =
+          conn.sql("SELECT :name AS name, :age AS age")
+              .bind("name", "Alice")
+              .bind("age", 30)
+              .query();
       assertEquals("Alice", rs.first().getString("name"));
       assertEquals(30, rs.first().getInteger("age"));
     }
@@ -909,10 +913,16 @@ class PgConnectionTest extends AbstractConnectionTest {
   void namedParamInsertAndSelect() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_test (id int, name text)");
-      conn.query("INSERT INTO np_test VALUES (:id, :name)", Map.of("id", 1, "name", "Alice"));
-      conn.query("INSERT INTO np_test VALUES (:id, :name)", Map.of("id", 2, "name", "Bob"));
+      conn.sql("INSERT INTO np_test VALUES (:id, :name)")
+          .bind("id", 1)
+          .bind("name", "Alice")
+          .query();
+      conn.sql("INSERT INTO np_test VALUES (:id, :name)")
+          .bind("id", 2)
+          .bind("name", "Bob")
+          .query();
 
-      var rs = conn.query("SELECT name FROM np_test WHERE id = :id", Map.of("id", 1));
+      var rs = conn.sql("SELECT name FROM np_test WHERE id = :id").bind("id", 1).query();
       assertEquals("Alice", rs.first().getString("name"));
     }
   }
@@ -921,8 +931,14 @@ class PgConnectionTest extends AbstractConnectionTest {
   void namedParamInPipeline() {
     try (var conn = connect()) {
       conn.query("CREATE TEMP TABLE np_pipe (id int, val text)");
-      conn.enqueue("INSERT INTO np_pipe VALUES (:id, :val)", Map.of("id", 1, "val", "one"));
-      conn.enqueue("INSERT INTO np_pipe VALUES (:id, :val)", Map.of("id", 2, "val", "two"));
+      conn.sql("INSERT INTO np_pipe VALUES (:id, :val)")
+          .bind("id", 1)
+          .bind("val", "one")
+          .enqueue();
+      conn.sql("INSERT INTO np_pipe VALUES (:id, :val)")
+          .bind("id", 2)
+          .bind("val", "two")
+          .enqueue();
       conn.flush();
 
       var rs = conn.query("SELECT count(*) FROM np_pipe");
@@ -1184,9 +1200,9 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.query("INSERT INTO inlist_test VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Carol')");
 
       var rs =
-          conn.query(
-              "SELECT * FROM inlist_test WHERE id IN (:ids) ORDER BY id",
-              Map.of("ids", List.of(1, 3)));
+          conn.sql("SELECT * FROM inlist_test WHERE id IN (:ids) ORDER BY id")
+              .bind("ids", List.of(1, 3))
+              .query();
 
       assertEquals(2, rs.size());
       assertEquals("Alice", rs.first().getString("name"));
