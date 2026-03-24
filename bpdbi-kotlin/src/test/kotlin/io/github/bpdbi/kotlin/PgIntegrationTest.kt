@@ -347,6 +347,42 @@ class PgIntegrationTest {
     }
   }
 
+  // --- Extensions.kt: queryOneAs with named params ---
+
+  @Test
+  fun `queryOneAs with named params`() {
+    connect().use { conn ->
+      conn.query("CREATE TEMP TABLE users (id int, name text, email text)")
+      conn.query("INSERT INTO users VALUES (1, 'Alice', 'alice@test.com')")
+
+      val user: User? = conn.queryOneAs(
+        "SELECT id, name, email FROM users WHERE id = :id",
+        mapOf("id" to 1)
+      )
+      assertEquals(User(1, "Alice", "alice@test.com"), user)
+    }
+  }
+
+  @Test
+  fun `queryOneAs with named params returns null for empty result`() {
+    connect().use { conn ->
+      conn.query("CREATE TEMP TABLE users (id int, name text, email text)")
+
+      val user: User? = conn.queryOneAs(
+        "SELECT id, name, email FROM users WHERE id = :id",
+        mapOf("id" to 999)
+      )
+      assertNull(user)
+    }
+  }
+
+  // NOTE: Extensions.kt defines inTransaction/useTransaction as inline extensions on Connection,
+  // but Java's Connection interface also declares same-named default methods. Kotlin's overload
+  // resolution always prefers the member (Java default) over the extension, making the Kotlin
+  // extensions effectively unreachable. The Java defaults are tested in PgConnectionTransactionTest.
+
+  // --- KotlinTypes ---
+
   @Test
   fun `kotlin Uuid type binder and mapper`() {
     connect().use { conn ->

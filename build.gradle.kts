@@ -3,10 +3,15 @@ plugins {
   alias(libs.plugins.kotlin.serialization) apply false
   alias(libs.plugins.vanniktech.maven.publish) apply false
   alias(libs.plugins.spotless)
+  jacoco
 }
 
 group = "io.github.bpdbi"
 version = "0.2.0"
+
+repositories {
+  mavenCentral()
+}
 
 subprojects {
   group = rootProject.group
@@ -37,12 +42,39 @@ subprojects {
       }
     }
 
-    tasks.withType<JacocoReport> {
-      reports {
-        xml.required = true
-        html.required = true
-      }
+  }
+}
+
+// Aggregated JaCoCo report merging all modules' execution data against all source sets.
+// This gives correct coverage attribution when e.g. pg-client tests exercise core classes.
+val libraryProjects by lazy {
+  subprojects.filter { it.name != "bpdbi-bom" && it.name != "examples" && it.name != "benchmark" }
+}
+
+tasks.register<JacocoReport>("jacocoAggregateReport") {
+  dependsOn(libraryProjects.map { it.tasks.named("test") })
+
+  executionData.setFrom(
+    libraryProjects.flatMap { sub ->
+      sub.tasks.withType<Test>().map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! }
     }
+  )
+
+  sourceDirectories.setFrom(
+    libraryProjects.flatMap { sub ->
+      sub.the<SourceSetContainer>()["main"].allSource.srcDirs
+    }
+  )
+
+  classDirectories.setFrom(
+    libraryProjects.flatMap { sub ->
+      sub.the<SourceSetContainer>()["main"].output.classesDirs
+    }
+  )
+
+  reports {
+    xml.required = true
+    html.required = true
   }
 }
 

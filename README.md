@@ -1288,12 +1288,9 @@ Early development. Not yet published to Maven Central — the dependency coordin
 
 ## Todo
 
-* Double check we have all kotlin's time types implemented
+* Double-check we have all kotlin's time types implemented
 * Look into in-list expansion (it is almost never a good idea, as it breaks preparing: right?)
-* Can tx be made more ergonomic? (see Jdbi)
-* Should parameter binding be more ergonomic? (see Jdbi)
-* Document how parameter binding is sometimes binary and sometimes text-based: allow extensions on both.
-* Publish to Maven Central
+* Document all extension points
 
 ## License
 
