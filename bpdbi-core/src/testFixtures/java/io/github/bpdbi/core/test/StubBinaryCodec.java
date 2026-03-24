@@ -72,11 +72,6 @@ public final class StubBinaryCodec implements BinaryCodec {
   }
 
   @Override
-  public @NonNull String decodeToString(byte @NonNull [] buf, int offset, int length, int typeOID) {
-    return text(buf, offset, length);
-  }
-
-  @Override
   public @NonNull UUID decodeUuid(byte @NonNull [] buf, int offset, int length) {
     return UUID.fromString(text(buf, offset, length));
   }

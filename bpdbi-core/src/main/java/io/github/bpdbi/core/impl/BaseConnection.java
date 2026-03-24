@@ -27,6 +27,7 @@ public abstract class BaseConnection implements Connection {
   private static final Object[] EMPTY_PARAMS = new Object[0];
 
   private @NonNull List<PendingStatement> pending = new ArrayList<>(4);
+  private @NonNull List<PendingStatement> spare = new ArrayList<>(4);
   private @NonNull TypeRegistry typeRegistry = new TypeRegistry();
   private @Nullable JsonMapper jsonMapper;
   protected @Nullable PreparedStatementCache psCache;
@@ -173,14 +174,17 @@ public abstract class BaseConnection implements Connection {
       return List.of();
     }
 
-    // Swap instead of copying — avoids O(n) ArrayList copy on every flush
+    // Swap with spare list — avoids allocating a new ArrayList on every flush
     List<PendingStatement> toFlush = pending;
-    pending = new ArrayList<>(4);
+    pending = spare;
 
     List<RowSet> results = executePipelinedBatch(toFlush);
     for (int i = 0; i < results.size(); i++) {
       attachSqlToError(results.get(i), toFlush.get(i).sql);
     }
+
+    toFlush.clear();
+    spare = toFlush;
 
     return results;
   }

@@ -207,16 +207,18 @@ public final class Row {
     if (!readValue(index)) {
       return null;
     }
-    // Fast path for text/varchar: in binary protocol the wire format for text-like
-    // types is raw UTF-8 bytes, identical to text protocol. Skipping the type OID switch in
-    // decodeToString() avoids unnecessary dispatch for the most common getString() use case.
     if (columns[index].isTextLikeType()) {
       return new String(vBuf, vOff, vLen, StandardCharsets.UTF_8);
     }
     if (columns[index].isJsonType()) {
       return binaryCodec.decodeJson(vBuf, vOff, vLen, columns[index].typeOID());
     }
-    return binaryCodec.decodeToString(vBuf, vOff, vLen, columns[index].typeOID());
+    throw new IllegalStateException(
+        "getString() is only supported for text/varchar/json columns, not typeOID="
+            + columns[index].typeOID()
+            + " (column: "
+            + columns[index].name()
+            + "). Use typed getters instead.");
   }
 
   public @Nullable String getString(@NonNull String columnName) {
@@ -305,6 +307,18 @@ public final class Row {
     return getShort(columnIndex(columnName));
   }
 
+  /** Primitive short getter — avoids autoboxing. Throws if the column is NULL. */
+  public short getShortValue(int index) {
+    if (!readValue(index)) {
+      throw new NullPointerException("Column " + index + " is NULL");
+    }
+    return binaryCodec.decodeInt2(vBuf, vOff);
+  }
+
+  public short getShortValue(@NonNull String columnName) {
+    return getShortValue(columnIndex(columnName));
+  }
+
   public @Nullable Float getFloat(int index) {
     if (!readValue(index)) return null;
     return binaryCodec.decodeFloat4(vBuf, vOff);
@@ -312,6 +326,18 @@ public final class Row {
 
   public @Nullable Float getFloat(@NonNull String columnName) {
     return getFloat(columnIndex(columnName));
+  }
+
+  /** Primitive float getter — avoids autoboxing. Throws if the column is NULL. */
+  public float getFloatValue(int index) {
+    if (!readValue(index)) {
+      throw new NullPointerException("Column " + index + " is NULL");
+    }
+    return binaryCodec.decodeFloat4(vBuf, vOff);
+  }
+
+  public float getFloatValue(@NonNull String columnName) {
+    return getFloatValue(columnIndex(columnName));
   }
 
   public @Nullable Double getDouble(int index) {
@@ -325,6 +351,22 @@ public final class Row {
 
   public @Nullable Double getDouble(@NonNull String columnName) {
     return getDouble(columnIndex(columnName));
+  }
+
+  /** Primitive double getter — avoids autoboxing. Throws if the column is NULL. */
+  public double getDoubleValue(int index) {
+    if (!readValue(index)) {
+      throw new NullPointerException("Column " + index + " is NULL");
+    }
+    return switch (vLen) {
+      case 8 -> binaryCodec.decodeFloat8(vBuf, vOff);
+      case 4 -> (double) binaryCodec.decodeFloat4(vBuf, vOff);
+      default -> binaryCodec.decodeFloat8(vBuf, vOff);
+    };
+  }
+
+  public double getDoubleValue(@NonNull String columnName) {
+    return getDoubleValue(columnIndex(columnName));
   }
 
   public @Nullable BigDecimal getBigDecimal(int index) {
@@ -485,7 +527,7 @@ public final class Row {
     if (raw == null) {
       return null;
     }
-    return binaryCodec.decodeArrayElements(raw);
+    return binaryCodec.decodeArray(raw, (buf, off, len) -> binaryCodec.decodeString(buf, off, len));
   }
 
   public @Nullable List<String> getStringArray(@NonNull String columnName) {

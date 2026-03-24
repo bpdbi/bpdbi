@@ -68,14 +68,6 @@ public interface BinaryCodec {
   @NonNull String decodeJson(byte @NonNull [] buf, int offset, int length, int typeOID);
 
   /**
-   * Decode a binary column value to its text representation, using the type OID to select the
-   * correct decoding strategy. Used by {@link Row#get(int, Class)} as the text fallback for column
-   * mappers on binary-format rows. Drivers should override this to produce correct text for
-   * non-string types (dates, numerics, etc.).
-   */
-  @NonNull String decodeToString(byte @NonNull [] buf, int offset, int length, int typeOID);
-
-  /**
    * Decode bytes from a shared buffer. Always copies — the caller owns the returned array. Drivers
    * need not override this; the default is correct.
    */
@@ -83,15 +75,6 @@ public interface BinaryCodec {
     byte[] result = new byte[length];
     System.arraycopy(buf, offset, result, 0, length);
     return result;
-  }
-
-  /**
-   * Decode a binary array value into a list of element strings. Convenience wrapper around {@link
-   * #decodeArray} that converts each element to its text representation based on the element type
-   * OID embedded in the binary payload.
-   */
-  default @Nullable List<String> decodeArrayElements(byte @NonNull [] value) {
-    return null;
   }
 
   /**

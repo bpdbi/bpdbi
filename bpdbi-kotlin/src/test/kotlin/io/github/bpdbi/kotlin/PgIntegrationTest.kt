@@ -357,8 +357,8 @@ class PgIntegrationTest {
       conn.query("INSERT INTO items VALUES ($1, $2)", uuid, "test")
 
       val rs = conn.query("SELECT id FROM items")
-      val retrieved = rs.first().getString(0)
-      assertEquals(uuid.toString(), retrieved)
+      val retrieved = rs.first().getUUID(0)
+      assertEquals(uuid.toString(), retrieved.toString())
     }
   }
 }

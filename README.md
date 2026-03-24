@@ -1,38 +1,39 @@
-# Bpdbi — Blocking Pipelined Database Interface for the JVM
+bpdbi
+=====
+### Blocking Pipelined Database Interface for Postgres on the JVM
 
 [![CI](https://github.com/bpdbi/bpdbi/actions/workflows/ci.yml/badge.svg)](https://github.com/bpdbi/bpdbi/actions/workflows/ci.yml)
-[![codecov.io](https://codecov.io/github/bpdbi/bpdbi/coverage.svg?branch=master)](https://codecov.io/github/bpdbi/bpdbi?branch=master)
+[![codecov](https://codecov.io/gh/bpdbi/bpdbi/graph/badge.svg)](https://codecov.io/gh/bpdbi/bpdbi)
 [![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.bpdbi/bpdbi-core)](https://maven-badges.herokuapp.com/maven-central/io.github.bpdbi/bpdbi-core)
 [![Javadocs](http://javadoc.io/badge/io.github.bpdbi/bpdbi-core.svg)](http://javadoc.io/doc/io.github.bpdbi/bpdbi-core)
 
 A blocking database library the JVM that treats **pipelining** as a first-class concept.
 
-Ported from the battle-tested [Vert.x SQL Client](https://github.com/eclipse-vertx/vertx-sql-client)
-(the foundation of Quarkus), but stripped of all async/reactive machinery; thus "blocking".
+Initially ported from the battle-tested [Vert.x SQL Client](https://github.com/eclipse-vertx/vertx-sql-client)
+(Vert.x is the foundation of Quarkus), but stripped of all async/reactive machinery; thus "blocking".
 Since it's blocking, `java.net.Socket` is used for I/O (no Netty dependencies, event loop, `Uni<T>`,
 Kotlin coroutines or other implementations of the "future" pattern).
 
 This library —like Vert.x SQL— does not use JDBC, as JDBC does not expose pipelining.
-This library presents a developer experience similar to [Jdbi](https://jdbi.org).
+Since Bpdbi is not constrained by JDBC, a developer experience similar to [Jdbi](https://jdbi.org),
+[Spring JDBC Template](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/jdbc/core/JdbcTemplate.html)
+or [Sql2o](http://sql2o.org) is provided out-of-the-box.
 
 ## Why?
 
-JDBC is [showing its age](docs/is-jdbc-showing-its-age.md) and (hence) does not allow pipelining
-which is available
-in [Postgres 14+](https://www.postgresql.org/docs/current/libpq-pipeline-mode.html)
-.
+JDBC is [showing its age](docs/is-jdbc-showing-its-age.md): it does not allow pipelining, which is available since
+[Postgres 14+](https://www.postgresql.org/docs/current/libpq-pipeline-mode.html);
+and only provides a text-based API (while most databases support binary protocols nowadays).
 
-Vert.x (`vertx-sql-client`) does support pipelines (for these databases) —it does not use JDBC—
+Vert.x (`vertx-sql-client`) does support pipelines (for Postgres) —it does not use JDBC—
 but forces reactive/async programming and
 [this style of programming comes at a cost](docs/why-not-write-all-code-reactive.md).
 
 Bpdbi provides pipelining for straightforward blocking code — ideal for **Java 21+ virtual threads**,
 which made blocking a lot more performant.
 
-Bpdbi provides a better developer experience than JDBC alone, it can be compared to Jdbi's DX.
-
-The whole library is a lot smaller that the typical JVM db stack, where a db driver, JDBC, and
+This library is a lot smaller than the typical JVM db stack, where a db driver, JDBC, and
 something like Jdbi are needed (easily several MB of libraries), where Bpdbi is under 200kB.
 
 ## Why pipelining?
@@ -43,7 +44,10 @@ responses back at once.
 It can be used to reduce the number of db roundtrips: this is a great way to improve the performance
 of, say, an HTTP request cycle.
 
-For example: queries for which we are not interested in the result (like starting a transaction,
+The need for pipelining is more urgent when using certain features like Postgres' RLS
+(row-level security): an important technique to prevent data leaks in typical SaaS applications.
+
+For example, queries for which we are not interested in the result (like starting a transaction,
 setting the JWT which is needed if you want to use Supabase's RLS, or other settings)
 can usually be sent alongside the first query that we **are** interested in the result of.
 
@@ -57,7 +61,7 @@ RowSet result = conn.query("select * from my_table where id = $1", 42);
 ```
 
 Without pipelining each of those would be a separate db roundtrip.
-Over a network with 1ms latency, that means at least 4ms is saved on every HTTP request
+Over a network with 1ms roundtrip latency, that means at least 4ms is saved on every HTTP request
 as you likely do more than just one query.
 
 Multiple db queries for which you **do** want results can also be combined in a pipeline.
@@ -65,7 +69,7 @@ Multiple db queries for which you **do** want results can also be combined in a 
 
 ## Benchmarks
 
-JMH benchmarks with **1ms simulated network latency** per direction (2ms round-trip via Toxiproxy),
+JMH benchmarks with 1ms Toxiproxy-simulated network latency per direction (2ms roundtrip),
 JDK 21, single-threaded. All numbers are **ops/s** (higher is better).
 
 | Scenario | bpdbi | JDBC (pgjdbc) |  Speedup |
@@ -81,10 +85,10 @@ JDK 21, single-threaded. All numbers are **ops/s** (higher is better).
 | Join query | 271 | 271 |       1x |
 
 Anything that touches the network more than once — transactions, batches, sequential lookups —
-gets a **5-17x** speedup from pipelining. Single-query performance is at parity with raw pgjdbc:
+gets a **5-17x** speedup from pipelining. Single-query performance is on par with raw `pgjdbc`:
 the overhead is zero and results are purely network-bound.
 
-For the full breakdown including mapper comparisons and Hibernate numbers, see
+For the full breakdown, including mapper comparisons and Hibernate numbers, see
 [docs/benchmark-interpretation.md](docs/benchmark-interpretation.md).
 
 ## Design Principles
@@ -98,10 +102,10 @@ a pipeline sends N arbitrary statements (different SQL, different parameter coun
 in a single network write. Anything you'd do with batch, you can do with pipeline —
 plus mix in SETs, DDL, transactions, and different queries in the same roundtrip.
 
-**Binary protocol everywhere** — The Postgres driver uses the extended query protocol
+**Binary protocol everywhere** — Bpdbi's Postgres driver uses the extended query protocol
 (Parse/Bind/Execute) with binary result format for **all** queries, including parameterless ones
 like `BEGIN`, `COMMIT`, `SET`, and plain `SELECT`s. This is a deliberate departure from
-pgjdbc and most other drivers, which use the *simple query protocol* (text format) for
+`pgjdbc` and most other drivers, which use the *simple query protocol* (text format) for
 parameterless statements. The always-binary design has three significant consequences:
 
 1. **Uniform pipelining.** Because every statement uses the same wire protocol,
@@ -120,6 +124,8 @@ parameterless statements. The always-binary design has three significant consequ
    `"SELECT 1; SELECT 2"` — use `enqueue()`/`flush()` instead, which is both
    more explicit and faster.
 
+4. **Simpler internals.** A lot of code we do not need to maintain, thus a smaller footprint.
+
 **Lazy decoding with column-oriented storage** — `Row` stores raw bytes from the wire and decodes
 them only when you call a typed getter (`getInteger`, `getString`, etc.).
 Columns you never read are never decoded, keeping CPU overhead minimal.
@@ -129,7 +135,7 @@ are packed into a single contiguous `byte[]` buffer, and each `Row` is a lightwe
 For a 100K-row, 10-column result, this means 10 byte arrays instead of 1 million —
 dramatically reducing GC pressure for large results.
 
-**One connection per thread** — Connections are not thread-safe, same as JDBC and virtually every
+**One connection per thread** — Connections are not thread-safe, like JDBC and virtually every
 SQL client in any language. The underlying wire protocol is a stateful, ordered byte stream —
 concurrent writes from multiple threads would corrupt it. Transactions are also connection-scoped,
 so sharing a connection between threads would mix transaction boundaries.
@@ -137,8 +143,8 @@ The standard pattern is: borrow a connection from a [pool](#connection-pooling),
 With Java 21+ virtual threads, blocking on a pooled connection is cheap, so thousands of
 concurrent requests each get their own connection naturally.
 
-**Pluggable type system** — `TypeRegistry` lets you register custom type mappings (both Java → SQL
-and SQL → Java) for your domain types without forking the library or relying on reflection.
+**Pluggable type system** — `TypeRegistry` lets you register custom type mappings (both JVM → SQL
+and SQL → JVM) for your domain types without forking the library or relying on reflection.
 
 **Null-safe API** — The entire public API is annotated with [JSpecify](https://jspecify.dev/)
 (e.g.: `@NonNull` and `@Nullable`).
@@ -153,18 +159,23 @@ write one integration test per SQL query that exercises it against a real databa
 These tests are straightforward to generate with AI assistance and catch schema mismatches,
 typos, and type errors at test time rather than compile time — with far less machinery.
 
-**Dependency minimalism** Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
+**Dependency minimalism** — Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
 the Postgres JDBC driver (&tilde;1.1MB). It also provides named parameters,
-row mapping, and type binding commonly found in libraries like Jdbi (&tilde;1MB) or Spring Data JDBC (&tilde;
-3MB). Bpdbi can be used without the JVM reflection API, some optional mapper modules do use it.
-Mind you that libraries like Hibernate and jOOQ weigh in at about 15MB as well.
+row mapping, and type binding commonly found in libraries like Jdbi (&tilde;1MB) or Spring Data JDBC
+(&tilde;3MB). Bpdbi can be used without the JVM reflection API, some optional mapper modules do use it.
+Mind you that libraries like Hibernate and jOOQ weigh in at about 15MB each.
 
 **GraalVM native-image ready** — The core library and drivers (`bpdbi-core`, `bpdbi-pg-client`,
-`bpdbi-pool`) use zero reflection and work out of the box with
+`bpdbi-pool`) make no use of reflection and work out of the box with
 `native-image`. The optional mapper modules (`bpdbi-record-mapper`,
 `bpdbi-javabean-mapper`) ship with GraalVM `reflect-config.json` metadata for their own
 classes; you only need to register your application's record/bean types. The Kotlin module
 uses compile-time code generation (kotlinx.serialization) and needs no reflection at all.
+
+**JVM-based** — The library is written in Java (JDK 21+) to ensure maximum compatibility
+with JVM-based projects. The `bpdbi-kotlin` module provides a Kotlin-friendly API, compatibility
+with Kotlin types (`kotlin.time`, `kotlinx.datetime`) and a row mapper that's based on
+`kotlinx.serialization` (which does **not** use reflection!).
 
 ## Quick Start
 

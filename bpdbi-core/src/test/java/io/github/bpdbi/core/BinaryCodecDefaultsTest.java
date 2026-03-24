@@ -115,12 +115,6 @@ class BinaryCodecDefaultsTest {
             byte @NonNull [] buf, int offset, int length, int typeOID) {
           return decodeString(buf, offset, length);
         }
-
-        @Override
-        public @NonNull String decodeToString(
-            byte @NonNull [] buf, int offset, int length, int typeOID) {
-          return decodeString(buf, offset, length);
-        }
       };
 
   // ===== Offset-based defaults that copy slice and delegate =====
@@ -214,12 +208,6 @@ class BinaryCodecDefaultsTest {
   }
 
   @Test
-  void decodeToStringOffset() {
-    byte[] buf = "XXhelloYY".getBytes(StandardCharsets.UTF_8);
-    assertEquals("hello", STUB.decodeToString(buf, 2, 5, 25));
-  }
-
-  @Test
   void decodeGenericOffset() {
     byte[] buf = "XXhelloYY".getBytes(StandardCharsets.UTF_8);
     assertEquals("hello", STUB.decode(buf, 2, 5, String.class));
@@ -285,11 +273,6 @@ class BinaryCodecDefaultsTest {
   }
 
   // ===== Default array methods return null =====
-
-  @Test
-  void decodeArrayElementsDefaultReturnsNull() {
-    assertNull(STUB.decodeArrayElements(new byte[] {}));
-  }
 
   @Test
   void decodeArrayElementDecoderDefaultReturnsNull() {

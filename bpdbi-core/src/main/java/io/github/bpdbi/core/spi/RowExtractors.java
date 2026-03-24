@@ -33,47 +33,17 @@ public final class RowExtractors {
   public static final Map<Class<?>, BiFunction<Row, Integer, Object>> EXTRACTORS =
       Map.ofEntries(
           Map.entry(String.class, Row::getString),
-          Map.entry(
-              int.class,
-              (r, c) -> {
-                Integer v = r.getInteger(c);
-                return v == null ? 0 : v;
-              }),
+          Map.entry(int.class, (r, c) -> r.isNull(c) ? 0 : r.getIntValue(c)),
           Map.entry(Integer.class, Row::getInteger),
-          Map.entry(
-              long.class,
-              (r, c) -> {
-                Long v = r.getLong(c);
-                return v == null ? 0L : v;
-              }),
+          Map.entry(long.class, (r, c) -> r.isNull(c) ? 0L : r.getLongValue(c)),
           Map.entry(Long.class, Row::getLong),
-          Map.entry(
-              short.class,
-              (r, c) -> {
-                Short v = r.getShort(c);
-                return v == null ? (short) 0 : v;
-              }),
+          Map.entry(short.class, (r, c) -> r.isNull(c) ? (short) 0 : r.getShortValue(c)),
           Map.entry(Short.class, Row::getShort),
-          Map.entry(
-              float.class,
-              (r, c) -> {
-                Float v = r.getFloat(c);
-                return v == null ? 0f : v;
-              }),
+          Map.entry(float.class, (r, c) -> r.isNull(c) ? 0f : r.getFloatValue(c)),
           Map.entry(Float.class, Row::getFloat),
-          Map.entry(
-              double.class,
-              (r, c) -> {
-                Double v = r.getDouble(c);
-                return v == null ? 0d : v;
-              }),
+          Map.entry(double.class, (r, c) -> r.isNull(c) ? 0d : r.getDoubleValue(c)),
           Map.entry(Double.class, Row::getDouble),
-          Map.entry(
-              boolean.class,
-              (r, c) -> {
-                Boolean v = r.getBoolean(c);
-                return v != null && v;
-              }),
+          Map.entry(boolean.class, (r, c) -> !r.isNull(c) && r.getBoolValue(c)),
           Map.entry(Boolean.class, Row::getBoolean),
           Map.entry(BigDecimal.class, Row::getBigDecimal),
           Map.entry(UUID.class, Row::getUUID),

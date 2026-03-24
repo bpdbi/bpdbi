@@ -1,9 +1,10 @@
 package io.github.bpdbi.pool;
 
 import io.github.bpdbi.core.Connection;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -44,10 +45,10 @@ public final class ConnectionPool implements AutoCloseable {
   private final @Nullable ScheduledExecutorService cleaner;
   private final @Nullable ScheduledFuture<?> cleanerTask;
 
-  // Leak detection: only tracked when leak detection is enabled. Uses a CopyOnWriteArrayList
-  // since writes (acquire/release) are infrequent relative to the cleaner's read sweeps, and
-  // this avoids the ConcurrentHashMap overhead on every acquire/release.
-  private final @Nullable CopyOnWriteArrayList<PooledConnection> activeForLeakDetection;
+  // Leak detection: only tracked when leak detection is enabled. Uses a ConcurrentHashMap-backed
+  // set for O(1) add/remove on every acquire/release, since those are more frequent than the
+  // cleaner's read sweeps.
+  private final @Nullable Set<PooledConnection> activeForLeakDetection;
 
   // Converted config values from millis to nanos, cached to avoid repeated conversion.
   private final long maxIdleTimeNanos;
@@ -73,7 +74,7 @@ public final class ConnectionPool implements AutoCloseable {
 
     // Only allocate the active-connections list when leak detection is enabled
     this.activeForLeakDetection =
-        config.leakDetectionThresholdMillis() > 0 ? new CopyOnWriteArrayList<>() : null;
+        config.leakDetectionThresholdMillis() > 0 ? ConcurrentHashMap.newKeySet() : null;
 
     boolean needsCleaner =
         config.poolCleanerPeriodMillis() > 0

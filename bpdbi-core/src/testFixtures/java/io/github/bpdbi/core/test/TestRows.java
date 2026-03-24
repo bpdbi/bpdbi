@@ -13,9 +13,12 @@ public final class TestRows {
 
   private TestRows() {}
 
-  /** Create a minimal ColumnDescriptor with just a name and no type info. */
+  /** OID for the Postgres TEXT type — used as default for test columns. */
+  private static final int OID_TEXT = 25;
+
+  /** Create a minimal ColumnDescriptor with a name and TEXT type OID. */
   public static ColumnDescriptor col(String name) {
-    return new ColumnDescriptor(name, 0, (short) 0, 0, (short) 0, 0);
+    return new ColumnDescriptor(name, 0, (short) 0, OID_TEXT, (short) 0, 0);
   }
 
   /** Build a Row from column names and string values. Null values produce SQL NULL. */

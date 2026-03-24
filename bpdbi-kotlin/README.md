@@ -170,9 +170,8 @@ val uuid = Uuid.random()
 conn.query("INSERT INTO items (id, name) VALUES ($1, $2)", uuid, "widget")
 ```
 
-Or register on the registries directly for more control:
+Or register on the type registry directly for more control:
 
 ```kotlin
-conn.binderRegistry().registerKotlinTypes() // for parameter binding
-conn.mapperRegistry().registerKotlinTypes() // for Row.get(col, KotlinType::class.java)
+conn.typeRegistry().registerKotlinTypes()
 ```

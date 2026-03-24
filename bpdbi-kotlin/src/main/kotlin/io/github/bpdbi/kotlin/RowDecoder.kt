@@ -252,7 +252,8 @@ class RowDecoder(
       PrimitiveKind.SHORT -> row.getShortArray(col)
       PrimitiveKind.BOOLEAN -> row.getBooleanArray(col)
       PrimitiveKind.STRING -> row.getStringArray(col)
-      else -> row.getStringArray(col) // fallback: string elements for other types
+      else -> throw SerializationException(
+        "Unsupported array element kind: $elementKind. Use Int, Long, Double, Float, Short, Boolean, or String.")
     }
   }
 
