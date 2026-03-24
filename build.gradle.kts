@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.github.bpdbi"
-version = "0.1.0"
+version = "0.2.0"
 
 subprojects {
   group = rootProject.group
@@ -66,7 +66,7 @@ subprojects {
 
       pom {
         name = project.name
-        description = "Blocking pipelined SQL client for Postgres"
+        description = "Blocking pipelined db interface for Postgres"
         url = "https://github.com/bpdbi/bpdbi"
         licenses {
           license {

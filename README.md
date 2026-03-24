@@ -80,9 +80,9 @@ JDK 21, single-threaded. All numbers are **ops/s** (higher is better).
 | **Bulk insert** (100 rows) | 313 | 171 | **1.8x** |
 | **Cursor fetch** (1000 rows) | 281 | 30 | **9.3x** |
 | **Large value streaming** | 152 | 82 | **1.9x** |
-| Single row lookup | 370 | 370 |       1x |
-| Multi-row fetch (10 rows) | 358 | 358 |       1x |
-| Join query | 271 | 271 |       1x |
+| Single row lookup | 370 | 370 |   on par |
+| Multi-row fetch (10 rows) | 358 | 358 |   on par |
+| Join query | 271 | 271 |   on par |
 
 Anything that touches the network more than once — transactions, batches, sequential lookups —
 gets a **5-17x** speedup from pipelining. Single-query performance is on par with raw `pgjdbc`:
