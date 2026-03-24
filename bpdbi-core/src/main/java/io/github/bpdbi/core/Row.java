@@ -131,6 +131,7 @@ public final class Row {
     this.values = newValues;
   }
 
+  /** Return the number of columns in this row. */
   public int size() {
     return columns.length;
   }
@@ -175,6 +176,7 @@ public final class Row {
     return true;
   }
 
+  /** Return {@code true} if the column at the given index is SQL NULL. */
   public boolean isNull(int index) {
     ColumnBuffer[] b = this.buffers;
     if (b != null) {
@@ -183,6 +185,7 @@ public final class Row {
     return values[index] == null;
   }
 
+  /** Return {@code true} if the named column is SQL NULL. */
   public boolean isNull(@NonNull String columnName) {
     return isNull(columnIndex(columnName));
   }
@@ -203,6 +206,10 @@ public final class Row {
 
   // --- String ---
 
+  /**
+   * Return the column value as a String, or {@code null} if SQL NULL. Works for text, varchar, and
+   * JSON/JSONB columns. For non-text columns, use the appropriate typed getter instead.
+   */
   public @Nullable String getString(int index) {
     if (!readValue(index)) {
       return null;
@@ -221,6 +228,7 @@ public final class Row {
             + "). Use typed getters instead.");
   }
 
+  /** Return the named column value as a String, or {@code null} if SQL NULL. */
   public @Nullable String getString(@NonNull String columnName) {
     return getString(columnIndex(columnName));
   }
@@ -230,6 +238,7 @@ public final class Row {
   // Eliminating the BinaryDecoder functional interface dispatch and the
   // generic decode() method saves ~2-3 virtual calls per getter invocation.
 
+  /** Return the column value as an Integer, or {@code null} if SQL NULL. */
   public @Nullable Integer getInteger(int index) {
     if (!readValue(index)) {
       return null;
@@ -242,11 +251,16 @@ public final class Row {
     };
   }
 
+  /** Return the named column value as an Integer, or {@code null} if SQL NULL. */
   public @Nullable Integer getInteger(@NonNull String columnName) {
     return getInteger(columnIndex(columnName));
   }
 
-  /** Primitive int getter — avoids autoboxing. Throws if the column is NULL. */
+  /**
+   * Return the column value as a primitive {@code int}. Avoids autoboxing.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public int getIntValue(int index) {
     if (!readValue(index)) {
       throw new NullPointerException("Column " + index + " is NULL");
@@ -259,10 +273,16 @@ public final class Row {
     };
   }
 
+  /**
+   * Return the named column value as a primitive {@code int}.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public int getIntValue(@NonNull String columnName) {
     return getIntValue(columnIndex(columnName));
   }
 
+  /** Return the column value as a Long, or {@code null} if SQL NULL. */
   public @Nullable Long getLong(int index) {
     if (!readValue(index)) {
       return null;
@@ -275,11 +295,16 @@ public final class Row {
     };
   }
 
+  /** Return the named column value as a Long, or {@code null} if SQL NULL. */
   public @Nullable Long getLong(@NonNull String columnName) {
     return getLong(columnIndex(columnName));
   }
 
-  /** Primitive long getter — avoids autoboxing. Throws if the column is NULL. */
+  /**
+   * Return the column value as a primitive {@code long}. Avoids autoboxing.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public long getLongValue(int index) {
     if (!readValue(index)) {
       throw new NullPointerException("Column " + index + " is NULL");
@@ -292,10 +317,16 @@ public final class Row {
     };
   }
 
+  /**
+   * Return the named column value as a primitive {@code long}.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public long getLongValue(@NonNull String columnName) {
     return getLongValue(columnIndex(columnName));
   }
 
+  /** Return the column value as a Short, or {@code null} if SQL NULL. */
   public @Nullable Short getShort(int index) {
     if (!readValue(index)) {
       return null;
@@ -303,11 +334,16 @@ public final class Row {
     return binaryCodec.decodeInt2(vBuf, vOff);
   }
 
+  /** Return the named column value as a Short, or {@code null} if SQL NULL. */
   public @Nullable Short getShort(@NonNull String columnName) {
     return getShort(columnIndex(columnName));
   }
 
-  /** Primitive short getter — avoids autoboxing. Throws if the column is NULL. */
+  /**
+   * Return the column value as a primitive {@code short}. Avoids autoboxing.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public short getShortValue(int index) {
     if (!readValue(index)) {
       throw new NullPointerException("Column " + index + " is NULL");
@@ -315,20 +351,31 @@ public final class Row {
     return binaryCodec.decodeInt2(vBuf, vOff);
   }
 
+  /**
+   * Return the named column value as a primitive {@code short}.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public short getShortValue(@NonNull String columnName) {
     return getShortValue(columnIndex(columnName));
   }
 
+  /** Return the column value as a Float, or {@code null} if SQL NULL. */
   public @Nullable Float getFloat(int index) {
     if (!readValue(index)) return null;
     return binaryCodec.decodeFloat4(vBuf, vOff);
   }
 
+  /** Return the named column value as a Float, or {@code null} if SQL NULL. */
   public @Nullable Float getFloat(@NonNull String columnName) {
     return getFloat(columnIndex(columnName));
   }
 
-  /** Primitive float getter — avoids autoboxing. Throws if the column is NULL. */
+  /**
+   * Return the column value as a primitive {@code float}. Avoids autoboxing.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public float getFloatValue(int index) {
     if (!readValue(index)) {
       throw new NullPointerException("Column " + index + " is NULL");
@@ -336,10 +383,16 @@ public final class Row {
     return binaryCodec.decodeFloat4(vBuf, vOff);
   }
 
+  /**
+   * Return the named column value as a primitive {@code float}.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public float getFloatValue(@NonNull String columnName) {
     return getFloatValue(columnIndex(columnName));
   }
 
+  /** Return the column value as a Double, or {@code null} if SQL NULL. */
   public @Nullable Double getDouble(int index) {
     if (!readValue(index)) return null;
     return switch (vLen) {
@@ -349,11 +402,16 @@ public final class Row {
     };
   }
 
+  /** Return the named column value as a Double, or {@code null} if SQL NULL. */
   public @Nullable Double getDouble(@NonNull String columnName) {
     return getDouble(columnIndex(columnName));
   }
 
-  /** Primitive double getter — avoids autoboxing. Throws if the column is NULL. */
+  /**
+   * Return the column value as a primitive {@code double}. Avoids autoboxing.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public double getDoubleValue(int index) {
     if (!readValue(index)) {
       throw new NullPointerException("Column " + index + " is NULL");
@@ -365,18 +423,26 @@ public final class Row {
     };
   }
 
+  /**
+   * Return the named column value as a primitive {@code double}.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public double getDoubleValue(@NonNull String columnName) {
     return getDoubleValue(columnIndex(columnName));
   }
 
+  /** Return the column value as a BigDecimal ({@code numeric}), or {@code null} if SQL NULL. */
   public @Nullable BigDecimal getBigDecimal(int index) {
     return decode(index, BinaryCodec::decodeNumeric);
   }
 
+  /** Return the named column value as a BigDecimal, or {@code null} if SQL NULL. */
   public @Nullable BigDecimal getBigDecimal(@NonNull String columnName) {
     return getBigDecimal(columnIndex(columnName));
   }
 
+  /** Return the column value as a Boolean, or {@code null} if SQL NULL. */
   public @Nullable Boolean getBoolean(int index) {
     if (!readValue(index)) {
       return null;
@@ -384,11 +450,16 @@ public final class Row {
     return binaryCodec.decodeBool(vBuf, vOff);
   }
 
+  /** Return the named column value as a Boolean, or {@code null} if SQL NULL. */
   public @Nullable Boolean getBoolean(@NonNull String columnName) {
     return getBoolean(columnIndex(columnName));
   }
 
-  /** Primitive boolean getter — avoids autoboxing. Throws if the column is NULL. */
+  /**
+   * Return the column value as a primitive {@code boolean}. Avoids autoboxing.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public boolean getBoolValue(int index) {
     if (!readValue(index)) {
       throw new NullPointerException("Column " + index + " is NULL");
@@ -396,70 +467,95 @@ public final class Row {
     return binaryCodec.decodeBool(vBuf, vOff);
   }
 
+  /**
+   * Return the named column value as a primitive {@code boolean}.
+   *
+   * @throws NullPointerException if the column is SQL NULL
+   */
   public boolean getBoolValue(@NonNull String columnName) {
     return getBoolValue(columnIndex(columnName));
   }
 
   // --- Date/time ---
 
+  /** Return the column value as a LocalDate ({@code date}), or {@code null} if SQL NULL. */
   public @Nullable LocalDate getLocalDate(int index) {
     return decode(index, BinaryCodec::decodeDate);
   }
 
+  /** Return the named column value as a LocalDate, or {@code null} if SQL NULL. */
   public @Nullable LocalDate getLocalDate(@NonNull String columnName) {
     return getLocalDate(columnIndex(columnName));
   }
 
+  /** Return the column value as a LocalTime ({@code time}), or {@code null} if SQL NULL. */
   public @Nullable LocalTime getLocalTime(int index) {
     return decode(index, BinaryCodec::decodeTime);
   }
 
+  /** Return the named column value as a LocalTime, or {@code null} if SQL NULL. */
   public @Nullable LocalTime getLocalTime(@NonNull String columnName) {
     return getLocalTime(columnIndex(columnName));
   }
 
+  /**
+   * Return the column value as a LocalDateTime ({@code timestamp}), or {@code null} if SQL NULL.
+   */
   public @Nullable LocalDateTime getLocalDateTime(int index) {
     return decode(index, BinaryCodec::decodeTimestamp);
   }
 
+  /** Return the named column value as a LocalDateTime, or {@code null} if SQL NULL. */
   public @Nullable LocalDateTime getLocalDateTime(@NonNull String columnName) {
     return getLocalDateTime(columnIndex(columnName));
   }
 
+  /**
+   * Return the column value as an OffsetDateTime ({@code timestamptz}), or {@code null} if SQL
+   * NULL.
+   */
   public @Nullable OffsetDateTime getOffsetDateTime(int index) {
     return decode(index, BinaryCodec::decodeTimestamptz);
   }
 
+  /** Return the named column value as an OffsetDateTime, or {@code null} if SQL NULL. */
   public @Nullable OffsetDateTime getOffsetDateTime(@NonNull String columnName) {
     return getOffsetDateTime(columnIndex(columnName));
   }
 
+  /** Return the column value as an Instant ({@code timestamptz}), or {@code null} if SQL NULL. */
   public @Nullable Instant getInstant(int index) {
     return decode(index, (c, buf, off, len) -> c.decodeTimestamptz(buf, off, len).toInstant());
   }
 
+  /** Return the named column value as an Instant, or {@code null} if SQL NULL. */
   public @Nullable Instant getInstant(@NonNull String columnName) {
     return getInstant(columnIndex(columnName));
   }
 
+  /** Return the column value as an OffsetTime ({@code timetz}), or {@code null} if SQL NULL. */
   public @Nullable OffsetTime getOffsetTime(int index) {
     return decode(index, BinaryCodec::decodeTimetz);
   }
 
+  /** Return the named column value as an OffsetTime, or {@code null} if SQL NULL. */
   public @Nullable OffsetTime getOffsetTime(@NonNull String columnName) {
     return getOffsetTime(columnIndex(columnName));
   }
 
   // --- Other types ---
 
+  /** Return the column value as a UUID, or {@code null} if SQL NULL. */
   public @Nullable UUID getUUID(int index) {
     return decode(index, BinaryCodec::decodeUuid);
   }
 
+  /** Return the named column value as a UUID, or {@code null} if SQL NULL. */
   public @Nullable UUID getUUID(@NonNull String columnName) {
     return getUUID(columnIndex(columnName));
   }
 
+  /** Return the column value as a byte array ({@code bytea}), or {@code null} if SQL NULL. */
   public byte @Nullable [] getBytes(int index) {
     if (!readValue(index)) {
       return null;
@@ -467,12 +563,36 @@ public final class Row {
     return binaryCodec.decodeBytes(vBuf, vOff, vLen);
   }
 
+  /** Return the named column value as a byte array, or {@code null} if SQL NULL. */
   public byte @Nullable [] getBytes(@NonNull String columnName) {
     return getBytes(columnIndex(columnName));
   }
 
   // --- Generic typed access via TypeRegistry ---
 
+  /**
+   * Return the column value decoded to the requested type, or {@code null} if SQL NULL.
+   *
+   * <p>Resolution order:
+   *
+   * <ol>
+   *   <li><b>JSON</b> — if a {@link JsonMapper} is configured and the column is JSON/JSONB (by OID)
+   *       or the type is registered via {@link TypeRegistry#registerAsJson}, the value is
+   *       deserialized as JSON.
+   *   <li><b>Binary codec</b> — standard types ({@code String}, {@code Integer}, {@code UUID},
+   *       {@code LocalDate}, etc.) are decoded directly from binary wire format.
+   *   <li><b>TypeRegistry</b> — custom types registered via {@link TypeRegistry#register} are
+   *       decoded through their standard type (e.g., {@code Money} via {@code BigDecimal}).
+   *   <li><b>Enum</b> — enum types are decoded from the column's string value via {@code
+   *       Enum.valueOf()}.
+   * </ol>
+   *
+   * @param index the zero-based column index
+   * @param type the target Java type
+   * @param <T> the target type
+   * @return the decoded value, or {@code null} if SQL NULL
+   * @throws IllegalStateException if the type cannot be decoded by any of the above paths
+   */
   @SuppressWarnings({
     "unchecked",
     "rawtypes"
@@ -512,6 +632,7 @@ public final class Row {
             + ".class, ...).");
   }
 
+  /** Return the named column value decoded to the requested type, or {@code null} if SQL NULL. */
   public <T> @Nullable T get(@NonNull String columnName, @NonNull Class<T> type) {
     return get(columnIndex(columnName), type);
   }
@@ -530,6 +651,7 @@ public final class Row {
     return binaryCodec.decodeArray(raw, (buf, off, len) -> binaryCodec.decodeString(buf, off, len));
   }
 
+  /** Parse the named column as a string array. Returns {@code null} if SQL NULL. */
   public @Nullable List<String> getStringArray(@NonNull String columnName) {
     return getStringArray(columnIndex(columnName));
   }

@@ -163,6 +163,7 @@ public final class ConnectionConfig {
     return config;
   }
 
+  /** The hostname to connect to. Default: {@code "localhost"}. */
   public @NonNull String host() {
     return host;
   }
@@ -172,6 +173,10 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /**
+   * The port to connect to. Default: 5432 when parsed from a {@code postgresql://} URI, 0
+   * otherwise.
+   */
   public int port() {
     return port;
   }
@@ -181,6 +186,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** The database name, or {@code null} to use the server default. */
   public @Nullable String database() {
     return database;
   }
@@ -190,6 +196,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** The username for authentication. */
   public @Nullable String username() {
     return username;
   }
@@ -199,6 +206,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** The password for authentication. */
   public @Nullable String password() {
     return password;
   }
@@ -208,6 +216,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** The SSL mode. Default: {@link SslMode#DISABLE}. */
   public @NonNull SslMode sslMode() {
     return sslMode;
   }
@@ -217,6 +226,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** A custom SSLContext, or {@code null} to use the default. */
   public @Nullable SSLContext sslContext() {
     return sslContext;
   }
@@ -226,6 +236,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** Path to a PEM CA certificate file for SSL verification. */
   public @Nullable String pemCertPath() {
     return pemCertPath;
   }
@@ -235,6 +246,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** Path to a JKS trust store for SSL verification. */
   public @Nullable String trustStorePath() {
     return trustStorePath;
   }
@@ -244,6 +256,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** Password for the JKS trust store. */
   public @Nullable String trustStorePassword() {
     return trustStorePassword;
   }
@@ -253,6 +266,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** Whether to verify the server hostname against the SSL certificate. Default: {@code false}. */
   public boolean hostnameVerification() {
     return hostnameVerification;
   }
@@ -279,6 +293,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** Extra connection properties sent during startup (e.g., {@code search_path}). */
   public @Nullable Map<String, String> properties() {
     return properties;
   }
@@ -288,6 +303,10 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /**
+   * Whether to cache prepared statements client-side. When enabled, repeated queries with the same
+   * SQL skip the Parse step. Default: {@code false}.
+   */
   public boolean cachePreparedStatements() {
     return cachePreparedStatements;
   }
@@ -297,6 +316,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** Maximum number of cached prepared statements per connection. Default: 256. */
   public int preparedStatementCacheMaxSize() {
     return preparedStatementCacheMaxSize;
   }
@@ -307,6 +327,7 @@ public final class ConnectionConfig {
     return this;
   }
 
+  /** SQL strings longer than this (in chars) are not cached. Default: 2048. */
   public int preparedStatementCacheSqlLimit() {
     return preparedStatementCacheSqlLimit;
   }

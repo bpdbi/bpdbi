@@ -44,7 +44,11 @@ public final class TypeRegistry {
   /**
    * Register a custom type mapping. The encoder converts domain → standard type (for params), the
    * decoder converts standard → domain type (for results). Pass null for either function to
-   * indicate that direction is not supported — using the null direction at runtime throws.
+   * indicate that direction is not supported — using the null direction at runtime throws a
+   * descriptive {@link IllegalStateException}.
+   *
+   * <p>Lookup supports supertype matching: registering {@code Animal.class} also matches {@code
+   * Dog.class} if {@code Dog extends Animal}. Exact matches take priority over supertypes.
    *
    * @param domainType the custom type (e.g., {@code Money.class})
    * @param standardType the binary-codec-supported type it maps to (e.g., {@code BigDecimal.class})
@@ -118,7 +122,8 @@ public final class TypeRegistry {
    * @param off offset into the buffer
    * @param len length of the value
    * @return the decoded domain-type value
-   * @throws IllegalStateException if no decoder is registered for the type
+   * @throws IllegalStateException if no entry is registered for the type, or if the entry was
+   *     registered with a null decoder (encode-only)
    */
   @SuppressWarnings("unchecked") // safe: entries keyed by Class<T>, decoder returns T
   public <T> @NonNull T decode(
@@ -154,7 +159,10 @@ public final class TypeRegistry {
     return (T) ((Function<Object, ?>) entry.resultTypeDecoder).apply(standardValue);
   }
 
-  /** Check if a decoder is available for the given type. */
+  /**
+   * Return {@code true} if a decoder is registered for the given type (or a supertype). Use this to
+   * check before calling {@link #decode} to avoid {@link IllegalStateException}.
+   */
   public boolean canDecode(@NonNull Class<?> type) {
     Entry<?> entry = findEntry(type);
     return entry != null && entry.resultTypeDecoder != null;
@@ -162,7 +170,7 @@ public final class TypeRegistry {
 
   /**
    * Find an entry by exact type match first, then by supertype scan. Supertype matches are promoted
-   * to exact matches so subsequent lookups for the same type are O(1).
+   * to exact matches, so later lookups for the same type are O(1).
    */
   private @Nullable Entry<?> findEntry(@NonNull Class<?> type) {
     Entry<?> exact = entries.get(type);

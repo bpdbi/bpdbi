@@ -901,7 +901,7 @@ class PgConnectionTest extends AbstractConnectionTest {
     try (var conn = connect()) {
       var rs = conn.query("SELECT :name AS name, :age AS age", Map.of("name", "Alice", "age", 30));
       assertEquals("Alice", rs.first().getString("name"));
-      assertEquals("30", rs.first().getString("age"));
+      assertEquals(30, rs.first().getInteger("age"));
     }
   }
 
@@ -1287,11 +1287,12 @@ class PgConnectionTest extends AbstractConnectionTest {
   @Test
   void queryStreamSimple() {
     try (var conn = connect()) {
-      var names = new ArrayList<String>();
-      conn.queryStream("SELECT generate_series(1, 100) AS n", row -> names.add(row.getString("n")));
-      assertEquals(100, names.size());
-      assertEquals("1", names.getFirst());
-      assertEquals("100", names.getLast());
+      var values = new ArrayList<Integer>();
+      conn.queryStream(
+          "SELECT generate_series(1, 100) AS n", row -> values.add(row.getInteger("n")));
+      assertEquals(100, values.size());
+      assertEquals(1, values.getFirst());
+      assertEquals(100, values.getLast());
     }
   }
 
@@ -1682,7 +1683,7 @@ class PgConnectionTest extends AbstractConnectionTest {
       conn.queryStream(
           "SELECT generate_series(1, 500) AS n",
           row -> {
-            assertNotNull(row.getString("n"));
+            assertNotNull(row.getInteger("n"));
             count[0]++;
           });
       assertEquals(500, count[0]);
@@ -2106,8 +2107,8 @@ class PgConnectionTest extends AbstractConnectionTest {
       var u1 = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
       var u2 = java.util.UUID.fromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
       conn.query("INSERT INTO param_ulist VALUES ($1)", List.of(u1, u2));
-      var arr = conn.query("SELECT vals FROM param_ulist").first().getStringArray("vals");
-      assertEquals(List.of(u1.toString(), u2.toString()), arr);
+      var arr = conn.query("SELECT vals FROM param_ulist").first().getUuidArray("vals");
+      assertEquals(List.of(u1, u2), arr);
     }
   }
 

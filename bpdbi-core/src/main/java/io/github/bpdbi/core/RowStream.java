@@ -13,7 +13,12 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A closeable, iterable stream of rows backed by direct wire-protocol reading. Rows are fetched
- * lazily from the server — constant memory regardless of result size.
+ * lazily from the server — constant memory regardless of result size. Does not require a
+ * transaction.
+ *
+ * <p><b>When to use RowStream vs {@link Cursor}:</b> Use RowStream for simple constant-memory
+ * iteration (no transaction needed). Use {@link Cursor} when you need explicit batch control (e.g.,
+ * processing N rows at a time) — cursors require a transaction.
  *
  * <p>Must be closed after use to drain any remaining server messages and keep the connection in a
  * clean state. Use with try-with-resources:

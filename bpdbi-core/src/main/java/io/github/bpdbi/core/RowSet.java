@@ -60,26 +60,53 @@ public final class RowSet implements Iterable<Row> {
     }
   }
 
+  /**
+   * Return the number of rows. For INSERT/UPDATE/DELETE, this is typically 0 — use {@link
+   * #rowsAffected()} instead.
+   *
+   * @throws DbException if this RowSet represents a failed pipelined statement
+   */
   public int size() {
     checkError();
     return rows.size();
   }
 
+  /**
+   * Return {@code true} if the result contains no rows.
+   *
+   * @throws DbException if this RowSet represents a failed pipelined statement
+   */
   public boolean isEmpty() {
     checkError();
     return rows.isEmpty();
   }
 
+  /**
+   * Return the number of rows affected by an INSERT, UPDATE, or DELETE statement.
+   *
+   * @throws DbException if this RowSet represents a failed pipelined statement
+   */
   public int rowsAffected() {
     checkError();
     return rowsAffected;
   }
 
+  /**
+   * Return the column descriptors for this result set.
+   *
+   * @throws DbException if this RowSet represents a failed pipelined statement
+   */
   public @NonNull List<ColumnDescriptor> columnDescriptors() {
     checkError();
     return columns;
   }
 
+  /**
+   * Return the first row.
+   *
+   * @throws IllegalStateException if the result is empty
+   * @throws DbException if this RowSet represents a failed pipelined statement
+   */
   public @NonNull Row first() {
     checkError();
     if (rows.isEmpty()) {
@@ -88,7 +115,11 @@ public final class RowSet implements Iterable<Row> {
     return rows.getFirst();
   }
 
-  /** Return the first row, or null if the result is empty. */
+  /**
+   * Return the first row, or {@code null} if the result is empty.
+   *
+   * @throws DbException if this RowSet represents a failed pipelined statement
+   */
   public @Nullable Row firstOrNull() {
     checkError();
     return rows.isEmpty() ? null : rows.getFirst();
@@ -100,6 +131,11 @@ public final class RowSet implements Iterable<Row> {
     return rows.get(index);
   }
 
+  /**
+   * Return a stream over the rows.
+   *
+   * @throws DbException if this RowSet represents a failed pipelined statement
+   */
   public @NonNull Stream<Row> stream() {
     checkError();
     return rows.stream();
@@ -140,6 +176,11 @@ public final class RowSet implements Iterable<Row> {
     return row != null ? mapper.map(row) : null;
   }
 
+  /**
+   * Return the error from a failed pipelined statement, or {@code null} if the statement succeeded.
+   * This is the only RowSet method that does not throw on error — use it to check before accessing
+   * rows.
+   */
   @Nullable
   public DbException getError() {
     return error;

@@ -79,7 +79,13 @@ public final class PgConnection extends BaseConnection {
     this.decoder = decoder;
   }
 
-  /** Connect to a Postgres server. */
+  /**
+   * Connect to a Postgres server.
+   *
+   * @throws DbConnectionException if the connection cannot be established (network error, DNS
+   *     failure, connection refused)
+   * @throws DbException if authentication fails or the server rejects the connection
+   */
   public static @NonNull PgConnection connect(
       @NonNull String host,
       int port,
@@ -115,7 +121,12 @@ public final class PgConnection extends BaseConnection {
     return connect(config);
   }
 
-  /** Connect using a ConnectionConfig (supports URI parsing, SSL, and all options). */
+  /**
+   * Connect using a ConnectionConfig (supports URI parsing, SSL, and all options).
+   *
+   * @throws DbConnectionException if the connection cannot be established
+   * @throws DbException if authentication fails or the server rejects the connection
+   */
   public static @NonNull PgConnection connect(@NonNull ConnectionConfig config) {
     try {
       Socket socket = new Socket(config.host(), config.port() > 0 ? config.port() : 5432);

@@ -151,23 +151,7 @@ public final class PgBinaryCodec implements BinaryCodec {
     int nDigits = decodeInt2At(buf, offset) & 0xFFFF;
     int weight = (short) decodeInt2At(buf, offset + 2);
     int sign = decodeInt2At(buf, offset + 4);
-    int dScale = decodeInt2At(buf, offset + 6);
-
-    switch (sign) {
-      case NUMERIC_POS, NUMERIC_NEG -> {}
-      case NUMERIC_NAN -> throw new ArithmeticException("Postgres NUMERIC value is NaN");
-      case NUMERIC_PINF ->
-          throw new ArithmeticException("Postgres NUMERIC value is positive infinity");
-      case NUMERIC_NINF ->
-          throw new ArithmeticException("Postgres NUMERIC value is negative infinity");
-      default ->
-          throw new IllegalArgumentException(
-              "Invalid sign in NUMERIC value: 0x" + Integer.toHexString(sign));
-    }
-
-    if ((dScale & NUMERIC_DSCALE_MASK) != dScale) {
-      throw new IllegalArgumentException("Invalid scale in NUMERIC value: " + dScale);
-    }
+    int dScale = getDScale(buf, offset, sign);
 
     if (nDigits == 0) {
       return BigDecimal.ZERO.setScale(dScale, RoundingMode.UNNECESSARY);
@@ -269,7 +253,7 @@ public final class PgBinaryCodec implements BinaryCodec {
       int bigDecScale = (nDigits - (weight + 1)) * 4;
       return bigDecScale == 0
           ? new BigDecimal(unscaledBI)
-          : new BigDecimal(unscaledBI, bigDecScale).setScale(0);
+          : new BigDecimal(unscaledBI, bigDecScale).setScale(0, RoundingMode.UNNECESSARY);
     }
 
     // --- Path 3: general case (has both integer and fractional parts) ---
@@ -326,6 +310,27 @@ public final class PgBinaryCodec implements BinaryCodec {
       unscaledBI = unscaledBI.negate();
     }
     return new BigDecimal(unscaledBI, dScale);
+  }
+
+  private int getDScale(byte @NonNull [] buf, int offset, int sign) {
+    int dScale = decodeInt2At(buf, offset + 6);
+
+    switch (sign) {
+      case NUMERIC_POS, NUMERIC_NEG -> {}
+      case NUMERIC_NAN -> throw new ArithmeticException("Postgres NUMERIC value is NaN");
+      case NUMERIC_PINF ->
+          throw new ArithmeticException("Postgres NUMERIC value is positive infinity");
+      case NUMERIC_NINF ->
+          throw new ArithmeticException("Postgres NUMERIC value is negative infinity");
+      default ->
+          throw new IllegalArgumentException(
+              "Invalid sign in NUMERIC value: 0x" + Integer.toHexString(sign));
+    }
+
+    if ((dScale & NUMERIC_DSCALE_MASK) != dScale) {
+      throw new IllegalArgumentException("Invalid scale in NUMERIC value: " + dScale);
+    }
+    return dScale;
   }
 
   @Override
@@ -853,11 +858,11 @@ public final class PgBinaryCodec implements BinaryCodec {
     if (value.length < 12) {
       return List.of();
     }
-    int ndim = decodeInt4At(value, 0);
-    if (ndim == 0) {
+    int nDim = decodeInt4At(value, 0);
+    if (nDim == 0) {
       return List.of();
     }
-    if (ndim != 1) {
+    if (nDim != 1) {
       return null;
     }
     int dimension = decodeInt4At(value, 12);
@@ -917,14 +922,14 @@ public final class PgBinaryCodec implements BinaryCodec {
   }
 
   public static void encodeNumeric(@NonNull BigDecimal value, @NonNull ByteBuffer buf) {
-    int dscale = Math.max(0, value.scale());
+    int dScale = Math.max(0, value.scale());
 
     if (value.signum() == 0) {
       buf.writeInt(8);
-      buf.writeShort(0); // ndigits
+      buf.writeShort(0); // nDigits
       buf.writeShort(0); // weight
       buf.writeShort(NUMERIC_POS);
-      buf.writeShort(dscale);
+      buf.writeShort(dScale);
       return;
     }
 
@@ -950,31 +955,32 @@ public final class PgBinaryCodec implements BinaryCodec {
       intLen = 0;
     }
 
-    // Pad so integer part is a multiple of 4 (left) and fractional part is a multiple of 4 (right)
+    // Pad so integer part is a multiple of 4 (left), and the fractional part is a multiple of 4
+    // (right)
     int leftPad = (4 - (intLen % 4)) % 4;
     int fracLen = digits.length() - intLen;
     int rightPad = fracLen > 0 ? (4 - (fracLen % 4)) % 4 : 0;
     String padded = "0".repeat(leftPad) + digits + "0".repeat(rightPad);
 
     // Split into base-10000 groups
-    int ndigits = padded.length() / 4;
+    int nDigits = padded.length() / 4;
     int weight = (intLen + leftPad) / 4 - 1;
 
-    // Strip trailing zero groups (they're implied by dscale)
-    int actualNdigits = ndigits;
-    while (actualNdigits > 0) {
-      int groupStart = (actualNdigits - 1) * 4;
+    // Strip trailing zero groups (they're implied by dScale)
+    int actualNDigits = nDigits;
+    while (actualNDigits > 0) {
+      int groupStart = (actualNDigits - 1) * 4;
       if (parseGroup(padded, groupStart) != 0) break;
-      actualNdigits--;
+      actualNDigits--;
     }
 
     // header: 4 shorts = 8 bytes, plus 2 bytes per digit group
-    buf.writeInt(8 + actualNdigits * 2);
-    buf.writeShort(actualNdigits);
+    buf.writeInt(8 + actualNDigits * 2);
+    buf.writeShort(actualNDigits);
     buf.writeShort(weight);
     buf.writeShort(sign);
-    buf.writeShort(dscale);
-    for (int i = 0; i < actualNdigits; i++) {
+    buf.writeShort(dScale);
+    for (int i = 0; i < actualNDigits; i++) {
       buf.writeShort(parseGroup(padded, i * 4));
     }
   }

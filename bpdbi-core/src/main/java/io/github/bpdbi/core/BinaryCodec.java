@@ -101,51 +101,12 @@ public interface BinaryCodec {
   }
 
   /**
-   * Decode binary bytes directly to the given Java type, bypassing text conversion. Delegates to
-   * the offset-based methods using offset 0 and full array length.
+   * Decode binary bytes directly to the given Java type. Delegates to the offset-based overload.
    *
    * @throws IllegalArgumentException if the type is not supported (check {@link #canDecode} first)
    */
-  @SuppressWarnings("unchecked") // safe: each branch returns the exact type requested
-  @NonNull
-  default <T> T decode(byte @NonNull [] value, @NonNull Class<T> type) {
-    Object result;
-    if (type == String.class) {
-      result = decodeString(value, 0, value.length);
-    } else if (type == Integer.class) {
-      result = decodeInt4(value, 0);
-    } else if (type == Long.class) {
-      result = decodeInt8(value, 0);
-    } else if (type == Short.class) {
-      result = decodeInt2(value, 0);
-    } else if (type == Float.class) {
-      result = decodeFloat4(value, 0);
-    } else if (type == Double.class) {
-      result = decodeFloat8(value, 0);
-    } else if (type == Boolean.class) {
-      result = decodeBool(value, 0);
-    } else if (type == BigDecimal.class) {
-      result = decodeNumeric(value, 0, value.length);
-    } else if (type == UUID.class) {
-      result = decodeUuid(value, 0, value.length);
-    } else if (type == LocalDate.class) {
-      result = decodeDate(value, 0, value.length);
-    } else if (type == LocalTime.class) {
-      result = decodeTime(value, 0, value.length);
-    } else if (type == LocalDateTime.class) {
-      result = decodeTimestamp(value, 0, value.length);
-    } else if (type == OffsetDateTime.class) {
-      result = decodeTimestamptz(value, 0, value.length);
-    } else if (type == OffsetTime.class) {
-      result = decodeTimetz(value, 0, value.length);
-    } else if (type == Instant.class) {
-      result = decodeTimestamptz(value, 0, value.length).toInstant();
-    } else if (type == byte[].class) {
-      result = decodeBytes(value, 0, value.length);
-    } else {
-      throw new IllegalArgumentException("BinaryCodec cannot decode type: " + type.getName());
-    }
-    return (T) result;
+  default <T> @NonNull T decode(byte @NonNull [] value, @NonNull Class<T> type) {
+    return decode(value, 0, value.length, type);
   }
 
   // --- Functional interfaces for offset-based decoding ---
