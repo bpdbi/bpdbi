@@ -131,6 +131,48 @@ public class BulkInsertBenchmark {
     }
   }
 
+  // --- jOOQ ---
+
+  @Benchmark
+  public void jdbc_jooq_batch(DatabaseState db, Blackhole bh) {
+    db.jooq()
+        .transaction(
+            cfg -> {
+              var ctx = org.jooq.impl.DSL.using(cfg);
+              for (var params : paramSets) {
+                ctx.execute(JDBC_SQL, params);
+              }
+            });
+  }
+
+  // --- Sql2o ---
+
+  @Benchmark
+  public void jdbc_sql2o_batch(DatabaseState db, Blackhole bh) {
+    try (var con = db.sql2o().beginTransaction()) {
+      for (var params : paramSets) {
+        con.createQuery(JDBC_SQL).withParams(params).executeUpdate();
+      }
+      con.commit();
+    }
+  }
+
+  // --- Spring JdbcTemplate ---
+
+  @Benchmark
+  public void jdbc_spring_batch(DatabaseState db, Blackhole bh) {
+    db.jdbcTemplate()
+        .batchUpdate(
+            JDBC_SQL,
+            paramSets,
+            paramSets.size(),
+            (ps, params) -> {
+              ps.setInt(1, (int) params[0]);
+              ps.setBigDecimal(2, (BigDecimal) params[1]);
+              ps.setString(3, (String) params[2]);
+            });
+  }
+
   // --- Vert.x ---
 
   // @Benchmark  // Vert.x disabled: not a meaningful comparison

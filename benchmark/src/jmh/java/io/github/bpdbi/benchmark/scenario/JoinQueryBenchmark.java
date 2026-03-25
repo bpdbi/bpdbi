@@ -142,6 +142,47 @@ public class JoinQueryBenchmark {
     }
   }
 
+  // --- jOOQ ---
+
+  @Benchmark
+  public void jdbc_jooq(DatabaseState db, Blackhole bh) {
+    var results = db.jooq().fetch(JDBC_SQL, userId);
+    bh.consume(results);
+  }
+
+  // --- Sql2o ---
+
+  @Benchmark
+  public void jdbc_sql2o(DatabaseState db, Blackhole bh) {
+    try (var con = db.sql2o().open()) {
+      var results =
+          con.createQuery(JDBC_SQL).withParams(userId).executeAndFetch(OrderSummaryBean.class);
+      bh.consume(results);
+    }
+  }
+
+  // --- Spring JdbcTemplate ---
+
+  @Benchmark
+  public void jdbc_spring(DatabaseState db, Blackhole bh) {
+    var results =
+        db.jdbcTemplate()
+            .query(
+                JDBC_SQL,
+                (rs, rowNum) -> {
+                  var o = new OrderSummaryBean();
+                  o.setId(rs.getInt("id"));
+                  o.setTotal(rs.getBigDecimal("total"));
+                  o.setStatus(rs.getString("status"));
+                  o.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                  o.setUsername(rs.getString("username"));
+                  o.setItemCount(rs.getLong("item_count"));
+                  return o;
+                },
+                userId);
+    bh.consume(results);
+  }
+
   // --- Vert.x ---
 
   // @Benchmark  // Vert.x disabled: not a meaningful comparison

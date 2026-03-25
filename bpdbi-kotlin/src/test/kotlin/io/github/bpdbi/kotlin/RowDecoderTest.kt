@@ -383,4 +383,42 @@ class RowDecoderTest {
     val result = serializer<CharHolder>().deserialize(RowDecoder(r))
     assertEquals('A', result.value)
   }
+
+  @Test
+  fun `decode byte type`() {
+    @Serializable
+    data class ByteHolder(val value: Byte)
+
+    val r = testRow("42")
+    val result = serializer<ByteHolder>().deserialize(RowDecoder(r))
+    assertEquals(42.toByte(), result.value)
+  }
+
+  @Test
+  fun `nullable nested with all null fields returns null`() {
+    // When all columns for a nullable nested object are NULL, the result should be null
+    val r = testRow("1", null, null)
+    val result = serializer<WithNullableNested>().deserialize(RowDecoder(r))
+    assertEquals(1, result.id)
+    assertNull(result.address)
+  }
+
+  @Test
+  fun `two optional nested both null`() {
+    val r = testRow("1", null, null, null, null)
+    val result = serializer<TwoOptionalNested>().deserialize(RowDecoder(r))
+    assertEquals(1, result.id)
+    assertNull(result.address)
+    assertNull(result.phone)
+  }
+
+  @Test
+  fun `nullable date time types with null`() {
+    val r = testRow("1", null, null, null)
+    val result = serializer<WithNullableDateTime>().deserialize(RowDecoder(r))
+    assertEquals(1, result.id)
+    assertNull(result.date)
+    assertNull(result.time)
+    assertNull(result.dateTime)
+  }
 }

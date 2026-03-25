@@ -273,4 +273,96 @@ class NamedParamParserTest {
     assertEquals("SELECT /* :not_a_param */ $1", result.sql());
     assertEquals(1, result.params().length);
   }
+
+  // --- Primitive array expansion for all types ---
+
+  @Test
+  void longArrayExpansion() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE id IN (:ids)", Map.of("ids", new long[] {10L, 20L}), "$");
+    assertEquals("SELECT * FROM t WHERE id IN ($1, $2)", result.sql());
+    assertArrayEquals(new Object[] {10L, 20L}, result.params());
+  }
+
+  @Test
+  void doubleArrayExpansion() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE v IN (:vals)", Map.of("vals", new double[] {1.5, 2.5}), "$");
+    assertEquals("SELECT * FROM t WHERE v IN ($1, $2)", result.sql());
+    assertArrayEquals(new Object[] {1.5, 2.5}, result.params());
+  }
+
+  @Test
+  void floatArrayExpansion() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE v IN (:vals)", Map.of("vals", new float[] {1.0f, 2.0f}), "$");
+    assertEquals("SELECT * FROM t WHERE v IN ($1, $2)", result.sql());
+    assertArrayEquals(new Object[] {1.0f, 2.0f}, result.params());
+  }
+
+  @Test
+  void shortArrayExpansion() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE v IN (:vals)",
+            Map.of("vals", new short[] {(short) 1, (short) 2}),
+            "$");
+    assertEquals("SELECT * FROM t WHERE v IN ($1, $2)", result.sql());
+    assertArrayEquals(new Object[] {(short) 1, (short) 2}, result.params());
+  }
+
+  @Test
+  void booleanArrayExpansion() {
+    var result =
+        NamedParamParser.parse(
+            "SELECT * FROM t WHERE v IN (:vals)", Map.of("vals", new boolean[] {true, false}), "$");
+    assertEquals("SELECT * FROM t WHERE v IN ($1, $2)", result.sql());
+    assertArrayEquals(new Object[] {true, false}, result.params());
+  }
+
+  // --- String literal edge cases ---
+
+  @Test
+  void escapedSingleQuoteInLiteral() {
+    // '' is an escaped single quote inside a string literal
+    var result = NamedParamParser.parse("SELECT 'it''s fine' WHERE id = :id", Map.of("id", 1), "$");
+    assertEquals("SELECT 'it''s fine' WHERE id = $1", result.sql());
+    assertEquals(1, result.params().length);
+  }
+
+  @Test
+  void backslashEscapeInLiteral() {
+    var result =
+        NamedParamParser.parse("SELECT 'path\\:fake' WHERE id = :id", Map.of("id", 1), "$");
+    assertEquals("SELECT 'path\\:fake' WHERE id = $1", result.sql());
+    assertEquals(1, result.params().length);
+  }
+
+  @Test
+  void lineCommentAtEndOfSql() {
+    // Line comment with no trailing newline
+    var result = NamedParamParser.parse("SELECT :val -- trailing comment", Map.of("val", 1), "$");
+    assertEquals("SELECT $1 -- trailing comment", result.sql());
+    assertEquals(1, result.params().length);
+  }
+
+  @Test
+  void unterminatedBlockComment() {
+    var result = NamedParamParser.parse("SELECT :val /* unterminated", Map.of("val", 1), "$");
+    assertEquals("SELECT $1 /* unterminated", result.sql());
+    assertEquals(1, result.params().length);
+  }
+
+  @Test
+  void escapedDoubleQuoteInIdentifier() {
+    // "" is an escaped double quote inside a double-quoted identifier
+    var result =
+        NamedParamParser.parse(
+            "SELECT \"col\"\"name\" FROM t WHERE id = :id", Map.of("id", 1), "$");
+    assertEquals("SELECT \"col\"\"name\" FROM t WHERE id = $1", result.sql());
+    assertEquals(1, result.params().length);
+  }
 }

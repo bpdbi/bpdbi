@@ -1052,4 +1052,145 @@ class PgBinaryCodecTest {
     assertTrue(codec.canDecode(byte[].class));
     assertFalse(codec.canDecode(Thread.class));
   }
+
+  @Test
+  void canDecodeGeometricAndNetworkTypes() {
+    assertTrue(codec.canDecode(Point.class));
+    assertTrue(codec.canDecode(Line.class));
+    assertTrue(codec.canDecode(LineSegment.class));
+    assertTrue(codec.canDecode(Box.class));
+    assertTrue(codec.canDecode(Path.class));
+    assertTrue(codec.canDecode(Polygon.class));
+    assertTrue(codec.canDecode(Circle.class));
+    assertTrue(codec.canDecode(Interval.class));
+    assertTrue(codec.canDecode(Money.class));
+    assertTrue(codec.canDecode(Inet.class));
+    assertTrue(codec.canDecode(Cidr.class));
+    assertTrue(codec.canDecode(io.github.bpdbi.pg.data.Macaddr.class));
+    assertTrue(codec.canDecode(io.github.bpdbi.pg.data.Macaddr8.class));
+    assertTrue(codec.canDecode(io.github.bpdbi.pg.data.BitString.class));
+  }
+
+  // =====================================================================
+  // Macaddr / Macaddr8 / BitString encode→decode round-trips
+  // =====================================================================
+
+  @Test
+  void macaddrEncodeDecodeRoundTrip() {
+    var m = new io.github.bpdbi.pg.data.Macaddr(new byte[] {0x08, 0x00, 0x2b, 0x01, 0x02, 0x03});
+    var decoded = codec.decodeMacaddr(PgBinaryCodec.encodeMacaddr(m));
+    assertEquals(m.toString(), decoded.toString());
+  }
+
+  @Test
+  void macaddr8EncodeDecodeRoundTrip() {
+    var m =
+        new io.github.bpdbi.pg.data.Macaddr8(
+            new byte[] {0x08, 0x00, 0x2b, 0x01, 0x02, 0x03, 0x04, 0x05});
+    var decoded = codec.decodeMacaddr8(PgBinaryCodec.encodeMacaddr8(m));
+    assertEquals(m.toString(), decoded.toString());
+  }
+
+  @Test
+  void bitStringEncodeDecodeRoundTrip() {
+    var bs = new io.github.bpdbi.pg.data.BitString(8, new byte[] {(byte) 0xB1});
+    var decoded = codec.decodeBitString(PgBinaryCodec.encodeBitString(bs));
+    assertEquals(bs.bitCount(), decoded.bitCount());
+    assertEquals(bs.toString(), decoded.toString());
+  }
+
+  // =====================================================================
+  // decode(byte[], Class) for geometric/network types
+  // =====================================================================
+
+  @Test
+  void decodeTypedPoint() {
+    var p = new Point(1.5, 2.5);
+    byte[] data = PgBinaryCodec.encodePoint(p);
+    assertEquals(p, codec.decode(data, Point.class));
+  }
+
+  @Test
+  void decodeTypedLine() {
+    var l = new Line(1.0, 2.0, 3.0);
+    byte[] data = PgBinaryCodec.encodeLine(l);
+    assertEquals(l, codec.decode(data, Line.class));
+  }
+
+  @Test
+  void decodeTypedLineSegment() {
+    var ls = new LineSegment(new Point(1.0, 2.0), new Point(3.0, 4.0));
+    byte[] data = PgBinaryCodec.encodeLseg(ls);
+    assertEquals(ls, codec.decode(data, LineSegment.class));
+  }
+
+  @Test
+  void decodeTypedBox() {
+    var b = new Box(new Point(3.0, 4.0), new Point(1.0, 2.0));
+    byte[] data = PgBinaryCodec.encodeBox(b);
+    assertEquals(b, codec.decode(data, Box.class));
+  }
+
+  @Test
+  void decodeTypedCircle() {
+    var c = new Circle(new Point(1.0, 2.0), 3.0);
+    byte[] data = PgBinaryCodec.encodeCircle(c);
+    assertEquals(c, codec.decode(data, Circle.class));
+  }
+
+  @Test
+  void decodeTypedInterval() {
+    var i = new Interval(1, 2, 3, 4, 5, 6, 0);
+    byte[] data = PgBinaryCodec.encodeInterval(i);
+    assertEquals(i, codec.decode(data, Interval.class));
+  }
+
+  @Test
+  void decodeTypedMoney() {
+    var m = new Money(new BigDecimal("99.99"));
+    byte[] data = PgBinaryCodec.encodeMoney(m);
+    assertEquals(m.bigDecimalValue(), codec.decode(data, Money.class).bigDecimalValue());
+  }
+
+  @Test
+  void decodeTypedInet() throws Exception {
+    var inet = new Inet(InetAddress.getByName("10.0.0.1"), null);
+    byte[] data = PgBinaryCodec.encodeInet(inet);
+    assertEquals(inet.address(), codec.decode(data, Inet.class).address());
+  }
+
+  @Test
+  void decodeTypedCidr() throws Exception {
+    var cidr = new Cidr(InetAddress.getByName("192.168.0.0"), 16);
+    byte[] data = PgBinaryCodec.encodeCidr(cidr);
+    var decoded = codec.decode(data, Cidr.class);
+    assertEquals(cidr.address(), decoded.address());
+    assertEquals(16, decoded.netmask());
+  }
+
+  @Test
+  void decodeTypedMacaddr() {
+    var m = new io.github.bpdbi.pg.data.Macaddr(new byte[] {0x08, 0x00, 0x2b, 0x01, 0x02, 0x03});
+    byte[] data = PgBinaryCodec.encodeMacaddr(m);
+    assertEquals(
+        m.toString(), codec.decode(data, io.github.bpdbi.pg.data.Macaddr.class).toString());
+  }
+
+  @Test
+  void decodeTypedMacaddr8() {
+    var m =
+        new io.github.bpdbi.pg.data.Macaddr8(
+            new byte[] {0x08, 0x00, 0x2b, 0x01, 0x02, 0x03, 0x04, 0x05});
+    byte[] data = PgBinaryCodec.encodeMacaddr8(m);
+    assertEquals(
+        m.toString(), codec.decode(data, io.github.bpdbi.pg.data.Macaddr8.class).toString());
+  }
+
+  @Test
+  void decodeTypedBitString() {
+    var bs = new io.github.bpdbi.pg.data.BitString(8, new byte[] {(byte) 0xA5});
+    byte[] data = PgBinaryCodec.encodeBitString(bs);
+    assertEquals(
+        bs.toString(), codec.decode(data, io.github.bpdbi.pg.data.BitString.class).toString());
+  }
 }

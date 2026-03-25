@@ -15,6 +15,7 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.jdbi.v3.core.mapper.reflect.BeanMapper;
+import org.jooq.impl.DSL;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -229,6 +230,60 @@ public class ManyBindingsBenchmark {
     }
   }
 
+  // --- jOOQ batch ---
+
+  @Benchmark
+  public void insert_jdbc_jooq(DatabaseState db, Blackhole bh) {
+    db.jooq()
+        .transaction(
+            cfg -> {
+              var ctx = DSL.using(cfg);
+              for (var params : paramSets) {
+                ctx.execute(JDBC_INSERT_SQL, params);
+              }
+            });
+  }
+
+  // --- Sql2o ---
+
+  @Benchmark
+  public void insert_jdbc_sql2o(DatabaseState db, Blackhole bh) {
+    try (var con = db.sql2o().beginTransaction()) {
+      for (var params : paramSets) {
+        con.createQuery(JDBC_INSERT_SQL).withParams(params).executeUpdate();
+      }
+      con.commit();
+    }
+  }
+
+  // --- Spring JdbcTemplate batch ---
+
+  @Benchmark
+  public void insert_jdbc_spring(DatabaseState db, Blackhole bh) {
+    db.jdbcTemplate()
+        .batchUpdate(
+            JDBC_INSERT_SQL,
+            paramSets,
+            paramSets.size(),
+            (ps, params) -> {
+              ps.setObject(1, params[0]); // UUID
+              ps.setString(2, (String) params[1]);
+              ps.setInt(3, (int) params[2]);
+              ps.setLong(4, (long) params[3]);
+              ps.setBigDecimal(5, (BigDecimal) params[4]);
+              ps.setBigDecimal(6, (BigDecimal) params[5]);
+              ps.setBoolean(7, (boolean) params[6]);
+              ps.setBoolean(8, (boolean) params[7]);
+              ps.setString(9, (String) params[8]);
+              ps.setString(10, (String) params[9]);
+              ps.setString(11, (String) params[10]);
+              ps.setString(12, (String) params[11]);
+              ps.setObject(13, params[12]); // UUID
+              ps.setObject(14, params[13]); // LocalDateTime
+              ps.setObject(15, params[14]); // LocalDateTime
+            });
+  }
+
   // --- Vert.x batch ---
 
   // @Benchmark  // Vert.x disabled: not a meaningful comparison
@@ -375,6 +430,59 @@ public class ManyBindingsBenchmark {
               .getResultList();
       bh.consume(results);
     }
+  }
+
+  // --- jOOQ select ---
+
+  @Benchmark
+  public void select_jdbc_jooq(DatabaseState db, Blackhole bh) {
+    var results = db.jooq().fetch(JDBC_SELECT_SQL, selectUserId);
+    bh.consume(results);
+  }
+
+  // --- Sql2o select ---
+
+  @Benchmark
+  public void select_jdbc_sql2o(DatabaseState db, Blackhole bh) {
+    try (var con = db.sql2o().open()) {
+      var events =
+          con.createQuery(JDBC_SELECT_SQL)
+              .withParams(selectUserId)
+              .executeAndFetch(EventBean.class);
+      bh.consume(events);
+    }
+  }
+
+  // --- Spring JdbcTemplate select ---
+
+  @Benchmark
+  public void select_jdbc_spring(DatabaseState db, Blackhole bh) {
+    var events =
+        db.jdbcTemplate()
+            .query(
+                JDBC_SELECT_SQL,
+                (rs, rowNum) -> {
+                  var e = new EventBean();
+                  e.setId(rs.getInt("id"));
+                  e.setEventUuid(rs.getObject("event_uuid", UUID.class));
+                  e.setEventType(rs.getString("event_type"));
+                  e.setUserId(rs.getInt("user_id"));
+                  e.setSequenceNum(rs.getLong("sequence_num"));
+                  e.setAmount(rs.getBigDecimal("amount"));
+                  e.setDiscount(rs.getBigDecimal("discount"));
+                  e.setProcessed(rs.getBoolean("processed"));
+                  e.setFlagged(rs.getBoolean("flagged"));
+                  e.setSource(rs.getString("source"));
+                  e.setCategory(rs.getString("category"));
+                  e.setNotes(rs.getString("notes"));
+                  e.setReferenceCode(rs.getString("reference_code"));
+                  e.setCorrelationId(rs.getObject("correlation_id", UUID.class));
+                  e.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                  e.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
+                  return e;
+                },
+                selectUserId);
+    bh.consume(events);
   }
 
   // --- Vert.x ---

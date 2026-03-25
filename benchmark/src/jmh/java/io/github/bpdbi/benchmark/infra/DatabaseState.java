@@ -27,11 +27,16 @@ import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.kotlin.KotlinPlugin;
+import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DSL;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.sql2o.Sql2o;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.ToxiproxyContainer;
@@ -74,6 +79,9 @@ public class DatabaseState {
   private HikariDataSource hikariDataSource;
   private Jdbi jdbi;
   private SessionFactory sessionFactory;
+  private DSLContext jooq;
+  private Sql2o sql2o;
+  private JdbcTemplate jdbcTemplate;
 
   // Vert.x
   private Vertx vertx;
@@ -120,6 +128,18 @@ public class DatabaseState {
 
   public SessionFactory sessionFactory() {
     return sessionFactory;
+  }
+
+  public DSLContext jooq() {
+    return jooq;
+  }
+
+  public Sql2o sql2o() {
+    return sql2o;
+  }
+
+  public JdbcTemplate jdbcTemplate() {
+    return jdbcTemplate;
   }
 
   public synchronized Vertx vertx() {
@@ -358,6 +378,15 @@ public class DatabaseState {
     cfg.addAnnotatedClass(OrderItemEntity.class);
     cfg.addAnnotatedClass(EventEntity.class);
     sessionFactory = cfg.buildSessionFactory();
+
+    // jOOQ
+    jooq = DSL.using(hikariDataSource, SQLDialect.POSTGRES);
+
+    // Sql2o
+    sql2o = new Sql2o(hikariDataSource);
+
+    // Spring JdbcTemplate
+    jdbcTemplate = new JdbcTemplate(hikariDataSource);
   }
 
   private String benchJdbcUrl() {

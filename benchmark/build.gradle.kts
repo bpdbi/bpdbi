@@ -20,6 +20,9 @@ dependencies {
   jmh(libs.jdbi.kotlin)
   jmh(kotlin("reflect"))
   jmh(libs.hibernate.core)
+  jmh(libs.jooq)
+  jmh(libs.sql2o)
+  jmh(libs.spring.jdbc)
 
   jmh(libs.vertx.pg.client)
   // Suppress "Cannot find annotation method" warnings from Vert.x codegen and Jdbi annotations

@@ -13,6 +13,9 @@ postgresql-jdbc = "42.7.5"
 hikaricp = "6.2.1"
 jdbi = "3.47.0"
 hibernate = "6.6.5.Final"
+jooq = "3.19.18"
+sql2o = "1.8.0"
+spring = "6.2.5"
 vertx = "5.0.8"
 error-prone = "2.36.0"
 jmh = "1.37"
@@ -40,6 +43,9 @@ hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 jdbi-core = { module = "org.jdbi:jdbi3-core", version.ref = "jdbi" }
 jdbi-kotlin = { module = "org.jdbi:jdbi3-kotlin", version.ref = "jdbi" }
 hibernate-core = { module = "org.hibernate.orm:hibernate-core", version.ref = "hibernate" }
+jooq = { module = "org.jooq:jooq", version.ref = "jooq" }
+sql2o = { module = "org.sql2o:sql2o", version.ref = "sql2o" }
+spring-jdbc = { module = "org.springframework:spring-jdbc", version.ref = "spring" }
 vertx-pg-client = { module = "io.vertx:vertx-pg-client", version.ref = "vertx" }
 vertx-codegen-api = { module = "io.vertx:vertx-codegen-api", version.ref = "vertx" }
 vertx-codegen-json = { module = "io.vertx:vertx-codegen-json", version.ref = "vertx" }

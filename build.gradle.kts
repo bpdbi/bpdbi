@@ -68,7 +68,13 @@ tasks.register<JacocoReport>("jacocoAggregateReport") {
 
   classDirectories.setFrom(
     libraryProjects.flatMap { sub ->
-      sub.the<SourceSetContainer>()["main"].output.classesDirs
+      sub.the<SourceSetContainer>()["main"].output.classesDirs.map { dir ->
+        fileTree(dir) {
+          // Kotlin inline functions are inlined at call sites, so JaCoCo can't measure
+          // coverage on the source file. Exclude to avoid dragging down the score.
+          exclude("**/kotlin/ExtensionsKt*.class")
+        }
+      }
     }
   )
 

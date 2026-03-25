@@ -42,9 +42,13 @@ inline fun <reified T : Any> Connection.queryOneAs(sql: String, params: Map<Stri
 
 /**
  * Execute [block] within a transaction and return the result. Commits on normal return, rolls back
- * on exception. Equivalent to [Connection.inTransaction] but idiomatic for Kotlin.
+ * on exception.
+ *
+ * Named `inTx` (not `inTransaction`) to avoid shadowing the same-named Java default method on
+ * [Connection]. Kotlin's overload resolution always prefers Java default methods over extensions
+ * with identical signatures, which would make an identically named extension unreachable.
  */
-inline fun <T> Connection.inTransaction(block: (Transaction) -> T): T {
+inline fun <T> Connection.inTx(block: (Transaction) -> T): T {
   val tx = begin()
   try {
     val result = block(tx)
@@ -58,9 +62,11 @@ inline fun <T> Connection.inTransaction(block: (Transaction) -> T): T {
 
 /**
  * Execute [block] within a transaction. Commits on normal return, rolls back on exception.
- * Equivalent to [Connection.useTransaction] but idiomatic for Kotlin.
+ *
+ * Named `useTx` (not `useTransaction`) to avoid shadowing the same-named Java default method on
+ * [Connection]. See [inTx] for rationale.
  */
-inline fun Connection.useTransaction(block: (Transaction) -> Unit) {
+inline fun Connection.useTx(block: (Transaction) -> Unit) {
   val tx = begin()
   try {
     block(tx)

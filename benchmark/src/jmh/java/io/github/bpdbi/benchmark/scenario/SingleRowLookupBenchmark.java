@@ -141,6 +141,47 @@ public class SingleRowLookupBenchmark {
     }
   }
 
+  // --- jOOQ ---
+
+  @Benchmark
+  public void jdbc_jooq(DatabaseState db, Blackhole bh) {
+    var user = db.jooq().fetchOne(JDBC_SQL, userId);
+    bh.consume(user);
+  }
+
+  // --- Sql2o ---
+
+  @Benchmark
+  public void jdbc_sql2o(DatabaseState db, Blackhole bh) {
+    try (var con = db.sql2o().open()) {
+      var user = con.createQuery(JDBC_SQL).withParams(userId).executeAndFetchFirst(UserBean.class);
+      bh.consume(user);
+    }
+  }
+
+  // --- Spring JdbcTemplate ---
+
+  @Benchmark
+  public void jdbc_spring(DatabaseState db, Blackhole bh) {
+    var user =
+        db.jdbcTemplate()
+            .queryForObject(
+                JDBC_SQL,
+                (rs, rowNum) -> {
+                  var u = new UserBean();
+                  u.setId(rs.getInt("id"));
+                  u.setUsername(rs.getString("username"));
+                  u.setEmail(rs.getString("email"));
+                  u.setFullName(rs.getString("full_name"));
+                  u.setBio(rs.getString("bio"));
+                  u.setActive(rs.getBoolean("active"));
+                  u.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                  return u;
+                },
+                userId);
+    bh.consume(user);
+  }
+
   // --- Vert.x ---
 
   // @Benchmark  // Vert.x disabled: not a meaningful comparison

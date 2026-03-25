@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.testcontainers.containers.PostgreSQLContainer
@@ -68,6 +69,9 @@ class PgIntegrationTest {
 
   @Serializable
   data class WithNullableArray(val id: Int, val tags: List<String>?)
+
+  @Serializable
+  data class WithStringSet(val id: Int, val tags: Set<String>)
 
   @Serializable
   enum class Status { ACTIVE, INACTIVE }
@@ -376,10 +380,75 @@ class PgIntegrationTest {
     }
   }
 
-  // NOTE: Extensions.kt defines inTransaction/useTransaction as inline extensions on Connection,
-  // but Java's Connection interface also declares same-named default methods. Kotlin's overload
-  // resolution always prefers the member (Java default) over the extension, making the Kotlin
-  // extensions effectively unreachable. The Java defaults are tested in PgConnectionTransactionTest.
+  @Test
+  fun `set deserialization from text array`() {
+    connect().use { conn ->
+      conn.query("CREATE TEMP TABLE t (id int, tags text[])")
+      conn.query("INSERT INTO t VALUES ($1, $2::text[])", 1, "{hello,world,hello}")
+
+      val result = conn.query("SELECT id, tags FROM t WHERE id = $1", 1)
+        .deserializeToList<WithStringSet>()
+
+      assertEquals(1, result.size)
+      assertEquals(setOf("hello", "world"), result[0].tags)
+    }
+  }
+
+  // --- Extensions.kt: inTx / useTx ---
+
+  @Test
+  fun `inTx commits on success`() {
+    connect().use { conn ->
+      conn.query("CREATE TEMP TABLE kt_tx (id int)")
+      val result = conn.inTx { tx ->
+        tx.query("INSERT INTO kt_tx VALUES (1)")
+        tx.query("INSERT INTO kt_tx VALUES (2)")
+        42
+      }
+      assertEquals(42, result)
+      assertEquals(2L, conn.query("SELECT count(*) FROM kt_tx").first().getLong(0))
+    }
+  }
+
+  @Test
+  fun `inTx rolls back on exception`() {
+    connect().use { conn ->
+      conn.query("CREATE TEMP TABLE kt_tx_rb (id int)")
+      assertThrows<RuntimeException> {
+        conn.inTx { tx ->
+          tx.query("INSERT INTO kt_tx_rb VALUES (1)")
+          throw RuntimeException("boom")
+        }
+      }
+      assertEquals(0L, conn.query("SELECT count(*) FROM kt_tx_rb").first().getLong(0))
+    }
+  }
+
+  @Test
+  fun `useTx commits on success`() {
+    connect().use { conn ->
+      conn.query("CREATE TEMP TABLE kt_use_tx (id int)")
+      conn.useTx { tx ->
+        tx.query("INSERT INTO kt_use_tx VALUES (1)")
+        tx.query("INSERT INTO kt_use_tx VALUES (2)")
+      }
+      assertEquals(2L, conn.query("SELECT count(*) FROM kt_use_tx").first().getLong(0))
+    }
+  }
+
+  @Test
+  fun `useTx rolls back on exception`() {
+    connect().use { conn ->
+      conn.query("CREATE TEMP TABLE kt_use_rb (id int)")
+      assertThrows<RuntimeException> {
+        conn.useTx { tx ->
+          tx.query("INSERT INTO kt_use_rb VALUES (1)")
+          throw RuntimeException("boom")
+        }
+      }
+      assertEquals(0L, conn.query("SELECT count(*) FROM kt_use_rb").first().getLong(0))
+    }
+  }
 
   // --- KotlinTypes ---
 

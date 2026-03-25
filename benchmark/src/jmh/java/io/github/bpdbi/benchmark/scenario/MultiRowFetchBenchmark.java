@@ -132,6 +132,50 @@ public class MultiRowFetchBenchmark {
     }
   }
 
+  // --- jOOQ ---
+
+  @Benchmark
+  public void jdbc_jooq(DatabaseState db, Blackhole bh) {
+    var category = DatabaseState.categoryForParam(categoryIdx);
+    var products = db.jooq().fetch(JDBC_SQL, category);
+    bh.consume(products);
+  }
+
+  // --- Sql2o ---
+
+  @Benchmark
+  public void jdbc_sql2o(DatabaseState db, Blackhole bh) {
+    var category = DatabaseState.categoryForParam(categoryIdx);
+    try (var con = db.sql2o().open()) {
+      var products =
+          con.createQuery(JDBC_SQL).withParams(category).executeAndFetch(ProductBean.class);
+      bh.consume(products);
+    }
+  }
+
+  // --- Spring JdbcTemplate ---
+
+  @Benchmark
+  public void jdbc_spring(DatabaseState db, Blackhole bh) {
+    var category = DatabaseState.categoryForParam(categoryIdx);
+    var products =
+        db.jdbcTemplate()
+            .query(
+                JDBC_SQL,
+                (rs, rowNum) -> {
+                  var p = new ProductBean();
+                  p.setId(rs.getInt("id"));
+                  p.setName(rs.getString("name"));
+                  p.setDescription(rs.getString("description"));
+                  p.setPrice(rs.getBigDecimal("price"));
+                  p.setCategory(rs.getString("category"));
+                  p.setStock(rs.getInt("stock"));
+                  return p;
+                },
+                category);
+    bh.consume(products);
+  }
+
   // --- Vert.x ---
 
   // @Benchmark  // Vert.x disabled: not a meaningful comparison
