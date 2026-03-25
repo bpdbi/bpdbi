@@ -1196,8 +1196,9 @@ Note that HikariCP is JDBC-specific and thus not compatible.
 
 ## Recommended HTTP frameworks
 
-Bpdbi uses blocking I/O and is designed for virtual threads — it pairs well with HTTP frameworks that
-are not mandatorily reactive/async:
+Bpdbi can be used anywhere a JVM app wants to access Postgres.
+But since web programming is big lately, we list some frameworks that are not mandatorily reactive/async
+and thus pair well with Bpdbi:
 
 - **[http4k](https://www.http4k.org/)** — Functional, zero-reflection, tiny. The philosophical twin
   of bpdbi on the HTTP side.
