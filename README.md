@@ -1,6 +1,7 @@
 <p align="center">
-<img src="https://github.com/bpdbi/bpdbi/blob/master/docs/images/bpdbi-logo.svg?raw=true" width="100" alt="Bpdbi's logo"/>
+<img src="https://github.com/bpdbi/bpdbi/blob/master/docs/images/bpdbi-logo.svg?raw=true" width="200" alt="Bpdbi's logo"/>
 </p>
+
 ### Blocking Pipelined Database Interface for Postgres on the JVM
 
 [![CI](https://github.com/bpdbi/bpdbi/actions/workflows/ci.yml/badge.svg)](https://github.com/bpdbi/bpdbi/actions/workflows/ci.yml)
