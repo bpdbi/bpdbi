@@ -1,13 +1,15 @@
 # Benchmark Suite
 
-JMH benchmarks comparing **bpdbi** against JDBC-based libraries (raw JDBC, Jdbi, Hibernate,
+JMH benchmarks comparing **Bpdbi** against JDBC-based libraries (raw JDBC, Jdbi, Hibernate,
 jOOQ, Sql2o, Spring JdbcTemplate).
 All benchmarks use **pooled connections** — unpooled variants were removed because connection
 setup (TCP + SASL auth) dominates the measurement and tells you nothing about query performance.
 
-We used to also include a benchmark for the Vert.x reactive PG client, but since the benchmark
-library we use is threaded (and Vert.x is async/reactive) the results were not representative.
-We decided to remove it.
+Vert.x benchmarks are currently **disabled** (commented out). They call
+`.toCompletionStage().toCompletableFuture().join()` to block, since JMH is synchronous.
+This adds overhead from the async-to-sync hop that wouldn't exist with a fully reactive
+code base — the numbers represent Vert.x used from blocking code (e.g. virtual threads),
+not its optimal async mode.
 
 ## Running
 
@@ -29,21 +31,23 @@ Results are written to `$PROJECT_ROOT/benchmark/build/reports/jmh/results.json`.
 
 ## What's Being Compared
 
-| Label prefix     | Driver / Library                    | Pool           |
-|------------------|-------------------------------------|----------------|
-| `bpdbi_*`        | bpdbi (blocking, pipelined)         | bpdbi pool     |
-| `jdbc_raw`       | PG JDBC driver                      | HikariCP       |
-| `jdbc_jdbi_*`    | Jdbi (over JDBC)                    | HikariCP       |
-| `jdbc_hibernate` | Hibernate ORM (over JDBC)           | Hibernate pool |
-| `jdbc_jooq`      | jOOQ (over JDBC)                    | HikariCP       |
-| `jdbc_sql2o`     | Sql2o (over JDBC)                   | HikariCP       |
-| `jdbc_spring`    | Spring JdbcTemplate (over JDBC)     | HikariCP       |
+| Label prefix     | Library                         | Pool           |
+|------------------|---------------------------------|----------------|
+| `bpdbi_*`        | bpdbi (blocking, pipelined)     | bpdbi-pool     |
+| `jdbc_raw`       | Raw JDBC                        | HikariCP       |
+| `jdbc_jdbi_*`    | Jdbi (over JDBC)                | HikariCP       |
+| `jdbc_hibernate` | Hibernate ORM (over JDBC)       | Hibernate pool |
+| `jdbc_jooq`      | jOOQ (over JDBC)                | HikariCP       |
+| `jdbc_sql2o`     | Sql2o (over JDBC)               | HikariCP       |
+| `jdbc_spring`    | Spring JdbcTemplate (over JDBC) | HikariCP       |
 
-Vert.x benchmarks are currently **disabled** (commented out). They call
-`.toCompletionStage().toCompletableFuture().join()` to block, since JMH is synchronous.
-This adds overhead from the async-to-sync hop that wouldn't exist with a fully reactive
-code base — the numbers represent Vert.x used from blocking code (e.g. virtual threads),
-not its optimal async mode.
+All except Bpdbi and Vert.x (which we currently do not run) use the `pgjdbc` (or `org.postgres:postgres`) driver,
+which —as then name implies— implements the JDBC interface found in the JDK, thereby making them unable to
+support Postgres pipelining.
+
+Most of these libraries use the JVM's reflection APIs.
+We have [documented why JVM reflection is problematic](../docs/problems-with-jvm-reflection.md).
+
 
 ## Scenarios
 
