@@ -162,9 +162,9 @@ These tests are straightforward to generate with AI assistance and catch schema 
 typos, and type errors at test time rather than compile time — with far less machinery.
 
 **Dependency minimalism** — Bpdbi incurs a tiny dependency (<100k) compared to Vert.x/Netty (5MB+),
-the Postgres JDBC driver (&tilde;1.1MB). It also provides named parameters,
-row mapping, and type binding commonly found in libraries like Jdbi (&tilde;1MB) or Spring Data JDBC
-(&tilde;3MB). Bpdbi can be used without the JVM reflection API, some optional mapper modules do use it.
+the Postgres JDBC driver (&#x7E;1.1MB). It also provides named parameters,
+row mapping, and type binding commonly found in libraries like Jdbi (&#x7E;1MB) or Spring Data JDBC
+(&#x7E;3MB). Bpdbi can be used without the JVM reflection API, some optional mapper modules do use it.
 Mind you that libraries like Hibernate and jOOQ weigh in at about 15MB each.
 
 **GraalVM native-image ready** — The core library and drivers (`bpdbi-core`, `bpdbi-pg-client`,
@@ -745,7 +745,7 @@ few cases where streaming doesn't fit.
 **Why the performance difference?** Streaming reads all rows from a single server response — one
 network round-trip for the entire result. Cursors issue a `FETCH <n>` command per batch, each
 requiring its own round-trip. With 1ms network latency and a fetch size of 100, reading 1000 rows
-via a cursor adds &tilde;20ms of round-trip overhead (10 fetches x 2ms) that streaming avoids entirely.
+via a cursor adds &#x7E;20ms of round-trip overhead (10 fetches x 2ms) that streaming avoids entirely.
 In benchmarks, streaming is roughly **8x faster** than cursors for the same 1000-row result.
 
 For most workloads — ETL pipelines, report generation, data export — streaming is the right choice.
