@@ -3,6 +3,8 @@ package io.github.bpdbi.mapper.record;
 import io.github.bpdbi.core.Row;
 import io.github.bpdbi.core.RowMapper;
 import io.github.bpdbi.core.spi.RowExtractors;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.util.function.BiFunction;
@@ -23,15 +25,17 @@ import org.jspecify.annotations.NonNull;
  */
 public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
 
+  private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
   private final Slot[] slots;
-  private final Constructor<T> constructor;
+  private final MethodHandle constructor;
 
   private RecordRowMapper(Class<T> recordType) {
     if (!recordType.isRecord()) {
       throw new IllegalArgumentException(recordType.getName() + " is not a record type");
     }
     this.slots = buildSlots(recordType);
-    this.constructor = canonicalConstructor(recordType);
+    this.constructor = unreflectCanonical(canonicalConstructor(recordType));
   }
 
   /** Create a mapper for the given record type. */
@@ -44,8 +48,10 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
     int[] cursor = {0};
     Object[] args = extract(slots, constructor, row, cursor);
     try {
-      return constructor.newInstance(args);
-    } catch (Exception e) {
+      @SuppressWarnings("unchecked") // safe: constructor produces T
+      T result = (T) constructor.invokeWithArguments(args);
+      return result;
+    } catch (Throwable e) {
       throw new IllegalStateException("Failed to construct record", e);
     }
   }
@@ -66,8 +72,7 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
     }
   }
 
-  private record NestedSlot(
-      Slot[] children, Constructor<? extends Record> constructor, int columnCount)
+  private record NestedSlot(Slot[] children, MethodHandle constructor, int columnCount)
       implements Slot {}
 
   private static Slot[] buildSlots(Class<? extends Record> recordType) {
@@ -81,8 +86,8 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
         for (Slot child : children) {
           count += child.columnCount();
         }
-        slots[i] =
-            new NestedSlot(children, canonicalConstructor(type.asSubclass(Record.class)), count);
+        var ctor = unreflectCanonical(canonicalConstructor(type.asSubclass(Record.class)));
+        slots[i] = new NestedSlot(children, ctor, count);
       } else {
         slots[i] = new ScalarSlot(indexedExtractorFor(type, components[i].getName()));
       }
@@ -106,8 +111,16 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
     }
   }
 
-  private static Object[] extract(
-      Slot[] slots, Constructor<? extends Record> ctor, Row row, int[] cursor) {
+  private static MethodHandle unreflectCanonical(Constructor<?> ctor) {
+    try {
+      return LOOKUP.unreflectConstructor(ctor);
+    } catch (IllegalAccessException e) {
+      throw new IllegalArgumentException(
+          "Cannot access constructor of " + ctor.getDeclaringClass().getName(), e);
+    }
+  }
+
+  private static Object[] extract(Slot[] slots, MethodHandle ctor, Row row, int[] cursor) {
     Object[] args = new Object[slots.length];
     for (int i = 0; i < slots.length; i++) {
       switch (slots[i]) {
@@ -115,8 +128,8 @@ public final class RecordRowMapper<T extends Record> implements RowMapper<T> {
         case NestedSlot n -> {
           Object[] childArgs = extract(n.children(), n.constructor(), row, cursor);
           try {
-            args[i] = n.constructor().newInstance(childArgs);
-          } catch (Exception e) {
+            args[i] = n.constructor().invokeWithArguments(childArgs);
+          } catch (Throwable e) {
             throw new IllegalStateException("Failed to construct nested record", e);
           }
         }

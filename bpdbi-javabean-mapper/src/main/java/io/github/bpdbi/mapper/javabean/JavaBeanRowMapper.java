@@ -7,10 +7,9 @@ import java.beans.BeanInfo;
 import java.beans.IntrospectionException;
 import java.beans.Introspector;
 import java.beans.PropertyDescriptor;
-import java.lang.reflect.Constructor;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -48,8 +47,10 @@ import org.jspecify.annotations.NonNull;
  */
 public final class JavaBeanRowMapper<T> implements RowMapper<T> {
 
+  private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
   private final Slot[] slots;
-  private final Constructor<T> constructor;
+  private final MethodHandle constructor;
 
   private JavaBeanRowMapper(Class<T> beanType) {
     this.constructor = resolveConstructor(beanType);
@@ -64,19 +65,21 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
   @Override
   public @NonNull T map(@NonNull Row row) {
     int[] cursor = {0};
-    return populate(constructor, slots, row, cursor);
+    @SuppressWarnings("unchecked") // safe: constructor produces T
+    T result = (T) populate(constructor, slots, row, cursor);
+    return result;
   }
 
   // --- Internal: slot tree for nested beans ---
 
   private sealed interface Slot {}
 
-  private record ScalarSlot(Method setter, BiFunction<Row, Integer, Object> extractor)
+  private record ScalarSlot(MethodHandle setter, BiFunction<Row, Integer, Object> extractor)
       implements Slot {}
 
   @SuppressWarnings("ArrayRecordComponent")
   // internal record; array represents an ordered tree of children
-  private record NestedSlot(Method setter, Constructor<?> constructor, Slot[] children)
+  private record NestedSlot(MethodHandle setter, MethodHandle constructor, Slot[] children)
       implements Slot {}
 
   private static Slot[] buildSlots(Class<?> beanType) {
@@ -90,9 +93,8 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
         continue;
       }
 
-      Method setter = pd.getWriteMethod();
-      setter.setAccessible(true);
       Class<?> type = pd.getPropertyType();
+      MethodHandle setter = unreflectSetter(pd);
 
       BiFunction<Row, Integer, Object> extractor = RowExtractors.extractorFor(type);
       if (extractor != null) {
@@ -114,15 +116,12 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
     return slots.toArray(Slot[]::new);
   }
 
-  // Unchecked is safe: populate() is only called with the matching constructor from Slot metadata
-  @SuppressWarnings("unchecked")
-  private static <T> T populate(Constructor<T> ctor, Slot[] slots, Row row, int[] cursor) {
-    T instance;
+  private static Object populate(MethodHandle ctor, Slot[] slots, Row row, int[] cursor) {
+    Object instance;
     try {
-      instance = ctor.newInstance();
-    } catch (InvocationTargetException | InstantiationException | IllegalAccessException e) {
-      throw new IllegalStateException(
-          "Failed to construct " + ctor.getDeclaringClass().getName(), e);
+      instance = ctor.invoke();
+    } catch (Throwable e) {
+      throw new IllegalStateException("Failed to construct bean", e);
     }
     for (Slot slot : slots) {
       try {
@@ -133,9 +132,8 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
             n.setter().invoke(instance, nested);
           }
         }
-      } catch (ReflectiveOperationException | IndexOutOfBoundsException e) {
-        throw new IllegalStateException(
-            "Failed to set property on " + ctor.getDeclaringClass().getName(), e);
+      } catch (Throwable e) {
+        throw new IllegalStateException("Failed to set property on bean", e);
       }
     }
     return instance;
@@ -156,14 +154,26 @@ public final class JavaBeanRowMapper<T> implements RowMapper<T> {
     }
   }
 
-  @SuppressWarnings("unchecked") // caller ensures T matches the class
-  private static <T> Constructor<T> resolveConstructor(Class<T> type) {
+  private static MethodHandle resolveConstructor(Class<?> type) {
     try {
-      Constructor<T> ctor = type.getDeclaredConstructor();
+      var ctor = type.getDeclaredConstructor();
       ctor.setAccessible(true);
-      return ctor;
+      return LOOKUP.unreflectConstructor(ctor);
     } catch (NoSuchMethodException e) {
       throw new IllegalArgumentException(type.getName() + " must have a no-arg constructor");
+    } catch (IllegalAccessException e) {
+      throw new IllegalArgumentException("Cannot access constructor of " + type.getName(), e);
+    }
+  }
+
+  private static MethodHandle unreflectSetter(PropertyDescriptor pd) {
+    try {
+      var setter = pd.getWriteMethod();
+      setter.setAccessible(true);
+      return LOOKUP.unreflect(setter);
+    } catch (IllegalAccessException e) {
+      throw new IllegalArgumentException(
+          "Cannot access setter for property '" + pd.getName() + "'", e);
     }
   }
 
