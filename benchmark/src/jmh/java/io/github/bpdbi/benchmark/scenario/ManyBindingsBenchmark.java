@@ -250,10 +250,11 @@ public class ManyBindingsBenchmark {
     db.jooq()
         .transaction(
             cfg -> {
-              var ctx = DSL.using(cfg);
+              var batch = DSL.using(cfg).batch(JDBC_INSERT_SQL);
               for (var params : paramSets) {
-                ctx.execute(JDBC_INSERT_SQL, params);
+                batch.bind(params);
               }
+              bh.consume(batch.execute());
             });
   }
 
@@ -262,9 +263,11 @@ public class ManyBindingsBenchmark {
   @Benchmark
   public void insert_jdbc_sql2o(DatabaseState db, Blackhole bh) {
     try (var con = db.sql2o().beginTransaction()) {
+      var query = con.createQuery(SQL2O_INSERT_SQL);
       for (var params : paramSets) {
-        con.createQuery(SQL2O_INSERT_SQL).withParams(params).executeUpdate();
+        query.withParams(params).addToBatch();
       }
+      bh.consume(query.executeBatch());
       con.commit();
     }
   }

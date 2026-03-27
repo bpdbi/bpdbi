@@ -138,10 +138,11 @@ public class BulkInsertBenchmark {
     db.jooq()
         .transaction(
             cfg -> {
-              var ctx = org.jooq.impl.DSL.using(cfg);
+              var batch = org.jooq.impl.DSL.using(cfg).batch(JDBC_SQL);
               for (var params : paramSets) {
-                ctx.execute(JDBC_SQL, params);
+                batch.bind(params);
               }
+              bh.consume(batch.execute());
             });
   }
 
@@ -153,9 +154,11 @@ public class BulkInsertBenchmark {
   @Benchmark
   public void jdbc_sql2o_batch(DatabaseState db, Blackhole bh) {
     try (var con = db.sql2o().beginTransaction()) {
+      var query = con.createQuery(SQL2O_SQL);
       for (var params : paramSets) {
-        con.createQuery(SQL2O_SQL).withParams(params).executeUpdate();
+        query.withParams(params).addToBatch();
       }
+      bh.consume(query.executeBatch());
       con.commit();
     }
   }

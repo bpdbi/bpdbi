@@ -67,7 +67,6 @@
 - Tests use Testcontainers (Postgres 16-alpine)
 - Postgres is **not** referred to as "PostgreSQL" anywhere in the project, just "Postgres"
 - Do **not** use asterisk `import` statements
-- All `@SuppressWarnings` and `@Suppress` (Kotlin) annotations should come with a comment explaining
-  why it's needed
+- All `@SuppressWarnings` and `@Suppress` (Kotlin) annotations should come with a comment explaining why it's needed
 - Do **not** use `@NullMarked` in `package-info.java` files but explicitly mark types `@NonNull` or `@Nullable`
 - Use **`OID`/`OIDs`** (all-caps) in symbol names, never `Oid`/`Oids` — e.g. `typeOID`, `paramTypeOIDs`, `PgOIDs`
