@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>bpdbi Benchmark Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bpdbi:          #2563eb;
+    --bpdbi-light:    #60a5fa;
+    --bpdbi-lighter:  #93c5fd;
+    --bpdbi-kotlin:   #7c3aed;
+    --jdbc:           #6b7280;
+    --jdbi:           #059669;
+    --jdbi-light:     #34d399;
+    --hibernate:      #dc2626;
+    --jooq:           #d97706;
+    --sql2o:          #b45309;
+    --spring:         #16a34a;
+    --bg:             #f8fafc;
+    --card:           #ffffff;
+    --text:           #1e293b;
+    --muted:          #64748b;
+    --border:         #e2e8f0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .intro {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 2.5rem;
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+
+  .intro strong { color: var(--text); }
+
+  .legend-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    margin-bottom: 2.5rem;
+    font-size: 0.85rem;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+  }
+
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .section {
+    margin-bottom: 3rem;
+  }
+
+  .section h2 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+
+  .section .desc {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+
+  .chart-wrap {
+    position: relative;
+  }
+
+  .takeaways {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+  }
+
+  .takeaways h2 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+
+  .takeaways ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .takeaways li {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
+  }
+
+  .takeaways li:last-child { border-bottom: none; }
+  .takeaways li strong { color: var(--bpdbi); }
+
+  .highlight { color: var(--bpdbi); font-weight: 600; }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 700px) {
+    .two-col { grid-template-columns: 1fr; }
+    body { padding: 1rem 0.5rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>bpdbi Benchmark Results</h1>
+<p class="subtitle">Comparing bpdbi against JDBC-based libraries &mdash; single-threaded, JDK 21, 1&thinsp;ms simulated latency per direction (2&thinsp;ms round-trip via Toxiproxy)</p>
+
+<div class="intro">
+  All numbers are <strong>throughput in ops/s</strong> (higher is better).
+  Each operation is one complete query or one batch of 50 inserts.
+  The simulated latency makes network round-trips the dominant cost,
+  which is exactly the condition where <strong>pipelining</strong> matters most.
+  With a 2&thinsp;ms round-trip the theoretical single-query ceiling is ~500&thinsp;ops/s.
+</div>
+
+<div class="legend-bar">
+  <div class="legend-item"><div class="legend-swatch" style="background:#2563eb"></div> bpdbi raw</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#60a5fa"></div> bpdbi record</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#93c5fd"></div> bpdbi bean</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#7c3aed"></div> bpdbi kotlin</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#6b7280"></div> JDBC raw</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#059669"></div> JDBI</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#16a34a"></div> Spring</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#d97706"></div> jOOQ</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#b45309"></div> Sql2o</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#dc2626"></div> Hibernate</div>
+</div>
+
+<!-- ============ Single Row Lookup ============ -->
+<div class="section">
+  <h2>Single Row Lookup</h2>
+  <p class="desc">SELECT 7 columns from <code>users</code> by primary key. One query, one round-trip &mdash; everyone is latency-bound at ~410&thinsp;ops/s.</p>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="singleRow"></canvas></div>
+  </div>
+</div>
+
+<!-- ============ Multi Row Fetch ============ -->
+<div class="section">
+  <h2>Multi-Row Fetch</h2>
+  <p class="desc">SELECT 6 columns from <code>products</code> filtered by category (~10–30 rows). Still one round-trip, so the gap is tiny.</p>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="multiRow"></canvas></div>
+  </div>
+</div>
+
+<!-- ============ Join Query ============ -->
+<div class="section">
+  <h2>Join Query</h2>
+  <p class="desc">3-table join with GROUP BY and ORDER BY, returning up to 20 rows. More server-side work lowers the ceiling to ~215&thinsp;ops/s.</p>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="joinQuery"></canvas></div>
+  </div>
+</div>
+
+<!-- ============ Bulk Insert ============ -->
+<div class="section">
+  <h2>Bulk Insert (50 rows)</h2>
+  <p class="desc">INSERT 50 rows with 3 parameters each. Pipelining and <code>reWriteBatchedInserts</code> both amortize round-trips &mdash; jOOQ, Hibernate, and Sql2o issue per-row round-trips and collapse.</p>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="bulkInsert"></canvas></div>
+  </div>
+</div>
+
+<!-- ============ Many Bindings ============ -->
+<div class="section">
+  <h2>Many Bindings &mdash; INSERT &amp; SELECT</h2>
+  <p class="desc">15 parameters of mixed types (UUID, BigDecimal, LocalDateTime, nullable strings) &times; 50 rows for INSERT; 16-column wide rows for SELECT.</p>
+  <div class="two-col">
+    <div class="card">
+      <div class="chart-wrap"><canvas id="manyInsert"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="chart-wrap"><canvas id="manySelect"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Kotlin Mappers ============ -->
+<div class="section">
+  <h2>Kotlin Serialization Mapper</h2>
+  <p class="desc">bpdbi's <code>kotlinx.serialization</code>-based mapper vs JDBI's reflection-based Kotlin mapper. The serialization path avoids reflection entirely.</p>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="kotlin"></canvas></div>
+  </div>
+</div>
+
+<!-- ============ Takeaways ============ -->
+<div class="takeaways">
+  <h2>Key Takeaways</h2>
+  <ul>
+    <li><strong>Zero overhead for reads.</strong> Across every SELECT scenario, bpdbi_raw lands within ±1% of raw JDBC. The binary protocol and lazy decoding add no measurable cost &mdash; both drivers are equally network-bound.</li>
+    <li><strong>Pipelining dominates batch inserts: +57–65% vs JDBC batch.</strong> <code>executeMany</code> sends Parse once plus N Bind/Execute messages in a single TCP write, amortizing latency the same way <code>reWriteBatchedInserts</code> does for Spring and JDBI.</li>
+    <li><strong>Record mapper is nearly free (~1–2% overhead); bean mapper costs ~8–9%.</strong> The record mapper's constructor-based instantiation is cheaper than the bean mapper's reflection-based setter calls. Both are far ahead of Hibernate's entity lifecycle.</li>
+    <li><strong>Kotlin <code>@Serializable</code> mapper is the fastest single-row path</strong> at ~411 ops/s, beating JDBI's Kotlin reflection mapper by 21%. Compile-time code generation eliminates runtime reflection entirely.</li>
+    <li><strong>Hibernate is consistently 40–53% behind on reads, 95–97% on writes.</strong> Entity lifecycle management, dirty checking, and per-statement round-trips make it the slowest option in every scenario. jOOQ and Sql2o suffer similar batch-insert penalties.</li>
+  </ul>
+</div>
+
+</div><!-- /container -->
+
+<script>
+// ---------------------------------------------------------------------------
+// Shared config
+// ---------------------------------------------------------------------------
+const COLORS = {
+  bpdbi:        '#2563eb',
+  bpdbiLight:   '#60a5fa',
+  bpdbiLighter: '#93c5fd',
+  bpdbiKotlin:  '#7c3aed',
+  jdbc:         '#6b7280',
+  jdbi:         '#059669',
+  jdbiLight:    '#34d399',
+  hibernate:    '#dc2626',
+  jooq:         '#d97706',
+  sql2o:        '#b45309',
+  spring:       '#16a34a',
+};
+
+function colorFor(label) {
+  const l = label.toLowerCase();
+  if (l.includes('kotlin') && l.includes('bpdbi'))  return COLORS.bpdbiKotlin;
+  if (l.includes('kotlin') && l.includes('jdbi'))   return COLORS.jdbiLight;
+  if (l.includes('bpdbi') && l.includes('raw'))     return COLORS.bpdbi;
+  if (l.includes('bpdbi') && l.includes('record'))  return COLORS.bpdbiLight;
+  if (l.includes('bpdbi') && l.includes('bean'))    return COLORS.bpdbiLighter;
+  if (l.includes('bpdbi') && l.includes('executemany') && l.includes('tx')) return COLORS.bpdbiLight;
+  if (l.includes('bpdbi') && l.includes('executemany')) return COLORS.bpdbi;
+  if (l.includes('hibernate'))                      return COLORS.hibernate;
+  if (l.includes('jooq'))                           return COLORS.jooq;
+  if (l.includes('sql2o'))                          return COLORS.sql2o;
+  if (l.includes('spring'))                         return COLORS.spring;
+  if (l.includes('jdbi'))                           return COLORS.jdbi;
+  if (l.includes('jdbc'))                           return COLORS.jdbc;
+  return '#94a3b8';
+}
+
+const defaultOpts = (title, max) => ({
+  indexAxis: 'y',
+  responsive: true,
+  maintainAspectRatio: false,
+  layout: { padding: { right: 12 } },
+  plugins: {
+    title: { display: !!title, text: title, font: { size: 14, weight: '600' }, padding: { bottom: 12 } },
+    legend: { display: false },
+    tooltip: {
+      callbacks: {
+        label: ctx => `${ctx.raw.toFixed(1)} ops/s`
+      }
+    }
+  },
+  scales: {
+    x: {
+      beginAtZero: true,
+      max: max,
+      title: { display: true, text: 'ops/s', font: { size: 12 } },
+      grid: { color: '#f1f5f9' },
+      ticks: { font: { size: 11 } }
+    },
+    y: {
+      ticks: { font: { size: 12 } },
+      grid: { display: false }
+    }
+  }
+});
+
+function barChart(id, labels, data, title, max) {
+  const canvas = document.getElementById(id);
+  const h = Math.max(labels.length * 38 + 60, 180);
+  canvas.parentElement.style.height = h + 'px';
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: labels.map(l => colorFor(l)),
+        borderRadius: 4,
+        barPercentage: 0.72,
+        categoryPercentage: 0.85,
+      }]
+    },
+    options: defaultOpts(title, max)
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Data & charts
+// ---------------------------------------------------------------------------
+
+barChart('singleRow',
+  ['bpdbi raw','JDBC raw','Spring','bpdbi record','jOOQ','JDBI raw','JDBI bean','bpdbi bean','Hibernate'],
+  [410.8, 408.7, 406.7, 404.2, 400.2, 396.3, 391.7, 374.0, 201.5],
+  null, 500
+);
+
+barChart('multiRow',
+  ['bpdbi raw','JDBC raw','Spring','bpdbi record','Sql2o','JDBI raw','jOOQ','bpdbi bean','Hibernate'],
+  [368.7, 368.4, 366.8, 363.9, 359.6, 359.1, 355.0, 337.3, 174.6],
+  null, 500
+);
+
+barChart('joinQuery',
+  ['JDBC raw','bpdbi raw','Spring','bpdbi record','JDBI raw','jOOQ','bpdbi bean','Hibernate'],
+  [215.9, 215.5, 210.8, 210.6, 209.1, 207.9, 197.2, 129.2],
+  null, 300
+);
+
+barChart('bulkInsert',
+  ['Spring batch','JDBI batch','bpdbi executeMany','JDBC batch','bpdbi executeManyTx','jOOQ','Hibernate','Sql2o'],
+  [289.3, 276.8, 273.9, 165.6, 160.4, 7.9, 7.8, 7.6],
+  null, 340
+);
+
+barChart('manyInsert',
+  ['bpdbi executeMany','Spring','JDBI batch','JDBC batch','jOOQ','Sql2o','Hibernate'],
+  [223.1, 222.2, 208.9, 141.9, 7.5, 7.2, 3.8],
+  'INSERT (15 params × 50 rows)', 260
+);
+
+barChart('manySelect',
+  ['bpdbi raw','JDBC raw','Spring','jOOQ','bpdbi record','JDBI bean','bpdbi bean','Hibernate'],
+  [408.1, 403.4, 401.4, 396.7, 394.6, 381.0, 366.3, 201.6],
+  'SELECT (16 columns)', 500
+);
+
+barChart('kotlin',
+  ['bpdbi kotlin (single)','JDBI kotlin (single)','bpdbi kotlin (multi)','JDBI kotlin (multi)'],
+  [410.6, 339.5, 354.7, 338.7],
+  null, 500
+);
+</script>
+</body>
+</html>

@@ -32,6 +32,8 @@ public class MultiRowFetchBenchmark {
       "SELECT id, name, description, price, category, stock FROM products WHERE category = $1";
   private static final String JDBC_SQL =
       "SELECT id, name, description, price, category, stock FROM products WHERE category = ?";
+  private static final String SQL2O_SQL =
+      "SELECT id, name, description, price, category, stock FROM products WHERE category = :p1";
 
   @Param({"0", "1", "2"})
   int categoryIdx;
@@ -148,7 +150,7 @@ public class MultiRowFetchBenchmark {
     var category = DatabaseState.categoryForParam(categoryIdx);
     try (var con = db.sql2o().open()) {
       var products =
-          con.createQuery(JDBC_SQL).withParams(category).executeAndFetch(ProductBean.class);
+          con.createQuery(SQL2O_SQL).withParams(category).executeAndFetch(ProductBean.class);
       bh.consume(products);
     }
   }

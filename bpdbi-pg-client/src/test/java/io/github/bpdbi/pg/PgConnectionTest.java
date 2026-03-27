@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Integration tests for Connection using Testcontainers Postgres. Ported from vertx-sql-client's
@@ -30,8 +30,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 class PgConnectionTest extends AbstractConnectionTest {
 
   @SuppressWarnings("resource") // withReuse keeps container alive across test runs
-  static final PostgreSQLContainer<?> pg =
-      new PostgreSQLContainer<>("postgres:16-alpine").withReuse(true);
+  static final PostgreSQLContainer pg =
+      new PostgreSQLContainer("postgres:16-alpine").withReuse(true);
 
   @BeforeAll
   static void startContainer() {

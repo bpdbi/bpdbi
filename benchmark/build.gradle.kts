@@ -37,6 +37,7 @@ dependencies {
   jmh(libs.testcontainers.toxiproxy)
 
   jmh(libs.kotlinx.serialization.json)
+  jmh(libs.kotlinx.datetime)
 
   jmh(libs.slf4j.nop)
 }

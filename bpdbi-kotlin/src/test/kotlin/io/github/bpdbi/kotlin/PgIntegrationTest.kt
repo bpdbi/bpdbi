@@ -8,14 +8,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
-import org.testcontainers.containers.PostgreSQLContainer
+import org.testcontainers.postgresql.PostgreSQLContainer
 
 /** Integration tests for bpdbi-kotlin with a real Postgres database. */
 class PgIntegrationTest {
 
   companion object {
     @Suppress("resource") // withReuse keeps container alive across test runs
-    val pg: PostgreSQLContainer<*> = PostgreSQLContainer("postgres:16-alpine").withReuse(true)
+    val pg: PostgreSQLContainer = PostgreSQLContainer("postgres:16-alpine").withReuse(true)
 
     @BeforeAll
     @JvmStatic

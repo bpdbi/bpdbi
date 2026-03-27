@@ -38,8 +38,8 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.sql2o.Sql2o;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.containers.ToxiproxyContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.toxiproxy.ToxiproxyContainer;
 
 @State(Scope.Benchmark)
 public class DatabaseState {
@@ -57,7 +57,7 @@ public class DatabaseState {
   private static final String PG_NETWORK_ALIAS = "pg";
 
   private Network network;
-  private PostgreSQLContainer<?> postgres;
+  private PostgreSQLContainer postgres;
   private ToxiproxyContainer toxiproxy;
   private Proxy pgProxy;
 
@@ -178,7 +178,7 @@ public class DatabaseState {
     network = Network.newNetwork();
 
     postgres =
-        new PostgreSQLContainer<>("postgres:16-alpine")
+        new PostgreSQLContainer("postgres:16-alpine")
             .withNetwork(network)
             .withNetworkAliases(PG_NETWORK_ALIAS);
     postgres.start();

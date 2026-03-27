@@ -1,50 +1,55 @@
 # Benchmark Suite
 
-JMH benchmarks comparing bpdbi against JDBC (raw, Jdbi, Hibernate) and Vert.x PG client.
-All benchmarks use **pooled connections** — we removed unpooled variants because connection
+JMH benchmarks comparing **bpdbi** against JDBC-based libraries (raw JDBC, Jdbi, Hibernate,
+jOOQ, Sql2o, Spring JdbcTemplate).
+All benchmarks use **pooled connections** — unpooled variants were removed because connection
 setup (TCP + SASL auth) dominates the measurement and tells you nothing about query performance.
+
+We used to also include a benchmark for the Vert.x reactive PG client, but since the benchmark
+library we use is threaded (and Vert.x is async/reactive) the results were not representative.
+We decided to remove it.
 
 ## Running
 
 ```bash
-# Full suite (takes ~20 minutes)
-./gradlew :benchmark:jmh
+# Smoke test (useless numbers, just validates the benchmarks compile and run)
+./gradlew :benchmark:jmh -PjmhFork=0 -PjmhWarmupIterations=0 -PjmhIterations=1 -PbenchLatencyMs=0
 
-# With simulated network latency (1ms per direction via Toxiproxy)
-./gradlew :benchmark:jmh -PbenchLatencyMs=1
+# Full suite with simulated network latency (1ms per direction via Toxiproxy)
+./gradlew :benchmark:jmh -PjmhFork=3 -PjmhWarmupIterations=2 -PjmhIterations=3 -PbenchLatencyMs=1
 
 # Single scenario
-./gradlew :benchmark:jmh -PjmhIncludes="SingleRowLookup"
+./gradlew :benchmark:jmh -PjmhIncludes="SingleRowLookup" -PbenchLatencyMs=1
 
-# Quick run (fewer iterations, less stable but faster feedback)
-./gradlew :benchmark:jmh -PjmhWarmupIterations=1 -PjmhIterations=2
-
-# Only Vert.x benchmarks
-./gradlew :benchmark:jmh -PjmhIncludes="vertx"
+# Only Kotlin benchmarks
+./gradlew :benchmark:jmh -PjmhIncludes="Kotlin" -PbenchLatencyMs=1
 ```
 
-Results are written to `build/reports/jmh/results.json`.
+Results are written to `$PROJECT_ROOT/benchmark/build/reports/jmh/results.json`.
 
 ## What's Being Compared
 
-| Label prefix     | Driver                              | Pool           |
+| Label prefix     | Driver / Library                    | Pool           |
 |------------------|-------------------------------------|----------------|
-| `bpdbi_pool_*`   | bpdbi (blocking, pipelined)         | bpdbi pool     |
+| `bpdbi_*`        | bpdbi (blocking, pipelined)         | bpdbi pool     |
 | `jdbc_raw`       | PG JDBC driver                      | HikariCP       |
-| `jdbc_jdbi`      | Jdbi (over JDBC)                    | HikariCP       |
+| `jdbc_jdbi_*`    | Jdbi (over JDBC)                    | HikariCP       |
 | `jdbc_hibernate` | Hibernate ORM (over JDBC)           | Hibernate pool |
-| `vertx_pool_*`   | Vert.x reactive PG client (blocked) | Vert.x pool    |
+| `jdbc_jooq`      | jOOQ (over JDBC)                    | HikariCP       |
+| `jdbc_sql2o`     | Sql2o (over JDBC)                   | HikariCP       |
+| `jdbc_spring`    | Spring JdbcTemplate (over JDBC)     | HikariCP       |
 
-The Vert.x benchmarks call `.toCompletionStage().toCompletableFuture().join()` to block,
-since JMH is synchronous. This adds overhead from the async-to-sync hop that wouldn't exist
-with a fully reactive code base — the numbers represent Vert.x used from blocking code (e.g.
-virtual threads), not its optimal async mode.
+Vert.x benchmarks are currently **disabled** (commented out). They call
+`.toCompletionStage().toCompletableFuture().join()` to block, since JMH is synchronous.
+This adds overhead from the async-to-sync hop that wouldn't exist with a fully reactive
+code base — the numbers represent Vert.x used from blocking code (e.g. virtual threads),
+not its optimal async mode.
 
 ## Scenarios
 
 ### SingleRowLookupBenchmark
 Fetch one user by primary key (7 columns). Tests raw getter access, record mapping,
-and bean mapping. Parameterized by `userId`.
+bean mapping, and equivalents in each library. Parameterized by `userId`.
 
 ### MultiRowFetchBenchmark
 Fetch all products matching a category (~100 rows). Tests iteration and multi-row
@@ -55,16 +60,51 @@ Join + aggregate query (orders with user join, item count, LIMIT 20). Tests comp
 query performance with grouped results. Parameterized by `userId`.
 
 ### BulkInsertBenchmark
-Batch insert 50 rows. Compares bpdbi's `executeMany`, JDBC batch, Jdbi batch,
-Hibernate native mutations, and Vert.x `executeBatch`.
+Batch insert 50 rows. Compares bpdbi's `executeMany` (pipelined), JDBC batch, Jdbi batch,
+Hibernate native mutations, jOOQ batch, Sql2o loop, and Spring `batchUpdate`.
+
+### ManyBindingsBenchmark
+INSERT with 15 mixed-type bindings (UUID, String, int, long, BigDecimal, boolean,
+LocalDateTime, null) across 50 rows, plus a SELECT reading back 20 wide rows.
+Tests type encoding/decoding overhead with many parameter types.
+
+### PipelinedLookupBenchmark
+Enqueue 20 queries and flush once vs. sequential execution. Demonstrates bpdbi's
+pipelining advantage — a capability with no JDBC equivalent.
+
+### TransactionBenchmark
+Transaction overhead: BEGIN/COMMIT wrapping, read-only transactions, pipelined inserts
+(10 INSERTs in one flush) vs. sequential inserts, and the `inTransaction()` convenience API.
+
+### StreamingFetchBenchmark
+Streaming/cursor-based reading of 1000 rows. Compares bpdbi's streaming (buffered,
+constant-memory stream, callback-based) against JDBC fetch-all, JDBC `setFetchSize`
+(server-side cursor), and Jdbi's `ResultIterator`.
+
+### CursorBenchmark
+Cursor-based progressive reading of 1000 rows within a transaction. Compares bpdbi's
+cursor (batched FETCH with configurable size), bpdbi stream, and JDBC `setFetchSize`.
+
+### LargeValueBenchmark
+Reading 200 rows with ~10KB text values per row. Tests throughput with large payloads
+where data transfer time matters more than per-query overhead.
 
 ### PreparedStatementReuseBenchmark
 Execute 100 lookups on a single pooled connection. Tests prepared statement caching
 and per-query overhead when amortized over many executions.
 
+### NamedParamBenchmark
+Named parameter parsing overhead (`:name` vs `$1`). Compares bpdbi's positional
+parameters, bpdbi's named parameters, and Jdbi's named parameters.
+
+### SingleRowLookupKotlinBenchmark
+bpdbi's Kotlin extensions (`queryOneAs<T>()`) using `kotlinx.serialization` for row
+mapping vs. Jdbi's `mapTo<T>()` with reflection. Parameterized by `userId`.
+
 ### KotlinRowMapperBenchmark
-bpdbi's Kotlin extensions (`queryOneAs<T>`, `queryAs<T>`) using `kotlinx.serialization`
-for row mapping. Pooled only.
+bpdbi's Kotlin extensions for both single-row (`queryOneAs<T>()`) and multi-row
+(`queryAs<T>()`) mapping using `kotlinx.serialization`, compared against Jdbi's
+reflection-based mapper. Parameterized by `categoryIdx` and `userId`.
 
 ## Infrastructure
 
@@ -72,9 +112,10 @@ for row mapping. Pooled only.
 - **Latency simulation**: Toxiproxy adds configurable latency in both directions
   (`-PbenchLatencyMs=N`). When 0 (default), Toxiproxy is skipped and connections go
   direct to the container.
-- **Pool size**: 10 connections for all pools (bpdbi, HikariCP, Hibernate, Vert.x)
+- **Pool size**: 10 connections for all pools
 - **Schema**: `users` (1000 rows), `products` (500), `orders` (5000), `order_items`
-  (1-5 per order), `bench_orders` (truncated between iterations)
+  (1-5 per order), `bench_orders` (truncated between iterations), `events` (wide table
+  for ManyBindingsBenchmark)
 
 ## Design Decisions
 

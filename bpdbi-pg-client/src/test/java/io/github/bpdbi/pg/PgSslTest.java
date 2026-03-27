@@ -13,7 +13,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.MountableFile;
 
 /**
@@ -24,17 +24,17 @@ class PgSslTest {
 
   // Non-SSL Postgres (standard)
   @SuppressWarnings("resource")
-  static final PostgreSQLContainer<?> pg =
-      new PostgreSQLContainer<>("postgres:16-alpine").withReuse(true);
+  static final PostgreSQLContainer pg =
+      new PostgreSQLContainer("postgres:16-alpine").withReuse(true);
 
   // SSL-enabled Postgres — certs are copied and permissions fixed via an init script
   @SuppressWarnings("resource")
-  static final PostgreSQLContainer<?> sslPg = createSslContainer();
+  static final PostgreSQLContainer sslPg = createSslContainer();
 
   @SuppressWarnings("resource")
-  private static PostgreSQLContainer<?> createSslContainer() {
+  private static PostgreSQLContainer createSslContainer() {
     var container =
-        new PostgreSQLContainer<>("postgres:16-alpine")
+        new PostgreSQLContainer("postgres:16-alpine")
             .withCopyFileToContainer(
                 MountableFile.forClasspathResource("ssl/server.crt"),
                 "/var/lib/postgresql/server.crt")

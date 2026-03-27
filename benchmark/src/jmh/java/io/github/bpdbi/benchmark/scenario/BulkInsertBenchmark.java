@@ -147,11 +147,14 @@ public class BulkInsertBenchmark {
 
   // --- Sql2o ---
 
+  private static final String SQL2O_SQL =
+      "INSERT INTO bench_orders (user_id, total, status) VALUES (:p1, :p2, :p3)";
+
   @Benchmark
   public void jdbc_sql2o_batch(DatabaseState db, Blackhole bh) {
     try (var con = db.sql2o().beginTransaction()) {
       for (var params : paramSets) {
-        con.createQuery(JDBC_SQL).withParams(params).executeUpdate();
+        con.createQuery(SQL2O_SQL).withParams(params).executeUpdate();
       }
       con.commit();
     }

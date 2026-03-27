@@ -1,6 +1,6 @@
 [versions]
 junit = "5.11.4"
-testcontainers = "1.20.4"
+testcontainers = "2.0.4"
 jspecify = "1.0.0"
 vanniktech-maven-publish = "0.30.0"
 kotlin = "2.1.20"
@@ -32,8 +32,8 @@ jmh = { id = "me.champeau.jmh", version.ref = "jmh-gradle-plugin" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
-testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
-testcontainers-toxiproxy = { module = "org.testcontainers:toxiproxy", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+testcontainers-toxiproxy = { module = "org.testcontainers:testcontainers-toxiproxy", version.ref = "testcontainers" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 scram-client = { module = "com.ongres.scram:scram-client", version.ref = "scram" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }

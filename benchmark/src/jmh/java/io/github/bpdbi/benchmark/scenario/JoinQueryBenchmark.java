@@ -49,6 +49,17 @@ public class JoinQueryBenchmark {
       ORDER BY o.created_at DESC
       LIMIT 20""";
 
+  private static final String SQL2O_SQL =
+      """
+      SELECT o.id, o.total, o.status, o.created_at, u.username, COUNT(oi.id) as item_count
+      FROM orders o
+      JOIN users u ON u.id = o.user_id
+      JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.user_id = :p1
+      GROUP BY o.id, o.total, o.status, o.created_at, u.username
+      ORDER BY o.created_at DESC
+      LIMIT 20""";
+
   @Param({"1", "50", "500"})
   int userId;
 
@@ -156,7 +167,7 @@ public class JoinQueryBenchmark {
   public void jdbc_sql2o(DatabaseState db, Blackhole bh) {
     try (var con = db.sql2o().open()) {
       var results =
-          con.createQuery(JDBC_SQL).withParams(userId).executeAndFetch(OrderSummaryBean.class);
+          con.createQuery(SQL2O_SQL).withParams(userId).executeAndFetch(OrderSummaryBean.class);
       bh.consume(results);
     }
   }

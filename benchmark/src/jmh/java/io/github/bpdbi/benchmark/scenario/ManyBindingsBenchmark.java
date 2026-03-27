@@ -56,6 +56,13 @@ public class ManyBindingsBenchmark {
           + " created_at, updated_at)"
           + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
+  private static final String SQL2O_INSERT_SQL =
+      "INSERT INTO events (event_uuid, event_type, user_id, sequence_num, amount, discount,"
+          + " processed, flagged, source, category, notes, reference_code, correlation_id,"
+          + " created_at, updated_at)"
+          + " VALUES (:p1, :p2, :p3, :p4, :p5, :p6, :p7, :p8, :p9, :p10, :p11, :p12, :p13,"
+          + " :p14, :p15)";
+
   private static final String SELECT_SQL =
       "SELECT id, event_uuid, event_type, user_id, sequence_num, amount, discount,"
           + " processed, flagged, source, category, notes, reference_code, correlation_id,"
@@ -67,6 +74,12 @@ public class ManyBindingsBenchmark {
           + " processed, flagged, source, category, notes, reference_code, correlation_id,"
           + " created_at, updated_at"
           + " FROM events WHERE user_id = ? LIMIT 20";
+
+  private static final String SQL2O_SELECT_SQL =
+      "SELECT id, event_uuid, event_type, user_id, sequence_num, amount, discount,"
+          + " processed, flagged, source, category, notes, reference_code, correlation_id,"
+          + " created_at, updated_at"
+          + " FROM events WHERE user_id = :p1 LIMIT 20";
 
   private static final String[] EVENT_TYPES = {
     "click", "purchase", "signup", "logout", "page_view", "search"
@@ -250,7 +263,7 @@ public class ManyBindingsBenchmark {
   public void insert_jdbc_sql2o(DatabaseState db, Blackhole bh) {
     try (var con = db.sql2o().beginTransaction()) {
       for (var params : paramSets) {
-        con.createQuery(JDBC_INSERT_SQL).withParams(params).executeUpdate();
+        con.createQuery(SQL2O_INSERT_SQL).withParams(params).executeUpdate();
       }
       con.commit();
     }
@@ -446,7 +459,7 @@ public class ManyBindingsBenchmark {
   public void select_jdbc_sql2o(DatabaseState db, Blackhole bh) {
     try (var con = db.sql2o().open()) {
       var events =
-          con.createQuery(JDBC_SELECT_SQL)
+          con.createQuery(SQL2O_SELECT_SQL)
               .withParams(selectUserId)
               .executeAndFetch(EventBean.class);
       bh.consume(events);

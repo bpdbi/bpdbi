@@ -33,6 +33,8 @@ public class SingleRowLookupBenchmark {
       "SELECT id, username, email, full_name, bio, active, created_at FROM users WHERE id = $1";
   private static final String JDBC_SQL =
       "SELECT id, username, email, full_name, bio, active, created_at FROM users WHERE id = ?";
+  private static final String SQL2O_SQL =
+      "SELECT id, username, email, full_name, bio, active, created_at FROM users WHERE id = :p1";
 
   @Param({"1", "50", "500"})
   int userId;
@@ -154,7 +156,7 @@ public class SingleRowLookupBenchmark {
   @Benchmark
   public void jdbc_sql2o(DatabaseState db, Blackhole bh) {
     try (var con = db.sql2o().open()) {
-      var user = con.createQuery(JDBC_SQL).withParams(userId).executeAndFetchFirst(UserBean.class);
+      var user = con.createQuery(SQL2O_SQL).withParams(userId).executeAndFetchFirst(UserBean.class);
       bh.consume(user);
     }
   }

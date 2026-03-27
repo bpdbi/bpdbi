@@ -2,13 +2,13 @@ package io.github.bpdbi.pg;
 
 import io.github.bpdbi.core.ConnectionConfig;
 import org.junit.jupiter.api.BeforeAll;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 abstract class PgTestBase {
 
   @SuppressWarnings("resource") // withReuse keeps container alive across test runs
-  static final PostgreSQLContainer<?> pg =
-      new PostgreSQLContainer<>("postgres:16-alpine").withReuse(true);
+  static final PostgreSQLContainer pg =
+      new PostgreSQLContainer("postgres:16-alpine").withReuse(true);
 
   @BeforeAll
   static void startContainer() {

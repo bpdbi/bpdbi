@@ -48,7 +48,7 @@ open class KotlinRowMapperBenchmark {
 
     @Benchmark
     fun bpdbi_kotlin_multi(db: DatabaseState, bh: Blackhole) {
-        val sql = "SELECT id, name, description, price, category, stock FROM products WHERE category = \$1"
+        val sql = "SELECT id, name, description, price::float8, category, stock FROM products WHERE category = \$1"
         val category = DatabaseState.categoryForParam(categoryIdx)
         db.bpdbiPool().acquire().use { conn ->
             val products = conn.queryAs<ProductKotlin>(sql, category)
