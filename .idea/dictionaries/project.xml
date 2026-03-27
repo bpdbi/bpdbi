@@ -1,6 +1,7 @@
 <component name="ProjectDictionaryState">
   <dictionary name="project">
     <words>
+      <w>Werror</w>
       <w>bpdbi's</w>
       <w>cies</w>
       <w>cstring</w>
@@ -13,6 +14,7 @@
       <w>lseg</w>
       <w>macaddr</w>
       <w>ninf</w>
+      <w>pgjdbc</w>
       <w>pinf</w>
       <w>postgre</w>
       <w>roundtrip</w>
@@ -20,6 +22,7 @@
       <w>sslmode</w>
       <w>sspi</w>
       <w>temurin</w>
+      <w>thrpt</w>
       <w>timestamptz</w>
       <w>timetz</w>
       <w>toxiproxy</w>

@@ -160,8 +160,7 @@ tasks.register("dependencySizes") {
     println("like JMH, Testcontainers, Kotlin stdlib/reflect).")
     println()
     println("NOTE: the JDBC API (~300 KB) is part of the JDK standard library and not listed,")
-    println("but is used by all contenders except bpdbi_raw, bpdbi_record, bpdbi_bean,")
-    println("bpdbi_kotlin, and Vert.x.")
+    println("but is used by all contenders except the bpdbi_* contenders and Vert.x.")
     println()
     println("NOTE: the scram/stringprep jars (~113 KB) in bpdbi and Vert.x contenders provide")
     println("SCRAM-SHA-256 authentication (default since Postgres 10). pgjdbc includes the same")
@@ -175,9 +174,7 @@ tasks.register("dependencySizes") {
       println("## $name — ${humanSize(total)}")
       println()
       println("```")
-      for ((jar, size) in jars) {
-        println("    %8s  %s".format(humanSize(size), jar))
-      }
+      for ((jar, size) in jars) println("    %8s  %s".format(humanSize(size), jar))
       println("```")
     }
 
