@@ -28,6 +28,18 @@ abstract class PgTestBase {
     return PgConnection.connect(config);
   }
 
+  protected PgConnection connectWithCache() {
+    var config =
+        new ConnectionConfig(
+            pg.getHost(),
+            pg.getMappedPort(5432),
+            pg.getDatabaseName(),
+            pg.getUsername(),
+            pg.getPassword());
+    config.cachePreparedStatements(true);
+    return PgConnection.connect(config);
+  }
+
   protected String tempTableDDL(String name, String columns) {
     return "CREATE TEMP TABLE " + name + " (" + columns + ")";
   }

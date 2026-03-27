@@ -561,6 +561,13 @@ public final class PgConnection extends BaseConnection {
 
   // --- Pipelined batch execution ---
 
+  /**
+   * Tracks whether each statement in a pipelined chunk was a cache miss (needs post-read
+   * registration) and what named statement and OIDs were used.
+   */
+  private record PipelineCacheMiss(
+      int index, String sql, String stmtName, byte[] stmtNameCString, int @Nullable [] typeOIDs) {}
+
   @Override
   protected @NonNull List<RowSet> executePipelinedBatch(
       @NonNull List<PendingStatement> statements) {
@@ -575,47 +582,99 @@ public final class PgConnection extends BaseConnection {
     }
     encoder.ensureCapacity(estimatedBytes);
 
-    // Deadlock prevention: if the estimated server response exceeds the TCP receive
-    // buffer (~64KB), the server may block trying to send while we block trying to write.
-    // Split large batches into chunks with intermediate Sync+drain to avoid this.
-    // Conservative estimate: each query response is at least ~250 bytes
-    // (ParseComplete + BindComplete + RowDescription/NoData + CommandComplete).
     int estimatedResponseBytes = 0;
     int chunkStart = 0;
     List<RowSet> allResults = new ArrayList<>(statements.size());
     Function<Object, String> fallback = textEncoder();
+    boolean useCache = psCache != null;
+
+    // Track cache misses so we can register them after reading responses.
+    // Also seed lastColumns from cache for cache-hit statements.
+    List<PipelineCacheMiss> cacheMisses = useCache ? new ArrayList<>() : null;
+    // Seed lastColumns for readPipelinedResponses when the first statement is a cache hit
+    ColumnDescriptor[] seededColumns = null;
 
     // Phase 1: Write messages, flushing when response estimate gets risky.
-    // Optimization: skip Parse when SQL matches the previous statement (server reuses unnamed
-    // statement), and skip Describe when SQL matches (column metadata is identical — the response
-    // reader carries forward the last RowDescription).
+    // With caching: cache hit → Bind(named) + Execute (no Parse, no Describe)
+    //               cache miss → Parse(named) + Bind(named) + Describe + Execute
+    //               uncacheable → Parse(unnamed) + Bind(unnamed) + Describe + Execute
+    // Without caching: same as before (unnamed statements with lastParsedSql dedup)
     String lastParsedSql = null;
+    byte[] lastStmtNameCString = PgEncoder.EMPTY_CSTRING;
     for (int i = 0; i < statements.size(); i++) {
       PendingStatement stmt = statements.get(i);
       estimatedResponseBytes += ESTIMATED_RESPONSE_BYTES_PER_QUERY;
 
       Object[] stmtParams = applyEncoders(stmt.params());
-      boolean sqlChanged = !stmt.sql().equals(lastParsedSql);
-      if (sqlChanged) {
-        encoder.writeParse(stmt.sql(), computeParamTypeOIDs(stmtParams));
-        lastParsedSql = stmt.sql();
+
+      if (useCache && isCacheable(stmt.sql())) {
+        var cached = psCache.get(stmt.sql());
+        if (cached != null) {
+          // Cache hit: skip Parse and Describe, use named statement
+          encoder.writeBindInline(
+              PgEncoder.EMPTY_CSTRING, cached.pgStatementNameCString(), stmtParams, fallback);
+          encoder.writeExecute();
+          // Seed columns for response reader if this is the first statement in the chunk
+          if (seededColumns == null && cached.columns() != null) {
+            seededColumns = cached.columns();
+          }
+          lastParsedSql = stmt.sql();
+          lastStmtNameCString = cached.pgStatementNameCString();
+        } else {
+          // Cache miss: use named statement so we can cache after response
+          boolean sqlChanged = !stmt.sql().equals(lastParsedSql);
+          if (sqlChanged) {
+            int[] typeOIDs = computeParamTypeOIDs(stmtParams);
+            byte[] stmtNameCString = nextStatementNameCString();
+            String stmtName = cstringToString(stmtNameCString);
+            encoder.writeParse(stmtName, stmt.sql(), typeOIDs);
+            lastParsedSql = stmt.sql();
+            lastStmtNameCString = stmtNameCString;
+            cacheMisses.add(
+                new PipelineCacheMiss(
+                    i - chunkStart, stmt.sql(), stmtName, stmtNameCString, typeOIDs));
+          }
+          encoder.writeBindInline(PgEncoder.EMPTY_CSTRING, lastStmtNameCString, stmtParams, fallback);
+          if (sqlChanged) {
+            encoder.writeDescribePortal();
+          }
+          encoder.writeExecute();
+          seededColumns = null; // Describe will provide fresh columns
+        }
+      } else {
+        // No caching: use unnamed statement with lastParsedSql dedup
+        boolean sqlChanged = !stmt.sql().equals(lastParsedSql);
+        if (sqlChanged) {
+          encoder.writeParse(stmt.sql(), computeParamTypeOIDs(stmtParams));
+          lastParsedSql = stmt.sql();
+          lastStmtNameCString = PgEncoder.EMPTY_CSTRING;
+        }
+        encoder.writeBindInline(
+            PgEncoder.EMPTY_CSTRING, PgEncoder.EMPTY_CSTRING, stmtParams, fallback);
+        if (sqlChanged) {
+          encoder.writeDescribePortal();
+        }
+        encoder.writeExecute();
       }
-      encoder.writeBindInline(
-          PgEncoder.EMPTY_CSTRING, PgEncoder.EMPTY_CSTRING, stmtParams, fallback);
-      if (sqlChanged) {
-        encoder.writeDescribePortal();
-      }
-      encoder.writeExecute();
 
       // Flush and drain mid-pipeline if approaching TCP buffer limit
       if (estimatedResponseBytes >= MAX_BUFFERED_RECV_BYTES && i < statements.size() - 1) {
         int chunkSize = i - chunkStart + 1;
         encoder.writeSync();
         flushToNetwork();
-        allResults.addAll(readPipelinedResponses(chunkSize));
+        allResults.addAll(
+            readPipelinedResponses(chunkSize, seededColumns, cacheMisses, statements, chunkStart));
         chunkStart = i + 1;
         estimatedResponseBytes = 0;
-        lastParsedSql = null; // server forgets unnamed statement after Sync
+        // Named statements survive Sync, but unnamed ones don't.
+        // If last statement used an unnamed statement, reset dedup tracking.
+        if (lastStmtNameCString == PgEncoder.EMPTY_CSTRING) {
+          lastParsedSql = null;
+        }
+        if (cacheMisses != null) {
+          cacheMisses.clear();
+        }
+        seededColumns = null;
       }
     }
 
@@ -623,22 +682,37 @@ public final class PgConnection extends BaseConnection {
     encoder.writeSync();
     flushToNetwork();
     int remainingCount = statements.size() - chunkStart;
-    allResults.addAll(readPipelinedResponses(remainingCount));
+    allResults.addAll(
+        readPipelinedResponses(remainingCount, seededColumns, cacheMisses, statements, chunkStart));
 
     return allResults;
   }
 
-  private List<RowSet> readPipelinedResponses(int count) {
+  /**
+   * Read pipelined responses, register cache misses, and handle stale plan errors.
+   *
+   * @param count number of statements in this chunk
+   * @param seededColumns column metadata from a cache hit (or null)
+   * @param cacheMisses list of cache misses to register after successful reads (or null)
+   * @param allStatements full statement list (for stale plan retry)
+   * @param chunkStart offset of this chunk in allStatements
+   */
+  private List<RowSet> readPipelinedResponses(
+      int count,
+      ColumnDescriptor @Nullable [] seededColumns,
+      @Nullable List<PipelineCacheMiss> cacheMisses,
+      @NonNull List<PendingStatement> allStatements,
+      int chunkStart) {
     try {
       List<RowSet> results = new ArrayList<>(count);
       // lastColumns carries forward column metadata from the most recent RowDescription.
-      // When Describe is skipped for repeated SQL, the server won't send RowDescription,
-      // so we reuse the previous metadata for SELECT results.
-      ColumnDescriptor[] lastColumns = null;
+      // Seed from cache hit if available, so Describe-skipped statements have column metadata.
+      ColumnDescriptor[] lastColumns = seededColumns;
       ColumnDescriptor[] columns = null;
       ColumnBuffer[] buffers = null;
       int rowCount = 0;
       int rowsAffected = 0;
+      int stalePlanIndex = -1;
 
       while (true) {
         BackendMessage msg = decoder.readMessageIntoBuffers(buffers);
@@ -685,7 +759,11 @@ public final class PgConnection extends BaseConnection {
             results.add(buildRowSet(null, null, 0, 0));
           }
           case BackendMessage.ErrorResponse err -> {
-            results.add(new RowSet(PgException.fromErrorResponse(err)));
+            var pgError = PgException.fromErrorResponse(err);
+            if (stalePlanIndex < 0 && isStalePlanError(pgError)) {
+              stalePlanIndex = results.size();
+            }
+            results.add(new RowSet(pgError));
             // Server skips remaining messages until Sync; wait for ReadyForQuery
           }
           case BackendMessage.NoticeResponse notice -> {}
@@ -699,6 +777,29 @@ public final class PgConnection extends BaseConnection {
                       new DbException(
                           null, null, "Skipped: earlier statement in pipeline failed")));
             }
+
+            // Handle stale plan: evict the offending statement and retry the remaining batch
+            if (stalePlanIndex >= 0 && psCache != null) {
+              int globalIndex = chunkStart + stalePlanIndex;
+              String staleSql = allStatements.get(globalIndex).sql();
+              var evicted = psCache.remove(staleSql);
+              if (evicted != null) {
+                closeCachedStatement(evicted);
+              }
+              // Retry from the stale statement onward
+              var retryStatements =
+                  allStatements.subList(globalIndex, chunkStart + count);
+              List<RowSet> retryResults = executePipelinedBatch(retryStatements);
+              // Replace error results with retry results
+              for (int r = 0; r < retryResults.size(); r++) {
+                results.set(stalePlanIndex + r, retryResults.get(r));
+              }
+              return results;
+            }
+
+            // Register cache misses after successful execution
+            registerCacheMisses(cacheMisses, results, lastColumns);
+
             return results;
           }
           default -> {}
@@ -706,6 +807,29 @@ public final class PgConnection extends BaseConnection {
       }
     } catch (IOException e) {
       throw new DbConnectionException("I/O error reading pipelined response", e);
+    }
+  }
+
+  /**
+   * Register cache-miss statements in the prepared statement cache. Called after successfully
+   * reading all pipelined responses for a chunk.
+   */
+  private void registerCacheMisses(
+      @Nullable List<PipelineCacheMiss> cacheMisses,
+      @NonNull List<RowSet> results,
+      ColumnDescriptor @Nullable [] lastColumns) {
+    if (cacheMisses == null || cacheMisses.isEmpty()) return;
+    for (var miss : cacheMisses) {
+      if (miss.index() >= results.size()) continue;
+      RowSet result = results.get(miss.index());
+      if (result.getError() != null) continue;
+      // Extract column metadata from the result (for RETURNING/SELECT statements)
+      List<ColumnDescriptor> colList = result.columnDescriptors();
+      ColumnDescriptor[] cols = colList.isEmpty() ? null : colList.toArray(new ColumnDescriptor[0]);
+      var stmt =
+          new PreparedStatementCache.CachedStatement(
+              miss.sql(), miss.stmtName(), miss.stmtNameCString(), cols, miss.typeOIDs(), null);
+      handleEvicted(psCache.cache(miss.sql(), stmt));
     }
   }
 

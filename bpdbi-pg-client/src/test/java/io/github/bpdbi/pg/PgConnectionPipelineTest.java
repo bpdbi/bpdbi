@@ -578,4 +578,190 @@ class PgConnectionPipelineTest extends PgTestBase {
       assertEquals(3L, conn.query("SELECT count(*) FROM emn").first().getLong(0));
     }
   }
+
+  // ===== Prepared statement cache in pipelined batches =====
+
+  /**
+   * executeMany the same INSERT across two separate flush() calls. The second flush should reuse
+   * the cached named statement (skip Parse). Verifies correctness — all rows should land.
+   */
+  @Test
+  void executeManyReusesCache() {
+    try (var conn = connectWithCache()) {
+      conn.query("CREATE TEMP TABLE pipe_cache (id int, val text)");
+
+      String sql = "INSERT INTO pipe_cache (id, val) VALUES ($1, $2)";
+
+      // First batch: cache miss — should prepare and cache the statement
+      var results1 =
+          conn.executeMany(sql, List.of(new Object[] {1, "a"}, new Object[] {2, "b"}));
+      assertEquals(2, results1.size());
+      for (var rs : results1) {
+        assertNull(rs.getError());
+      }
+
+      // Second batch: cache hit — should skip Parse, reuse named statement
+      var results2 =
+          conn.executeMany(sql, List.of(new Object[] {3, "c"}, new Object[] {4, "d"}));
+      assertEquals(2, results2.size());
+      for (var rs : results2) {
+        assertNull(rs.getError());
+      }
+
+      // All 4 rows should be present
+      var count = conn.query("SELECT count(*) FROM pipe_cache").first().getLong(0);
+      assertEquals(4L, count);
+    }
+  }
+
+  /**
+   * executeMany the same INSERT 1000 times across 20 separate flush() calls. Stresses the cache
+   * path and verifies correctness at scale.
+   */
+  @Test
+  void executeManyMultiFlushStress() {
+    try (var conn = connectWithCache()) {
+      conn.query("CREATE TEMP TABLE pipe_stress (id int, val text)");
+
+      String sql = "INSERT INTO pipe_stress (id, val) VALUES ($1, $2)";
+      int total = 0;
+      for (int batch = 0; batch < 20; batch++) {
+        List<Object[]> paramSets = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+          paramSets.add(new Object[] {total + i, "v" + (total + i)});
+        }
+        var results = conn.executeMany(sql, paramSets);
+        assertEquals(50, results.size());
+        for (var rs : results) {
+          assertNull(rs.getError());
+        }
+        total += 50;
+      }
+
+      var count = conn.query("SELECT count(*) FROM pipe_stress").first().getLong(0);
+      assertEquals(1000L, count);
+    }
+  }
+
+  /**
+   * Enqueue a mix of different SQLs (some will be cached, some not) in one flush. All results
+   * should be correct and cache entries should be created for each distinct SQL.
+   */
+  @Test
+  void pipelineMixedSqlWithCache() {
+    try (var conn = connectWithCache()) {
+      conn.query("CREATE TEMP TABLE pipe_mix_cache (id int, val text)");
+
+      // Enqueue different SQL statements in one pipeline
+      conn.enqueue("INSERT INTO pipe_mix_cache VALUES ($1, $2)", 1, "a");
+      conn.enqueue("SELECT $1::text", "hello");
+      conn.enqueue("INSERT INTO pipe_mix_cache VALUES ($1, $2)", 2, "b");
+      conn.enqueue("SELECT $1::int + $2::int", 10, 20);
+      List<RowSet> results = conn.flush();
+
+      assertEquals(4, results.size());
+      assertNull(results.get(0).getError());
+      assertEquals("hello", results.get(1).first().getString(0));
+      assertNull(results.get(2).getError());
+      assertEquals(30, results.get(3).first().getInteger(0));
+
+      // Second flush — same SQLs should hit cache
+      conn.enqueue("INSERT INTO pipe_mix_cache VALUES ($1, $2)", 3, "c");
+      conn.enqueue("SELECT $1::text", "world");
+      conn.enqueue("SELECT $1::int + $2::int", 5, 7);
+      List<RowSet> results2 = conn.flush();
+
+      assertEquals(3, results2.size());
+      assertNull(results2.get(0).getError());
+      assertEquals("world", results2.get(1).first().getString(0));
+      assertEquals(12, results2.get(2).first().getInteger(0));
+
+      assertEquals(3L, conn.query("SELECT count(*) FROM pipe_mix_cache").first().getLong(0));
+    }
+  }
+
+  /**
+   * Pipeline with RETURNING: cache must correctly preserve column metadata so the second flush
+   * can read result rows without a Describe.
+   */
+  @Test
+  void executeManyWithReturningAndCache() {
+    try (var conn = connectWithCache()) {
+      conn.query("CREATE TEMP TABLE pipe_ret_cache (id serial, name text)");
+
+      String sql = "INSERT INTO pipe_ret_cache (name) VALUES ($1) RETURNING id, name";
+
+      // First batch: cache miss
+      var results1 = conn.executeMany(sql, List.of(new Object[] {"Alice"}, new Object[] {"Bob"}));
+      assertEquals(2, results1.size());
+      assertEquals(1, results1.get(0).first().getInteger("id"));
+      assertEquals("Alice", results1.get(0).first().getString("name"));
+      assertEquals(2, results1.get(1).first().getInteger("id"));
+
+      // Second batch: cache hit — column metadata must be preserved
+      var results2 =
+          conn.executeMany(sql, List.of(new Object[] {"Carol"}, new Object[] {"Dave"}));
+      assertEquals(2, results2.size());
+      assertEquals(3, results2.get(0).first().getInteger("id"));
+      assertEquals("Carol", results2.get(0).first().getString("name"));
+      assertEquals(4, results2.get(1).first().getInteger("id"));
+    }
+  }
+
+  /**
+   * Pipeline >256 statements to trigger mid-pipeline Sync. Named statements should survive the
+   * Sync boundary (unlike unnamed statements which are discarded).
+   */
+  @Test
+  void pipelineMidSyncWithCache() {
+    try (var conn = connectWithCache()) {
+      conn.query("CREATE TEMP TABLE pipe_sync_cache (id int)");
+
+      // 500 statements should trigger at least one mid-pipeline Sync (threshold ~256)
+      List<Object[]> paramSets = new ArrayList<>();
+      for (int i = 0; i < 500; i++) {
+        paramSets.add(new Object[] {i});
+      }
+      var results =
+          conn.executeMany("INSERT INTO pipe_sync_cache (id) VALUES ($1)", paramSets);
+
+      assertEquals(500, results.size());
+      for (var rs : results) {
+        assertNull(rs.getError());
+      }
+
+      var count = conn.query("SELECT count(*) FROM pipe_sync_cache").first().getLong(0);
+      assertEquals(500L, count);
+    }
+  }
+
+  /**
+   * Stale plan retry: cache a SELECT, ALTER the table to change the result type, then re-execute
+   * in a pipeline. The stale plan error should trigger eviction + retry.
+   */
+  @Test
+  void pipelineStalePlanRetry() {
+    try (var conn = connectWithCache()) {
+      conn.query("CREATE TEMP TABLE pipe_stale (id int, name text)");
+      conn.query("INSERT INTO pipe_stale VALUES (1, 'Alice')");
+
+      String sql = "SELECT id, name FROM pipe_stale WHERE id = $1";
+
+      // Prime the cache via single-query path
+      var rs1 = conn.query(sql, 1);
+      assertEquals("Alice", rs1.first().getString("name"));
+
+      // ALTER TABLE to change result type — cached plan becomes stale
+      conn.query("ALTER TABLE pipe_stale ALTER COLUMN name TYPE varchar(100)");
+
+      // Pipeline should detect the stale plan, evict, retry, and succeed
+      conn.enqueue(sql, 1);
+      List<RowSet> results = conn.flush();
+
+      assertEquals(1, results.size());
+      // Should succeed after retry
+      assertNull(results.get(0).getError());
+      assertEquals("Alice", results.get(0).first().getString("name"));
+    }
+  }
 }
