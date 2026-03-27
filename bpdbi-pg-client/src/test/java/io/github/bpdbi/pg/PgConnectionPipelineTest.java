@@ -593,16 +593,14 @@ class PgConnectionPipelineTest extends PgTestBase {
       String sql = "INSERT INTO pipe_cache (id, val) VALUES ($1, $2)";
 
       // First batch: cache miss — should prepare and cache the statement
-      var results1 =
-          conn.executeMany(sql, List.of(new Object[] {1, "a"}, new Object[] {2, "b"}));
+      var results1 = conn.executeMany(sql, List.of(new Object[] {1, "a"}, new Object[] {2, "b"}));
       assertEquals(2, results1.size());
       for (var rs : results1) {
         assertNull(rs.getError());
       }
 
       // Second batch: cache hit — should skip Parse, reuse named statement
-      var results2 =
-          conn.executeMany(sql, List.of(new Object[] {3, "c"}, new Object[] {4, "d"}));
+      var results2 = conn.executeMany(sql, List.of(new Object[] {3, "c"}, new Object[] {4, "d"}));
       assertEquals(2, results2.size());
       for (var rs : results2) {
         assertNull(rs.getError());
@@ -681,8 +679,8 @@ class PgConnectionPipelineTest extends PgTestBase {
   }
 
   /**
-   * Pipeline with RETURNING: cache must correctly preserve column metadata so the second flush
-   * can read result rows without a Describe.
+   * Pipeline with RETURNING: cache must correctly preserve column metadata so the second flush can
+   * read result rows without a Describe.
    */
   @Test
   void executeManyWithReturningAndCache() {
@@ -699,8 +697,7 @@ class PgConnectionPipelineTest extends PgTestBase {
       assertEquals(2, results1.get(1).first().getInteger("id"));
 
       // Second batch: cache hit — column metadata must be preserved
-      var results2 =
-          conn.executeMany(sql, List.of(new Object[] {"Carol"}, new Object[] {"Dave"}));
+      var results2 = conn.executeMany(sql, List.of(new Object[] {"Carol"}, new Object[] {"Dave"}));
       assertEquals(2, results2.size());
       assertEquals(3, results2.get(0).first().getInteger("id"));
       assertEquals("Carol", results2.get(0).first().getString("name"));
@@ -709,8 +706,8 @@ class PgConnectionPipelineTest extends PgTestBase {
   }
 
   /**
-   * Pipeline >256 statements to trigger mid-pipeline Sync. Named statements should survive the
-   * Sync boundary (unlike unnamed statements which are discarded).
+   * Pipeline >256 statements to trigger mid-pipeline Sync. Named statements should survive the Sync
+   * boundary (unlike unnamed statements which are discarded).
    */
   @Test
   void pipelineMidSyncWithCache() {
@@ -722,8 +719,7 @@ class PgConnectionPipelineTest extends PgTestBase {
       for (int i = 0; i < 500; i++) {
         paramSets.add(new Object[] {i});
       }
-      var results =
-          conn.executeMany("INSERT INTO pipe_sync_cache (id) VALUES ($1)", paramSets);
+      var results = conn.executeMany("INSERT INTO pipe_sync_cache (id) VALUES ($1)", paramSets);
 
       assertEquals(500, results.size());
       for (var rs : results) {
@@ -736,8 +732,8 @@ class PgConnectionPipelineTest extends PgTestBase {
   }
 
   /**
-   * Stale plan retry: cache a SELECT, ALTER the table to change the result type, then re-execute
-   * in a pipeline. The stale plan error should trigger eviction + retry.
+   * Stale plan retry: cache a SELECT, ALTER the table to change the result type, then re-execute in
+   * a pipeline. The stale plan error should trigger eviction + retry.
    */
   @Test
   void pipelineStalePlanRetry() {

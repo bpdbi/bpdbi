@@ -4,10 +4,8 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 
 # IntelliJ IDEA
-.idea/
+.idea/*
 !.idea/dictionaries/
-.idea/dictionaries/*
-!.idea/dictionaries/project.xml
 !.idea/google-java-format.xml
 *.iml
 *.ipr

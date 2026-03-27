@@ -634,7 +634,8 @@ public final class PgConnection extends BaseConnection {
                 new PipelineCacheMiss(
                     i - chunkStart, stmt.sql(), stmtName, stmtNameCString, typeOIDs));
           }
-          encoder.writeBindInline(PgEncoder.EMPTY_CSTRING, lastStmtNameCString, stmtParams, fallback);
+          encoder.writeBindInline(
+              PgEncoder.EMPTY_CSTRING, lastStmtNameCString, stmtParams, fallback);
           if (sqlChanged) {
             encoder.writeDescribePortal();
           }
@@ -787,8 +788,7 @@ public final class PgConnection extends BaseConnection {
                 closeCachedStatement(evicted);
               }
               // Retry from the stale statement onward
-              var retryStatements =
-                  allStatements.subList(globalIndex, chunkStart + count);
+              var retryStatements = allStatements.subList(globalIndex, chunkStart + count);
               List<RowSet> retryResults = executePipelinedBatch(retryStatements);
               // Replace error results with retry results
               for (int r = 0; r < retryResults.size(); r++) {
